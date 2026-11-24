@@ -34,7 +34,6 @@ import com.bumptech.glide.request.transition.Transition
 import com.facebook.proguard.annotations.DoNotStrip
 import com.facebook.react.uimanager.ThemedReactContext
 import com.margelo.nitro.skeleton.OneKeySkeletonRenderer
-import com.margelo.nitro.views.RecyclableView
 import kotlin.math.ceil
 
 private fun Context.findActivity(): Activity? {
@@ -227,9 +226,9 @@ internal fun oneKeyImageRequestSignature(
   density.toString(),
 ).joinToString("|")
 
+// Fabric's recycle pool zeroes view bounds while ScreenStack can still draw the host.
 @DoNotStrip
-class HybridOneKeyImage(private val context: ThemedReactContext) :
-  HybridOneKeyImageSpec(), RecyclableView {
+class HybridOneKeyImage(private val context: ThemedReactContext) : HybridOneKeyImageSpec() {
   private enum class DisplayState { LOADING, IMAGE, ERROR, FALLBACK }
   private companion object {
     const val FADE_DELAY_THRESHOLD_MS = 100L
@@ -399,8 +398,8 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     showLoading(requestIsActive = false)
   }
 
-  override fun prepareForRecycle() {
-    resetForReuse()
+  internal fun prepareForReuse() {
+    if (!disposed) resetForReuse()
   }
 
   override fun onDropView() {
@@ -465,6 +464,7 @@ class HybridOneKeyImage(private val context: ThemedReactContext) :
     displayState = DisplayState.LOADING
     isPreservingDisplayedImage = false
     hostView.setImageDrawable(null)
+    hostView.round = false
     hostView.drawStateSymbol = false
     hostView.skeletonRequested = false
     hostView.setBackgroundColor(Color.TRANSPARENT)

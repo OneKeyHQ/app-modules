@@ -20,6 +20,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 public final class JCoreStorage {
@@ -33,6 +35,8 @@ public final class JCoreStorage {
     private static final String KEY_DEVICE_ID = "device_id";
     private static final String KEY_SERVER_REGISTERED = "server_registered";
     private static final String KEY_PUSH_STOPPED = "push_stopped";
+    private static final String KEY_PENDING_RESUME_APP_KEY = "pending_push_resume_app_key";
+    private static final String UNCONFIGURED_RESUME_APP_KEY = "__jpush_unconfigured__";
     private static final String KEY_COLLECTION_AUTH = "collection_auth";
     private static final String KEY_DEBUG_MODE = "debug_mode";
     private static final String KEY_TAGS = "tags";
@@ -54,6 +58,7 @@ public final class JCoreStorage {
     private static final String KEY_FAILED_IPS = "sis_failed_ips";
     private static final String KEY_LAST_GOOD_IP = "sis_last_good_ip";
     private static final String KEY_THIRD_TOKEN_PREFIX = "third_token_";
+    private static final String KEY_FCM_BOUND_IDENTITY = "fcm_bound_identity";
     private static final String KEY_LATEST_NOTIFICATION_NUM = "latest_notification_num";
     private static final String KEY_PUSH_TIME_CONFIGURED = "push_time_configured";
     private static final String KEY_PUSH_TIME_DAYS = "push_time_days";
@@ -65,12 +70,21 @@ public final class JCoreStorage {
     private static final String KEY_SILENCE_END_HOUR = "silence_end_hour";
     private static final String KEY_SILENCE_END_MIN = "silence_end_min";
 
-    private static final int MAX_LOCAL_LOG_CHARS = 32768;
     private static final AtomicInteger REQUEST_ID = new AtomicInteger(100);
     private static final Map<String, Object> MEMORY_FALLBACK = new ConcurrentHashMap<String, Object>();
-    private static final StringBuilder LOCAL_LOG_BUFFER = new StringBuilder();
     private static volatile Context sAppContext;
     private static volatile boolean sDebugMode = false;
+    private static PushResumeClaim inFlightResume;
+
+    static final class PushResumeClaim {
+        final String appKey;
+        final long policyGeneration;
+
+        PushResumeClaim(String appKey, long policyGeneration) {
+            this.appKey = appKey;
+            this.policyGeneration = policyGeneration;
+        }
+    }
 
     private JCoreStorage() {
     }
@@ -248,6 +262,12 @@ public final class JCoreStorage {
     }
 
     public static String getAppKey(Context context) {
+        Object cached = MEMORY_FALLBACK.get(KEY_APP_KEY);
+        if (cached instanceof String && !isEmpty((String) cached)) return (String) cached;
+        return loadAppKey(context);
+    }
+
+    private static synchronized String loadAppKey(Context context) {
         String cached = getStringPref(context, KEY_APP_KEY, "");
         if (!isEmpty(cached)) {
             return cached;
@@ -274,8 +294,14 @@ public final class JCoreStorage {
         return "";
     }
 
-    public static void setAppKey(Context context, String appKey) {
+    public static synchronized void setAppKey(Context context, String appKey) {
         if (!isEmpty(appKey)) {
+            String pending = getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
+            if (UNCONFIGURED_RESUME_APP_KEY.equals(pending)) {
+                putStringPref(context, KEY_PENDING_RESUME_APP_KEY, appKey);
+            } else if (!pending.isEmpty() && !pending.equals(appKey)) {
+                clearPendingPushResume(context);
+            }
             putStringPref(context, KEY_APP_KEY, appKey);
         }
     }
@@ -318,38 +344,19 @@ public final class JCoreStorage {
     }
 
     public static void enableSDKLocalLog(Context context, boolean enable, boolean uploadToServer) {
-        putBooleanPref(context, KEY_LOCAL_LOG_ENABLED, enable);
-        if (enable) {
-            appendLocalLog("SDKLocalLog enabled (upload=" + uploadToServer + ")");
-        }
+        // Deprecated: logs are forwarded directly to OneKeyLog without in-memory buffering.
+        putBooleanPref(context, KEY_LOCAL_LOG_ENABLED, false);
     }
 
     public static boolean isLocalLogEnabled(Context context) {
-        return getBooleanPref(context, KEY_LOCAL_LOG_ENABLED, false);
+        return false;
     }
 
-    public static synchronized void appendLocalLog(String line) {
-        if (line != null && !line.isEmpty()) {
-            if (LOCAL_LOG_BUFFER.length() > 0) {
-                LOCAL_LOG_BUFFER.append('\n');
-            }
-            LOCAL_LOG_BUFFER.append(line);
-            if (LOCAL_LOG_BUFFER.length() > MAX_LOCAL_LOG_CHARS) {
-                int excess = LOCAL_LOG_BUFFER.length() - MAX_LOCAL_LOG_CHARS;
-                int newlineIdx = LOCAL_LOG_BUFFER.indexOf("\n", excess);
-                if (newlineIdx >= 0 && newlineIdx + 1 < LOCAL_LOG_BUFFER.length()) {
-                    LOCAL_LOG_BUFFER.delete(0, newlineIdx + 1);
-                } else {
-                    LOCAL_LOG_BUFFER.delete(0, excess);
-                }
-            }
-        }
+    public static void appendLocalLog(String line) {
     }
 
-    public static synchronized String readNewLogs(Context context) {
-        String logs = LOCAL_LOG_BUFFER.toString();
-        LOCAL_LOG_BUFFER.setLength(0);
-        return logs;
+    public static String readNewLogs(Context context) {
+        return "";
     }
 
     public static synchronized void ensureRegistration(Context context) {
@@ -400,6 +407,7 @@ public final class JCoreStorage {
     }
 
     public static synchronized void clearRegistration(Context context) {
+        putStringPref(context, KEY_FCM_BOUND_IDENTITY, "");
         putBooleanPref(context, KEY_SERVER_REGISTERED, false);
         putLongPref(context, KEY_UID, 0L);
         putStringPref(context, KEY_PASSWORD, "");
@@ -438,7 +446,54 @@ public final class JCoreStorage {
     public static synchronized void setPushStopped(Context context, boolean stopped) {
         putBooleanPref(context, KEY_PUSH_STOPPED, stopped);
         if (stopped) {
+            clearPendingPushResume(context);
             CONTENT_GENERATION.incrementAndGet();
+        }
+    }
+
+    public static synchronized void resumePushLocally(Context context) {
+        if (isPushStopped(context)) {
+            String appKey = getAppKey(context);
+            putStringPref(context, KEY_PENDING_RESUME_APP_KEY,
+                appKey.isEmpty() ? UNCONFIGURED_RESUME_APP_KEY : appKey);
+            setPushStopped(context, false);
+        }
+    }
+
+    static synchronized PushResumeClaim claimPendingPushResume(Context context) {
+        String pending = getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
+        if (pending.isEmpty() || !isCollectionAuth(context) || isPushStopped(context) || inFlightResume != null) {
+            return null;
+        }
+        String appKey = getAppKey(context);
+        if (appKey.isEmpty() || (!pending.equals(appKey) && !UNCONFIGURED_RESUME_APP_KEY.equals(pending))) {
+            return null;
+        }
+        if (UNCONFIGURED_RESUME_APP_KEY.equals(pending)) {
+            putStringPref(context, KEY_PENDING_RESUME_APP_KEY, appKey);
+        }
+        inFlightResume = new PushResumeClaim(appKey, getContentGeneration());
+        return inFlightResume;
+    }
+
+    static synchronized boolean isPushResumeClaimCurrent(Context context, PushResumeClaim claim) {
+        return claim != null && claim == inFlightResume && claim.policyGeneration == getContentGeneration()
+            && claim.appKey.equals(getAppKey(context)) && isCollectionAuth(context) && !isPushStopped(context);
+    }
+
+    static synchronized void completePushResume(Context context, PushResumeClaim claim, boolean acknowledged) {
+        if (claim != inFlightResume) return;
+        if (acknowledged && isPushResumeClaimCurrent(context, claim)) {
+            clearPendingPushResume(context);
+        } else {
+            inFlightResume = null;
+        }
+    }
+
+    private static void clearPendingPushResume(Context context) {
+        inFlightResume = null;
+        if (!getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "").isEmpty()) {
+            putStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
         }
     }
 
@@ -450,19 +505,116 @@ public final class JCoreStorage {
         putBooleanPref(context, KEY_CONNECTED, connected);
     }
 
-    public static void saveSisConfig(Context context, String rawJson) {
-        if (isEmpty(rawJson)) {
-            return;
+    static final class SisConfig {
+        final String rawJson;
+        final JSONObject response;
+        final Set<String> ips;
+        final Set<String> sslIps;
+
+        SisConfig(String rawJson, JSONObject response) {
+            this.rawJson = rawJson;
+            this.response = response;
+            ips = readSisAddresses(response.optJSONArray("ips"), true);
+            sslIps = readSisAddresses(response.optJSONArray("ssl_ips"), true);
         }
-        putStringPref(context, KEY_SIS_RAW_JSON, rawJson);
-        saveCsvSet(context, KEY_SIS_IPS, JCoreWireCodec.extractJsonStringArray(rawJson, "ips"));
-        saveCsvSet(context, KEY_SIS_SSL_IPS, JCoreWireCodec.extractJsonStringArray(rawJson, "ssl_ips"));
-        saveCsvSet(context, KEY_SIS_UDP_IPS, JCoreWireCodec.extractJsonStringArray(rawJson, "sis_ips"));
-        saveCsvSet(context, KEY_SIS_HTTP_REPORT, JCoreWireCodec.extractJsonStringArray(rawJson, "http_report"));
-        saveCsvSet(context, KEY_SIS_HTTPS_REPORT, JCoreWireCodec.extractJsonStringArray(rawJson, "https_report"));
-        saveCsvSet(context, KEY_SIS_TCP_REPORT, JCoreWireCodec.extractJsonStringArray(rawJson, "tcp_report"));
-        putLongPref(context, KEY_SIS_CERT_VER, JCoreWireCodec.extractJsonInt(rawJson, "cert_ver", 1));
-        putBooleanPref(context, KEY_SIS_DATA_REPORT, rawJson.contains("\"data_report\":true") || rawJson.contains("\"data_report\":1"));
+
+        String firstEndpoint() {
+            if (!ips.isEmpty()) return ips.iterator().next();
+            return sslIps.isEmpty() ? null : sslIps.iterator().next();
+        }
+    }
+
+    static SisConfig parseSisConfig(String rawJson) {
+        if (isEmpty(rawJson)) return null;
+        try {
+            return new SisConfig(rawJson, new JSONObject(rawJson));
+        } catch (JSONException malformed) {
+            return null;
+        }
+    }
+
+    private static Set<String> readSisAddresses(JSONArray array, boolean validatePort) {
+        Set<String> addresses = new LinkedHashSet<>();
+        if (array == null) return addresses;
+        for (int i = 0; i < array.length(); i++) {
+            Object value = array.opt(i);
+            if (!(value instanceof String)) continue;
+            String address = ((String) value).trim();
+            if (validatePort) {
+                String endpoint = normalizeSisEndpoint(address);
+                if (endpoint != null) addresses.add(endpoint);
+            } else if (!address.isEmpty()) {
+                addresses.add(address);
+            }
+        }
+        return addresses;
+    }
+
+    static String[] splitHostPort(String ipPort) {
+        if (ipPort == null) {
+            return null;
+        }
+        String trimmed = ipPort.trim();
+        int colon = trimmed.lastIndexOf(':');
+        if (colon <= 0 || colon + 1 >= trimmed.length()) {
+            return null;
+        }
+        String host = trimmed.substring(0, colon).trim();
+        if (host.isEmpty() || host.indexOf(',') >= 0) {
+            return null;
+        }
+        String portStr = trimmed.substring(colon + 1).trim();
+        try {
+            int port = Integer.parseInt(portStr);
+            if (port > 0 && port <= 65535) {
+                return new String[] { host, String.valueOf(port) };
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        return null;
+    }
+
+    private static String normalizeSisEndpoint(String address) {
+        String[] endpoint = splitHostPort(address);
+        return endpoint == null ? null : endpoint[0] + ":" + endpoint[1];
+    }
+
+    private static Set<String> loadSisEndpoints(Context context, String key) {
+        Set<String> endpoints = new LinkedHashSet<>();
+        boolean failureHistory = KEY_FAILED_IPS.equals(key);
+        for (String address : loadCsvList(context, key)) {
+            String endpoint = normalizeSisEndpoint(address);
+            if (endpoint == null) continue;
+            if (failureHistory) endpoints.remove(endpoint);
+            endpoints.add(endpoint);
+        }
+        return endpoints;
+    }
+
+    public static void saveSisConfig(Context context, String rawJson) {
+        SisConfig config = parseSisConfig(rawJson);
+        if (config != null) saveSisConfig(context, config, false);
+    }
+
+    static synchronized void saveSisConfig(Context context, SisConfig config, boolean clearEndpointFailures) {
+        JSONObject response = config.response;
+        putStringPref(context, KEY_SIS_RAW_JSON, config.rawJson);
+        saveCsvSet(context, KEY_SIS_IPS, config.ips);
+        saveCsvSet(context, KEY_SIS_SSL_IPS, config.sslIps);
+        saveCsvSet(context, KEY_SIS_UDP_IPS, readSisAddresses(response.optJSONArray("sis_ips"), false));
+        saveCsvSet(context, KEY_SIS_HTTP_REPORT, readSisAddresses(response.optJSONArray("http_report"), false));
+        saveCsvSet(context, KEY_SIS_HTTPS_REPORT, readSisAddresses(response.optJSONArray("https_report"), false));
+        saveCsvSet(context, KEY_SIS_TCP_REPORT, readSisAddresses(response.optJSONArray("tcp_report"), false));
+        putLongPref(context, KEY_SIS_CERT_VER, response.optInt("cert_ver", 1));
+        Object dataReport = response.opt("data_report");
+        putBooleanPref(context, KEY_SIS_DATA_REPORT, Boolean.TRUE.equals(dataReport)
+            || (dataReport instanceof Number && ((Number) dataReport).doubleValue() == 1));
+        if (clearEndpointFailures) {
+            Set<String> failures = loadSisEndpoints(context, KEY_FAILED_IPS);
+            failures.removeAll(config.ips);
+            failures.removeAll(config.sslIps);
+            saveCsvSet(context, KEY_FAILED_IPS, failures);
+        }
     }
 
     public static void resetSisCache(Context context) {
@@ -475,11 +627,11 @@ public final class JCoreStorage {
     }
 
     public static List<String> getSisSslIps(Context context) {
-        return loadCsvList(context, KEY_SIS_SSL_IPS);
+        return new ArrayList<>(loadSisEndpoints(context, KEY_SIS_SSL_IPS));
     }
 
     public static List<String> getSisIps(Context context) {
-        return loadCsvList(context, KEY_SIS_IPS);
+        return new ArrayList<>(loadSisEndpoints(context, KEY_SIS_IPS));
     }
 
     public static List<String> getSisUdpIps(Context context) {
@@ -503,24 +655,42 @@ public final class JCoreStorage {
     }
 
     public static void setLastGoodIp(Context context, String ipPort) {
-        putStringPref(context, KEY_LAST_GOOD_IP, ipPort != null ? ipPort : "");
+        putStringPref(context, KEY_LAST_GOOD_IP, normalizeSisEndpoint(ipPort));
     }
 
     public static String getLastGoodIp(Context context) {
-        return getStringPref(context, KEY_LAST_GOOD_IP, "");
+        String endpoint = normalizeSisEndpoint(getStringPref(context, KEY_LAST_GOOD_IP, ""));
+        return endpoint == null ? "" : endpoint;
     }
 
     public static synchronized void recordFailedIp(Context context, String ipPort) {
-        if (isEmpty(ipPort)) {
+        String endpoint = normalizeSisEndpoint(ipPort);
+        if (endpoint == null) {
             return;
         }
-        Set<String> set = new LinkedHashSet<String>(loadCsvList(context, KEY_FAILED_IPS));
-        set.add(ipPort);
+        Set<String> set = loadSisEndpoints(context, KEY_FAILED_IPS);
+        set.remove(endpoint);
+        set.add(endpoint);
+        while (set.size() > 32) {
+            String oldest = set.iterator().next();
+            set.remove(oldest);
+        }
         saveCsvSet(context, KEY_FAILED_IPS, set);
     }
 
+    public static synchronized void removeFailedIp(Context context, String ipPort) {
+        String endpoint = normalizeSisEndpoint(ipPort);
+        if (endpoint == null) {
+            return;
+        }
+        Set<String> set = loadSisEndpoints(context, KEY_FAILED_IPS);
+        if (set.remove(endpoint)) {
+            saveCsvSet(context, KEY_FAILED_IPS, set);
+        }
+    }
+
     public static synchronized List<String> getFailedIps(Context context) {
-        return loadCsvList(context, KEY_FAILED_IPS);
+        return new ArrayList<>(loadSisEndpoints(context, KEY_FAILED_IPS));
     }
 
     public static synchronized void clearFailedIps(Context context) {
@@ -563,6 +733,28 @@ public final class JCoreStorage {
 
     public static void saveThirdToken(Context context, byte platform, String token) {
         putStringPref(context, KEY_THIRD_TOKEN_PREFIX + (platform & 0xFF), token != null ? token : "");
+    }
+
+    static synchronized void saveAcknowledgedThirdToken(Context context, byte platform, String token,
+        String appKey, long uid, String registrationId) {
+        if (!appKey.equals(getAppKey(context)) || uid != getUid(context)
+            || !registrationId.equals(getRegistrationId(context))) return;
+        saveThirdToken(context, platform, token);
+        if (platform == 8) {
+            putStringPref(context, KEY_FCM_BOUND_IDENTITY, isEmpty(token) ? "" : fcmBindingIdentity(appKey, uid, registrationId));
+        }
+    }
+
+    static synchronized boolean hasBoundFcmToken(Context context) {
+        long uid = getUid(context);
+        String registrationId = getRegistrationId(context);
+        return uid > 0 && !registrationId.isEmpty() && !getThirdToken(context, (byte) 8).isEmpty()
+            && fcmBindingIdentity(getAppKey(context), uid, registrationId)
+                .equals(getStringPref(context, KEY_FCM_BOUND_IDENTITY, ""));
+    }
+
+    private static String fcmBindingIdentity(String appKey, long uid, String registrationId) {
+        return appKey + ":" + uid + ":" + registrationId;
     }
 
     public static String getThirdToken(Context context, byte platform) {

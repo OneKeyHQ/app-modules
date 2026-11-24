@@ -9,6 +9,7 @@ import cn.jiguang.core.JCoreTcpEngine;
 import cn.jiguang.plugins.push.common.JLogger;
 import cn.jpush.android.helper.JCoreHelper;
 import cn.jpush.android.local.ActionHelper;
+import cn.jpush.android.local.LegacyNotificationChannel;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -79,6 +80,26 @@ public abstract class JThirdPlatFormInterface {
         return false;
     }
 
+    private static synchronized JThirdPlatFormInterface getSupportedFcm(Context context)
+        throws ReflectiveOperationException {
+        if (context == null) return null;
+        if (fcmPlugin == null) {
+            // This optional source module is linked only by Google hosts.
+            fcmPlugin = (JThirdPlatFormInterface) Class.forName(
+                "com.onekey.jpush.fcm.FcmPushManager"
+            ).getDeclaredConstructor().newInstance();
+        }
+        return fcmPlugin.isSupport(context) ? fcmPlugin : null;
+    }
+
+    public static boolean supportsFcm(Context context) {
+        try {
+            return getSupportedFcm(context) != null;
+        } catch (Exception | LinkageError unavailablePlugin) {
+            return false;
+        }
+    }
+
     public static void initializeFcm(final Context context) {
         if (context == null || JCoreStorage.isPushStopped(context) || !JCoreStorage.isCollectionAuth(context)) {
             return;
@@ -91,22 +112,14 @@ public abstract class JThirdPlatFormInterface {
                         return;
                     }
                     try {
-                        if (fcmPlugin == null) {
-                            // This optional source module is linked only by Google hosts.
-                            fcmPlugin = (JThirdPlatFormInterface) Class.forName(
-                                "com.onekey.jpush.fcm.FcmPushManager"
-                            ).getDeclaredConstructor().newInstance();
-                        }
-                        if (!fcmPlugin.isSupport(context)) {
-                            return;
-                        }
+                        JThirdPlatFormInterface plugin = getSupportedFcm(context);
+                        if (plugin == null) return;
                         if (!fcmRegistered) {
-                            fcmPlugin.init(context);
-                            fcmPlugin.register(context, new Bundle());
+                            plugin.init(context);
+                            plugin.register(context, new Bundle());
                             fcmRegistered = true;
                         }
-                        fcmPlugin.getToken(context);
-                        JLogger.i("FCM registration requested");
+                        plugin.getToken(context);
                     } catch (ClassNotFoundException absentPlugin) {
                         // Non-Google hosts intentionally do not include the optional plugin.
                     } catch (Exception | LinkageError unavailablePlugin) {
@@ -206,7 +219,7 @@ public abstract class JThirdPlatFormInterface {
                     extras = json.opt("extras");
                 }
                 message.notificationExtras = extras != null ? extras.toString() : "";
-                message.notificationChannelId = json.optString("n_channel_id", "");
+                LegacyNotificationChannel.readOptions(message, json);
                 if (!JCoreStorage.isPushStopped(context) && JCoreStorage.isCollectionAuth(context)) {
                     message.displayForeground = json.optString("n_foreground", "1");
                 }

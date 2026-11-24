@@ -11,6 +11,43 @@ upload boundary and its focused review corrections.
 - `uploadFile(config)` always returns a Promise. When the native method is
   absent, it rejects with an Error whose `code` is `SNI_UNSUPPORTED`.
 - Supported native methods receive the caller's config unchanged.
+- `getUploadProgress(requestId)` returns the latest active upload snapshot or
+  `null` for an unknown, inactive, or non-upload request ID. JS calls the native
+  method directly, and iOS resolves an explicit JavaScript `null` through the
+  bridge. The JS and native changes must ship together.
+
+## Upload progress
+
+Status: **Implemented in source**; native device/network acceptance remains open.
+
+- Progress is opt-in through the existing optional `requestId`; uploads without
+  one continue unchanged and have no queryable snapshot. Each native module
+  instance owns its own snapshots. The ID is validated by existing request
+  validation; a progress query itself performs no network I/O.
+- `bytesSent` and `totalBytes` are payload bytes, not headers or a server
+  acknowledgement. Once the body is prepared, `totalBytes` is its declared
+  length, 1 through 20 MiB; before preparation it is zero. `bytesSent` is
+  between zero and `totalBytes`. iOS counts bytes read by EMASCurl into
+  libcurl; Android counts bytes accepted by OkHttp's sink; Node
+  (`@onekeyfe/react-native-sni-connect/node`) counts bytes whose
+  `ClientRequest.write` callback has completed. Built-in transport
+  recovery may replay a body. Android resets its write count for each OkHttp
+  `writeTo` and retains the largest prefix. EMASCurl's public callback counts
+  reads over one URLProtocol instance without an exposed retry boundary, so
+  iOS clamps that cumulative value at `totalBytes`; it may reach 100% across
+  replayed reads before a single complete attempt. Counts never accumulate
+  across separate `uploadFile` calls.
+- A snapshot becomes available after native registration and remains available
+  while the upload waits for admission, sends, or awaits its response. Before
+  the file body is constructed, `totalBytes` may be zero. It is removed on
+  settlement, cancellation, or module invalidation. Late transport callbacks
+  cannot restore a removed snapshot. Duplicate active IDs replace the older
+  operation; completion of the older one cannot erase the replacement.
+- Snapshots are retained only for registered operations. Admission limits
+  steady-state work to 64 active and 256 pending requests process-wide;
+  concurrent pre-admission registrations can transiently exceed those counts
+  and are released when admission rejects or the operation settles. Polling is
+  caller owned; the native module emits no progress events or bridge callbacks.
 
 ## File ownership, lifecycle, and bounds
 
@@ -26,7 +63,59 @@ upload boundary and its focused review corrections.
   with an I/O error (`SNI_REQUEST_FAILED`); an already transmitted prefix can
   remain at the server. Disk input and socket output remain streaming.
 - Admission, cancellation, total deadlines, response handling, and destination
-  pinning continue to follow OSCS without changes.
+  pinning follow OSCS.
+
+## Node/Desktop conformance
+
+- `request()` rejects GET and HEAD with a body and POST, PUT and PATCH
+  without a body. The empty string is an explicit body. File uploads supply
+  their body through the validated file.
+- The upload deadline starts at invocation and covers asynchronous file and
+  caller-provided validation, admission, and transport. Validating uploads are
+  included in `cancelAllRequests()` even without a request ID. Timeout,
+  individual cancellation and replacement of an active ID settle promptly.
+  Any validation work that cannot be interrupted may finish in the background.
+  Its late result cannot start transport or update progress.
+- Node clients in the Electron main process share the baseline admission
+  counters and the `SniRequestError` constructor across the CommonJS and ESM
+  entry points. An admission rejection is an instance of the error exported by
+  either entry. Cancellation and upload progress belong to the client instance.
+- Node uploads require `getAllowedUploadRoots` to return at least one usable
+  app-owned directory. The defaults allow direct-child `.zip` files and
+  `POST` or `PUT` to `/wallet/v1/client/log` on
+  `https://wallet.onekeycn.com` or `https://wallet.onekeytest.com`.
+- After checking the canonical path against the allowed roots, the client
+  reserves a file slot, opens a read-only handle and checks its identity
+  against the canonical path. The regular-file and size checks use that
+  handle. Optional verification receives the canonical path and size from
+  that check. The client retains the handle through admission and streams
+  the body from it. The caller owns the file contents and keeps them unchanged.
+- CommonJS and ESM clients and the standalone validation helper share a
+  process-wide limit of 64 upload files being opened, held, or closed.
+  The file queue holds at most 256 waiters and rejects overflow with
+  `SNI_RESOURCE_LIMIT`. For an upload, waiting for a file slot uses its
+  original deadline and cancellation signal.
+- Validation failure, timeout, cancellation, transport failure and success
+  start file cleanup. Cancelling or timing out can settle the upload Promise
+  while a file read or close finishes in the background. The file slot is
+  released after the handle finishes closing, or when opening fails.
+- Electron consumers supply their session's `resolveProxy(url)` to the
+  client. The proxy preflight rejects with `SNI_UNSUPPORTED` when no resolver
+  is available or the resolver returns an empty route. Direct SNI transport
+  follows its existing pinning and bypass contract.
+- Unsupported response encodings abort the transport with
+  `SNI_RESPONSE_FAILED`. Unsolicited protocol upgrades close the socket and
+  reject with `SNI_SECURITY_POLICY_FAILED`. Premature request closure settles
+  the operation and releases admission. Header dictionaries preserve valid
+  names and repeated values regardless of object prototype properties.
+- Node streams at most the file length declared in `Content-Length`.
+  A short read rejects immediately with `SNI_FILE_READ_FAILED` and aborts the
+  request. A full read ends the request after the final write callback.
+  File stream errors and their diagnostic logs use a fixed message that
+  excludes local paths.
+- Clearing the DNS cache rotates the client's agent, immediately destroys
+  idle sockets on the previous agent and closes its active sockets when
+  they finish.
 
 ## Transport recovery boundary
 
@@ -46,9 +135,9 @@ resource and deadline constraints remain unchanged.
 - Internal behavior differs by library, request body and connection history.
   Fixture-specific counts below characterize locked versions; they are not
   cross-platform public guarantees or a requirement to retry every request.
-- The historical Node fixture loaded the actual external consumer source;
-  this package has no Node transport implementation. That HTTPS backend does
-  not add a recovery loop in the characterized cases.
+- The historical Node fixture loaded the external consumer source that
+  preceded this package's Node transport. That backend adds no recovery loop
+  in the characterized cases.
 - Historical iOS package acceptance compiled the unpacked npm artifact's five
   original Swift sources against pristine EMASCurl 1.5.5. No dependency patch,
   consumer patch hook or replay-verification build phase is required.
@@ -67,7 +156,7 @@ an unconfigured library. Redirect restrictions below are explicit SDK choices.
 | --- | --- | --- |
 | Android / OkHttp 4.12.0 | `retryOnConnectionFailure` is unset, retaining `true`; connection recovery and 408/503 follow-ups remain subject to the library gates below. Normal connection pooling is retained; no SDK retry loop. | `followRedirects(false)` and `followSslRedirects(false)`. |
 | iOS / URLSession + EMASCurl 1.5.5 | Unmodified EMASCurl/libcurl may recover when a reused connection loses its response; body replayability matters. No SDK retry loop. Bundled `curlver.h` identifies `8.17.0-DEV`, not a separately pinned public libcurl release or a runtime `curl_version()` measurement. | `enableBuiltInRedirection = false`; the native request session delegate also rejects redirection. |
-| External App Node/Desktop backend | Electron main-process `https.request` with a keep-alive `https.Agent`, not fetch/Undici. This implementation has no connection-recovery or HTTP-status retry loop; 408/503 are returned directly. It is not an SDK Node branch. | No 3xx-following loop. |
+| Node / Desktop (`@onekeyfe/react-native-sni-connect/node`) | `SniNodeClient` using Node `https.request` with a keep-alive `https.Agent`, not fetch/Undici. This implementation has no connection-recovery or HTTP-status retry loop; 408/503 are returned directly. | No 3xx-following loop. |
 | React Native JS facade | `request` and supported `uploadFile` each forward to native once. TurboModuleRegistry takes priority over NativeModules; a missing module throws the linking error. Unsupported upload rejects with `SNI_UNSUPPORTED`. No JS retry loop; one forwarding call does not imply one HTTP send. | Determined by the native transport above. |
 | App native adapter | Routes to the native SDK when the App SNI gate permits it; Mac Catalyst is excluded by the App capability check. | Native SNI restrictions above; ordinary domain routing is a separate layer. |
 | App desktop adapter | Forwards through `desktopApiProxy` to the external Node backend when available and enabled. | Node backend behavior above. |
@@ -233,8 +322,23 @@ retain the generic logger's sensitive-data filtering.
 
 ## Conformance and remaining evidence
 
+- TypeScript typecheck and React Native Codegen parse cover the nullable
+  progress result; JS API tests cover forwarding.
+- Android RequestBody test verifies progress from sink-accepted payload bytes.
+  iOS uses EMASCurl 1.5.5's per-request callback, which counts bytes read into
+  libcurl. Native build and device/network behavior remain unverified here.
 - JS API tests cover capability detection, missing-native Promise rejection,
   supported forwarding, and synchronous native errors becoming rejections.
+- Node tests cover method and response handling, shared admission, upload
+  deadlines and cancellation, file-error logging, proxy preflight and agent
+  cleanup. Upload tests check that the client retains the opened file across
+  admission, closes it on cancellation, and aborts a short body. The file
+  admission tests hold verification and close operations open to exercise the
+  shared limit. Slow-read tests confirm cancellation and timeout settle before
+  the handle closes.
+- After building the package, `node --test tests/node-entrypoints.test.mjs`
+  verifies that the later-loaded Node entry sees a shared queue overflow as a
+  `SniRequestError`. A packed-package smoke test checks NodeNext declarations.
 - Swift validation tests exercise bounded reads after validated files grow or
   become empty, and exact-limit binary contents.
 - Android tests exercise actual RequestBody writes for exact-limit data, growth

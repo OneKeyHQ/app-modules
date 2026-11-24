@@ -9,8 +9,10 @@ import { overlayStore } from '../OverlayStore';
 import {
   ENTRY_ATTRIBUTE,
   getOverlayPageHost,
+  registerOverlayDismissRequester,
   registerOverlayPageHost,
   scheduleOverlayInertSync,
+  syncOverlayInert,
 } from '../web/overlayLayers';
 
 function entry(level: number, seq: number) {
@@ -40,6 +42,7 @@ afterEach(() => {
   ]) {
     overlayStore.finalize(item.id);
   }
+  overlayStore.setFocusedPageHost(undefined);
   jest.restoreAllMocks();
 });
 
@@ -148,4 +151,96 @@ it('restores a non-blocking page entry when the blocker is removed', () => {
   expect(passiveElement.inert).toBe(false);
   expect(content.inert).toBe(false);
   unregister();
+});
+
+it('skips a disconnected top host in favor of the next connected blocker', () => {
+  const app = document.getElementById('root')!;
+  const content = document.createElement('button');
+  const lowerHost = document.createElement('div');
+  const upperHost = document.createElement('div');
+  app.append(content, lowerHost, upperHost);
+  const unregisterLower = registerOverlayPageHost('lower', lowerHost);
+  const unregisterUpper = registerOverlayPageHost('upper', upperHost);
+  const lower = overlayStore.request({
+    id: 'lower-dialog',
+    scope: 'page',
+    hostKey: 'lower',
+    ownerKey: 'lower-page',
+  });
+  const upper = overlayStore.request({
+    id: 'upper-dialog',
+    scope: 'page',
+    hostKey: 'upper',
+    ownerKey: 'upper-page',
+    level: 'secure',
+  });
+  lowerHost.append(entry(100, lower.seq));
+  upperHost.append(entry(300, upper.seq));
+  expect(lowerHost.inert).toBe(true);
+  expect(overlayStore.getBlockingTop()?.id).toBe(upper.id);
+
+  upperHost.remove();
+  syncOverlayInert();
+  expect(overlayStore.getBlockingTop()?.id).toBe(lower.id);
+  expect(overlayStore.resolveBack()).toEqual({ kind: 'dismiss', id: lower.id });
+  expect(app.inert).toBe(false);
+  expect(content.inert).toBe(true);
+  expect(lowerHost.inert).toBe(false);
+
+  unregisterUpper();
+  unregisterLower();
+  expect(overlayStore.resolveBack()).toEqual({ kind: 'pass' });
+  expect(content.inert).toBe(false);
+});
+
+it('keeps a covered root overlay visible and restores isolation and Escape when its route regains focus', () => {
+  const app = document.getElementById('root')!;
+  const mainHost = document.createElement('div');
+  const modalHost = document.createElement('div');
+  app.append(mainHost, modalHost);
+  overlayStore.setFocusedPageHost('modal');
+  const unregisterMain = registerOverlayPageHost('main', mainHost);
+  const unregisterModal = registerOverlayPageHost('modal', modalHost);
+  const dialog = overlayStore.request({
+    id: 'main-dialog',
+    scope: 'page',
+    hostKey: 'main',
+    ownerKey: 'main-screen',
+  });
+  const dialogElement = entry(100, dialog.seq);
+  mainHost.append(dialogElement);
+  const dismiss = jest.fn();
+  const unregisterDismiss = registerOverlayDismissRequester(dialog.id, dismiss);
+  const pressEscape = () =>
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        cancelable: true,
+      })
+    );
+
+  expect(mainHost.inert).toBe(true);
+  expect(modalHost.inert).toBe(false);
+  expect(dialogElement.style.visibility).toBe('');
+  expect(pressEscape()).toBe(true);
+  expect(dismiss).not.toHaveBeenCalled();
+
+  overlayStore.setFocusedPageHost('main');
+  expect(mainHost.inert).toBe(false);
+  expect(modalHost.inert).toBe(true);
+  expect(pressEscape()).toBe(false);
+  expect(dismiss).toHaveBeenCalledWith('back');
+
+  overlayStore.setFocusedPageHost(null);
+  expect(mainHost.inert).toBe(true);
+  expect(modalHost.inert).toBe(true);
+  expect(pressEscape()).toBe(true);
+
+  overlayStore.setFocusedPageHost(undefined);
+  expect(mainHost.inert).toBe(false);
+  expect(modalHost.inert).toBe(true);
+  unregisterDismiss();
+  overlayStore.finalize(dialog.id);
+  unregisterModal();
+  unregisterMain();
 });

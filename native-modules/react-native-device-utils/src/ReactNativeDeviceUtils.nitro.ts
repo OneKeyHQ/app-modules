@@ -156,4 +156,7 @@ export interface ReactNativeDeviceUtils
   // Android Channel & Installer
   getAndroidChannel(): AndroidChannel;
   getInstallerPackageName(): InstallerPackageName;
+
+  /** Returns an AdServices token on iOS 14.3+, or undefined on unsupported platforms. */
+  getAppleAdsAttributionToken(): Promise<string | undefined>;
 }

@@ -70,8 +70,9 @@ password verify, DialogLoading, app lock, Spotlight, in-app notification.
 
 Non-goals:
 
-- Business UI. Titles, buttons, forms, toast cards, the hardware stage morph and
-  the lock screen UI stay React content owned by components and kit.
+- Business UI. Titles, buttons, forms, the hardware stage morph and the lock
+  screen UI stay React content owned by components and kit. Message toast
+  cards are the exception: the platform draws them from data (§5.14).
 - Navigation. Screens and navigation modals stay in react-navigation and
   react-native-screens.
 - Third-party windows such as RN `Modal`, WalletConnect, and system dialogs.
@@ -139,6 +140,10 @@ come only from props.
   separate handler; the old removal cannot invoke or delete the new handler.
 - `dismissAll({ scope, belowLevel, reason })`, `setPageVisible(ownerKey,
 visible)`, `removePage(ownerKey)`.
+- Web navigation calls `setFocusedPageHost(hostKey)` with a root-route host key.
+  `null` makes every page host inactive. The default `undefined` clears
+  the focus restriction, including when navigation unmounts.
+  `isPageHostFocused(hostKey)` reports whether a page host is eligible.
 - `resolveBack(focusedHostKey?)` returns `dismiss(id)`, `block`, or `pass`.
 - `getBlockingTop()` returns the entry that makes everything below it inert.
 - `subscribe` and `getSnapshot` are compatible with `useSyncExternalStore`.
@@ -341,10 +346,16 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   non-terminal re-presentation; clear it on terminal close or invalidation.
 - Preserve existing touch-driven input activation. Removing a non-key window
   MUST NOT change the key window or a surviving first responder. Removing the
-  key window restores the highest-ranked desired-visible, attached, non-closing eligible
-  entry in the same scene, otherwise the app window. Eligible entries are
-  effectively blocking (system sheets always block), or actually contain a
-  first responder; passive toast/debug entries do not win solely by level.
+  key window restores the highest-ranked desired-visible, attached, non-closing
+  eligible entry in the same scene, then the original app window if it is
+  still attached to that scene. When neither target exists, preserve the key
+  ownership of an app or system window after release or retirement. If the
+  scene has no key window or UIKit gives key to an ineligible overlay, use an
+  available visible normal-level app window in the same scene with a root
+  controller and the ability to become key. This fallback also handles an
+  exiting overlay that remains key while it is retained for touches.
+  Eligible entries are effectively blocking (system sheets always block) or
+  contain a first responder. Passive toast/debug entries need a first responder.
   Keyboard restoration may finish after dismissal completion; callers/tests
   requiring keyboard geometry must observe the new keyboard readiness event.
 - Delivered-touch retirement extension (Implemented; thirty native checks and
@@ -359,16 +370,16 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   tracked touch ends or cancels, then fails and resets without recognizing.
   It accepts concurrent touch types with `requiresExclusiveTouchType = false`
   and preserves UIKit's default allowed touch types.
-- Removing an entry while its real app window or any active/retired entry owned
-  by that real host has delivered active touches or
-  an interactive UIKit presentation
-  removes that entry from active ordering and restores key ownership immediately,
-  but retains its exiting window/root/scene, without hiding it, until both the
-  delivered touch set is empty and the interaction finishes or cancels. Touch
-  completion/cancellation and UIKit interaction changes schedule cleanup on the
-  next main turn. Cleanup rechecks the complete current touch set and transition
-  coordinator before releasing
-  that exact window lifetime. A newly interactive transition keeps it retired
+- On removal, the manager updates active ordering and restores key ownership
+  immediately. It keeps the exiting window visible and retains its root
+  controller and scene attachment while the real app window or any active or
+  retired entry of that host has delivered active touches, or while the app
+  window has an interactive UIKit transition. The search covers the root,
+  presented controllers, and child controllers whose loaded views belong to
+  the app window. Touch completion/cancellation and UIKit interaction changes
+  schedule cleanup on the next main turn. Cleanup rechecks the complete current
+  touch set and transition coordinator before releasing that exact window
+  lifetime. A newly interactive transition keeps it retired
   until its own completion; repeated or late callbacks cannot release a new
   entry for the same owner. A new touch beginning after a previous touch ends but
   before queued cleanup keeps the window retired. Overlapping multi-touch can
@@ -376,10 +387,13 @@ not change React ownership. Public APIs, Android/Web, and page scope are unchang
   still releases synchronously. Remove an entry observer only when its window
   is released; remove a real app window's observer only when that host has no
   active or retired entries. Touch callbacks query current host ownership across
-  scenes, rather than binding to the scene of first installation. Moving the
-  same real host to another scene keeps its remaining users protected.
+  scenes using an identity unique to each host window lifetime. Moving the
+  same real host to another scene keeps its remaining users protected. The
+  identity holds a weak reference to the host, so a last-touch check can
+  release a retired window even if the host deallocates before the callback
+  or while the check is queued.
   Reassigning an observed window to a different host does not change its
-  delivered touch context: retain weak prior-host associations until a next-turn
+  delivered touch context. Retain prior host identities until a next-turn
   check finds its complete touch set empty and those hosts' retirements released.
   A new touch during an idle gap still protects a prior host whose context remains
   retired. Touch completion, observer removal and host reassignment wake current
@@ -609,7 +623,15 @@ the first/last child respectively. With no tabbable children, focus stays on
 the entry root. Disabled, negative-tabindex, hidden and inert subtrees are
 excluded. Positive tabindex values precede ordinary DOM-order tab stops.
 Non-blocking, lower, closing, suspended and parked entries MUST NOT run a
-focus loop. Existing focus entry/restore and Escape policies are unchanged.
+focus loop. When a page or global dialog becomes the top blocker, it takes
+focus on its entry root if focus is currently outside the dialog.
+Focus restoration starts after a dialog actually moves focus inside.
+A dialog taking over from an exiting overlay keeps its saved
+opener, or inherits the exiting overlay's restoration target when it has
+none. On exit, focus can return through a chain of nested openers, skipping
+closed overlays and detached targets, when focus is still inside the
+dialog or has fallen back to the document body. An active control outside
+the dialog keeps focus.
 
 A Web backdrop with `dismissOnPress: true` MUST receive pointer events even
 when its entry is non-blocking. This permits a transparent outside-click
@@ -705,6 +727,16 @@ until that owner resumes. Resuming an owner MUST NOT clear isolation imposed by
 a higher blocking entry. Web page isolation compares level first, then request
 order within that level; dismissal restores entries no longer below a blocker.
 
+On Web, a covered root route can keep its page overlays visible. Its overlay
+host is inert, and its entries cannot block the foreground route or consume
+Escape. Switching focus restores eligibility without dismissing or remounting
+entries. Host registration and unregistration recalculate DOM isolation. A
+page entry requires a connected, registered host to block the DOM or consume
+Escape. If its host detaches, the next eligible overlay takes precedence, or
+the page becomes interactive if none remains. Global overlays remain eligible
+regardless of the focused page host. iOS and Android use their native host
+lifecycle for page visibility and back handling.
+
 On Android, a blocking page entry MUST hide underlying page/navigation siblings
 from accessibility while preserving the page host and the blocking entry. Entries
 above it, including non-blocking global overlays, remain accessible. Global
@@ -776,16 +808,18 @@ system multi-scene migration. The default resolver remains `ObjectIdentifier(sce
 Automated (P0):
 
 - `tests/ios/run.sh` compiles the production WindowManager, SheetController and
-  Animation into an isolated UIKit test app. Its original nineteen checks cover bounded/live
-  ordering, key restoration eligibility, owning-entry release, injected scene
+  Animation into an isolated UIKit test app. Checks cover bounded/live ordering,
+  key restoration eligibility, owning-entry release, injected scene
   disconnect/reuse with original-window identity and reentrant-registration
   rejection, conditional original-input focus restoration (including
   higher/foreign/new-input guards), and a native sheet surviving another
-  entry's dismissal. Four focused checks cover interactive retirement after
+  entry's dismissal. Six focused checks cover interactive retirement after
   finish and cancellation, reopening the same owner while the old window is
-  retired, and disconnecting a scene with only a retired window. They use a
-  controlled transition coordinator to test manager lifecycle; the real
-  gesture check is the iOS 27.0 simulator run above.
+  retired, and disconnecting a scene with only a retired window. Four use a
+  controlled transition coordinator to test manager lifecycle. One uses a
+  real contained `UINavigationController` interactive pop to verify retention
+  until cancellation. One ensures unloaded and unattached children do not
+  retain the window or load their views.
   Eight app-touch checks directly drive the production observer's
   `touchesBegan`/`touchesEnded`/`touchesCancelled` and reset with synthetic
   touch objects. They assert passive gesture flags, touch-only retirement,
@@ -794,6 +828,21 @@ Automated (P0):
   and scene-disconnect callback invalidation. They prove manager lifecycle,
   not UIKit delivery or scroll inertia; those are covered separately by the
   local App runtime checks above, with the stated selector-entry limitation.
+  The queued-cleanup fixtures explicitly model reset followed by DOWN on the
+  same observer. When a fixture ends a gesture with UP and later reuses the
+  observer, it waits for UIKit to return the recognizer to the possible state.
+  Host lifetime checks detach and deallocate a real UIWindow on either side of
+  the last touch callback. A separate check verifies UIKit key handoff to an
+  eligible app window while the exiting overlay is still attached for a touch.
+  The two-app-window check verifies that, without an eligible overlay or
+  attached original host, synchronous release preserves the key window UIKit
+  restored even when another app window is the first fallback candidate.
+  The closing-overlay check sets the closing overlay as key to verify the
+  fallback candidate independently of UIKit's release order. It then verifies
+  that releasing a different key overlay leaves the app window key and the
+  closing overlay attached. UIKit's intermediate choice is recorded with the
+  simulator OS version and can vary without failing the check. Synchronous
+  key restoration to the closing overlay was observed on iOS 18.6 and 27.0.
   Sheet checks use `animated: false`; they do not compile the React/Fabric
   Container or replace Gallery coverage of animated reversal/generation races,
   real multi-scene/disconnect, keyboard geometry or accessibility.
@@ -828,7 +877,16 @@ Automated (P0):
   verification pending.
 - `src/__tests__/pageIsolation.web.test.ts` mounts a real React portal in a
   DOM host and verifies late suspension, level ordering and restoration after
-  the blocking entry is removed.
+  the blocking entry is removed. It also verifies host isolation and Escape
+  handling when root-route focus changes or the top page host detaches.
+- `tests/browser/pageIsolation.test.cjs` verifies in Chromium that removing a
+  host while its dialog stays visible restores page clicks and focus, and that
+  a dialog opened on a covered route regains focus and contains Tab when its
+  route returns. It also checks that closing a covered dialog preserves
+  foreground typing and that focus acquired after a route returns can be
+  restored on close. Stacked-dialog cases verify focus when a global dialog
+  becomes the top blocker and restoration after nested and concurrent exits.
+  It uses the same browser dependencies as the toast tests (§5.14).
 - `NativeOverlayAccessibilityIsolationTest` runs six Robolectric cases against
   Android views: page/navigation siblings, entries above the blocker, original
   flags, global/page transitions, detached hosts and changing blockers. These
@@ -946,13 +1004,16 @@ P2 sheet notes:
 - `keepContentMounted` renders content while closed so callers can measure it
   before opening (Popover waits for header / scroll measurements).
 - `pan` dismissals cannot be vetoed; `onRequestDismiss('pan')` is informative.
+- An active iOS NativeList reorder temporarily suppresses the enclosing page
+  sheet's dismiss pan. The sheet owns the latest `dismissOnPanDown` setting
+  throughout the suppression. Releasing the reorder restores eligibility
+  only when the current setting allows it.
 
 P4a toast notes:
 
-- Message toasts (`Toast.success` / `message` / `error` …) keep their
-  libraries (sonner on web, `@backpackapp-io/react-native-toast` on native)
-  and render inside one persistent, non-blocking `toast`-level fullscreen
-  entry (kit `ToastOverlayContainer`). The iOS raise tokens are gone.
+- Message toasts (`Toast.success` / `message` / `error` …) are drawn by the
+  platform from data; see §5.14. The React toast libraries and the persistent
+  `toast`-level fullscreen entry that hosted them are gone.
 - Custom toasts (`Toast.show` / `ShowCustom`) are their own `toast` entries:
   transparent blocking backdrop (tap closes when `dismissOnOverlayPress`),
   `scale 0.8 + offsetY -20 + fade` on `quick`, PanResponder swipe up to
@@ -1256,13 +1317,13 @@ Accepted limitations:
   scroll views. Page sheets should keep scrollable content short or pass
   `dismissOnPanDown={false}`.
 - Custom toasts stack by request order and overlap at the top, as before;
-  message toasts stack inside their libraries.
+  message toasts stack in the platform toaster (§5.14).
 
 Future work (better to have):
 
 - VoiceOver / TalkBack cross-window modality, verified on device.
-- Screen-reader toasts: the native toast library renders nothing under a
-  screen reader today; the toast host should announce content and extend
+- Screen-reader toasts: the native toaster announces each card's text when
+  it appears (§5.14); the lifetime is not yet extended, and the host should
   its timer instead.
 
 Known gaps:
@@ -1307,3 +1368,129 @@ staged version). Following the repository's verification guidance, the entire
 batch advances to `3.0.162-alpha.270`. Existing versions are never overwritten.
 The iOS lockfile failure was only local CocoaPods 1.17.0 versus the Gemfile's
 locked 1.16.2; the actual CI lockfile was adopted, preserving semantic checks.
+
+## 5.14 Message toasts
+
+Message toasts are plain data. `overlayToastStore.show(spec, handlers)` takes
+an `IOverlayToastSpec` (`src/toast/types.ts`) and the platform draws the card:
+DOM on Web, UIKit on iOS, Android views on Android. React draws nothing; the
+only React piece is `OverlayToastHost`, which attaches the renderer.
+
+### Contract
+
+- A spec holds resolved values only: CSS colour strings, points, font sizes,
+  icon names. The package carries no design tokens.
+- Two layouts: `message` (status icon, title, message, action row) and
+  `notification` (round badge, clamped title and message, trailing image,
+  pressable row).
+- Text is paragraphs of runs. A run may set colour, weight, size, underline
+  and `link`; a link is opaque and comes back through `onLink`.
+- Actions are small buttons described by data and report `onAction(id)`.
+  Pressing one does not dismiss the toast.
+- `show` with an id that is on screen updates that card and restarts its
+  lifetime; `update` redraws it (theme or layout change) without restarting.
+- A toast leaves the list when its renderer reports `close`, after the exit.
+  With no renderer attached a dismissal removes it at once. At most 20 toasts
+  are kept; older ones are dropped without animation.
+- Events: `dismiss(reason)` when the card starts leaving (`timeout`, `swipe`,
+  `close`, `programmatic`), `close(reason)` when it is gone, `action`,
+  `link`, `press`.
+- `configure` sets toaster-wide values: position and theme (Web), card colour
+  and content box (native), and the top obstruction the stack rests under.
+
+### Bridge
+
+iOS and Android use one zero-size Fabric component, `RNCNativeOverlayToaster`,
+with two string props (`toasts`, `config`: JSON) and one direct event
+(`onToastEvent { toastId, type, value }`). An infinite duration crosses as
+`-1`. The cards are not children of this view: iOS draws them in a `toast`
+level window from `NativeOverlayWindowManager`, Android in a layer at the
+bottom of the host's `toast` level container, so custom toast entries stay
+above them. Web has no bridge: the DOM renderer subscribes to the store.
+
+Named icons come from `@onekeyfe/react-native-image`'s native registry,
+reached at runtime (Objective-C runtime on iOS, reflection on Android) so this
+package takes no dependency on it; without the registry an icon stays blank.
+On Android the lookup is `OneKeyNamedSVG.INSTANCE` plus its `request` (8
+arguments) and `cancel` methods; the image package's consumer R8 rules keep
+those names, since release app builds minify and would otherwise rename them.
+Web draws an SVG `<use>` of the `href` the caller supplies.
+
+### Platform behaviour
+
+Each platform keeps the look and motion of the renderer it replaced.
+
+| Behaviour | Web | iOS / Android |
+| --- | --- | --- |
+| Position | Per toast or toaster; default bottom-right | Always top-centre |
+| Stack | Newest in front, 3 visible. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Oldest at the top, newest under it, 8 pt apart, all visible |
+| Card | 356 px wide, 16 px padding, themed surface and border, close button | Content box from `contentWidth` plus 16 / 12 pt padding, 8 pt radius, shadow |
+| Enter / exit | 400 ms transform and opacity transition; exit 200 ms | 300 ms quadratic ease-in-out slide from above the top edge, with opacity |
+| `close` reported | 200 ms after the exit starts | 1000 ms after the exit starts |
+| Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed; resuming continues the remaining time |
+| Swipe | Away from the anchored edge (down on bottom groups, up on top groups). Once a vertical swipe starts, only vertical displacement counts. Release dismisses at 20 px or above 0.11 px/ms. | Up; 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far |
+| Top obstruction | Inline `top` on top groups, 220 ms | The whole stack translates, 220 ms |
+| Reduced motion | Transitions off (media query) | Every animation is instant |
+
+On Web, the card captures the pointer after recognizing a swipe. Ordinary
+clicks and taps activate the pressable row, buttons, or links through their
+own handlers. Each press ends independently on release or cancellation.
+Card removal, reuse, or repositioning clears its presses, and window blur
+clears all presses and expansion. A touch drag that did not dismiss the card
+ends the press without creating hover or tap expansion.
+
+Divergences from the renderers replaced:
+
+- Web measures a card's own height. The previous renderer could record a
+  scaled height when several toasts arrived in one tick, which put about 4 px
+  less between cards of an expanded stack.
+- Web starts the enter transition synchronously, so a toast shown while the
+  page is hidden still appears.
+- Native shows toasts under a screen reader and announces their text; the
+  previous renderer drew nothing while a screen reader was on.
+
+### Verification
+
+- Web: `src/__tests__/overlayToast.web.test.ts` covers the store and the DOM
+  renderer. In app-monorepo, 13 scenarios in three captures (wide dark, narrow
+  dark, wide light) matched the previous renderer's card boxes, text line
+  rects, icon and button boxes and computed styles within 0.5 px.
+- Web pointer regression: `tests/browser/overlayToast.test.cjs` exercises
+  browser-generated mouse clicks, touch taps, mixed input, and swipes in
+  Chromium. Run from the package with `node --test tests/browser/overlayToast.test.cjs`.
+  Make `esbuild` and `playwright-core` available via `NODE_PATH` or the local
+  install, and set `CHROMIUM_EXECUTABLE_PATH` if using a system Chrome.
+- iOS: built into app-monorepo and run on an iPhone 17 Pro simulator (iOS
+  26.0) beside the previous renderer. In 13 scenarios the card frames and
+  every text line box matched to the pixel; the only differing pixels were
+  corner anti-aliasing against a differently lit backdrop. Timeout, close
+  callback, action press, notification press, swipe up, press-to-pause with
+  resume, programmatic close, id de-duplication and dismiss by id were
+  exercised with injected touches. Not exercised there: the top obstruction
+  shift, the keyboard limit, dark theme, rotation, iPad and VoiceOver.
+- Android: built into app-monorepo and run on a Pixel 7 emulator (API 35,
+  420 dpi) beside the previous renderer, both with the brand typeface. In 13
+  scenarios, light and dark, every card, text, icon and button frame matched
+  to the pixel; inside the cards the remaining pixel differences were at most
+  12 of 255 (anti-aliasing), apart from the spinner's animation frame. The
+  spinner box is 2 px shorter than before (53x52 against 53x54). Timeout and
+  close callback, action press, notification press, swipe up, a short drag
+  that settles back, press-to-pause with resume, programmatic close, id
+  de-duplication, dismiss by id and stacking order were exercised with
+  injected touches. Not exercised there: the top obstruction shift, the
+  keyboard limit, rotation, tablets, foldables and TalkBack.
+
+iOS text is laid out and drawn with TextKit (no font leading, glyphs centred
+in a fixed line box) because that is what the previous text engine did. Two
+of its habits are kept on purpose: a text box is one pixel taller than its
+lines, and an explicit letter spacing, zero included, turns the font's pair
+kerning off.
+
+Android cards follow the previous layout engine's pixel rounding (Yoga): an
+offset from the parent is rounded half up, a text offset is floored, and a
+size is the difference of the rounded absolute edges, so the card keeps its
+unrounded window position. Text is drawn unhinted at subpixel positions with
+the font size and line height rounded up to whole pixels, underlines are
+stroked at baseline + thickness + 1 px, and a bordered pill's fill is inset
+by 0.8 px, all as React Native draws them. Named icons render at their
+rounded frame size.

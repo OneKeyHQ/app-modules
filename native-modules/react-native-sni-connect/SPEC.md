@@ -175,15 +175,19 @@ export type SniConnectUploadFileRequest = SniConnectRequestBase & {
   MUST resolve symlinks and `..` segments and MUST reject a file outside the
   app's own storage (iOS: the app container and its temporary directory;
   Android: the app data, files, cache, and app-specific external
-  files/cache directories). The target MUST be a readable regular file of
+  files/cache directories; Node/Desktop: the app-owned roots configured through
+  `getAllowedUploadRoots`). The target MUST be a readable regular file of
   1 byte to 20 MiB. Violations reject with `SNI_INVALID_CONFIG` before network
   I/O.
 - The caller supplies `content-type` in `headers`; `Content-Length` stays
   module-owned (Section 4.4).
-- Upload progress events are out of scope. `timeout` covers the whole upload.
-- Status: **Implemented** on iOS and Android React Native. Node/Desktop and
-  shared JS adapters do not expose it; adapters MUST feature-detect it and
-  treat a missing native method as "not supported" (Section 3.3).
+- Native React Native and Node (`@onekeyfe/react-native-sni-connect/node`)
+  upload progress is available through `getUploadProgress(requestId)` (and on
+  Node optionally via `onUploadProgress`) as described in the
+  [native upload contract](docs/SPEC.md). `timeout` covers the whole upload.
+- Status: **Implemented** on iOS, Android React Native, and Node/Desktop
+  (`@onekeyfe/react-native-sni-connect/node`). Adapters MUST feature-detect it
+  and treat a missing method as "not supported" (Section 3.3).
 
 ### 3.2 Response
 
@@ -215,11 +219,17 @@ export type SniConnectResponse = {
 ### 3.3 Methods
 
 - `request(config): Promise<SniConnectResponse>`
-- `uploadFile(config): Promise<SniConnectResponse>` (native React Native only;
-  older native binaries lack it, so callers MUST feature-detect before use)
+- `uploadFile(config): Promise<SniConnectResponse>` (iOS and Android React
+  Native, and `SniNodeClient.uploadFile(config)` via
+  `@onekeyfe/react-native-sni-connect/node`). React Native callers MUST
+  feature-detect older binaries. Node callers MUST configure allowed app storage
+  roots as described in the [Node/Desktop usage guide](README.md#nodedesktop-uploads).
 - `isUploadFileSupported(): boolean` (React Native JS capability probe; see
   [native upload contract](docs/SPEC.md) for unsupported Promise rejection and
   consumption-time file bounds)
+- `getUploadProgress(requestId): Promise<{ bytesSent: number; totalBytes: number } | null>`
+  (React Native with matching JS and native releases, and
+  `SniNodeClient.getUploadProgress(requestId)` via the Node entry)
 - `cancelRequest(requestId): Promise<{ success: boolean }>`
 - `cancelAllRequests(): Promise<{ success: boolean }>`
 - `clearDNSCache(): Promise<{ success: boolean }>`

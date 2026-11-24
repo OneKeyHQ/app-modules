@@ -14,10 +14,10 @@ typedef NS_ENUM(uint8_t, JCOREWireCommand) {
     JCOREWireCommandMobileNumber = 26,
     JCOREWireCommandTagOperation = 28,
     JCOREWireCommandAliasOperation = 29,
-    JCOREWireCommandPushCtrl = 30,
     JCOREWireCommandVoipToken = 33,
     JCOREWireCommandPropertyOperation = 38,
     JCOREWireCommandLiveActivity = 39,
+    JCOREWireCommandPushCtrl = 40,
 };
 
 @interface JCOREWireFrame : NSObject
@@ -144,6 +144,9 @@ typedef NS_ENUM(uint8_t, JCOREWireCommand) {
 // Login (cmd = 1, ver = 27)
 + (NSData *)buildLoginPayloadWithPassword:(NSString *)password
                                    appKey:(NSString *)appKey;
++ (NSData *)buildLoginPayloadWithPassword:(NSString *)password
+                                  appKey:(NSString *)appKey
+                                appState:(uint8_t)appState;
 
 + (NSData *)buildLoginResponsePayloadWithStatusCode:(uint16_t)statusCode
                                           sessionId:(uint32_t)sessionId

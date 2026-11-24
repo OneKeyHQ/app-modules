@@ -101,12 +101,10 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
   override fun setDebugMode(enable: Boolean) {
     JPushInterface.setDebugMode(enable)
     JLogger.setLoggerEnable(enable)
-    OneKeyLog.info(JLogger.TAG, "setDebugMode enable=$enable")
   }
 
   override fun initPush() {
     val ctx = getAppContext()
-    OneKeyLog.info(JLogger.TAG, "initPush")
     JPushInterface.init(ctx)
     flushQueuedNotificationBundle()
     JPushInterface.setNotificationCallBackEnable(ctx, true)
@@ -114,12 +112,12 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
 
   override fun setupWithConfig(appKey: String, channel: String, production: Boolean) {
     val ctx = getAppContext()
-    OneKeyLog.info(JLogger.TAG, "setupWithConfig channel=$channel production=$production")
     if (appKey.isNotEmpty()) {
       JCoreStorage.setAppKey(ctx, appKey)
     }
     if (channel.isNotEmpty()) {
       JPushInterface.setChannel(ctx, channel)
+      OneKeyLog.info(JLogger.TAG, "setupWithConfig channel=$channel")
     }
     JPushInterface.init(ctx)
     flushQueuedNotificationBundle()
@@ -138,7 +136,6 @@ class ReactNativeJpush : HybridReactNativeJpushSpec() {
 
   override fun resumePush() {
     val ctx = getAppContext()
-    OneKeyLog.info(JLogger.TAG, "resumePush")
     JPushInterface.resumePush(ctx)
   }
 

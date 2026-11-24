@@ -21,6 +21,7 @@ typedef void (^JCORETcpResponseHandler)(JCOREWireFrame *_Nullable responseFrame,
                       useSSL:(BOOL)useSSL;
 
 - (void)startIfNeeded;
+- (void)retryPendingPushResume;
 - (void)reconnect;
 - (void)disconnect;
 

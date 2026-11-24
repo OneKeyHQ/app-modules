@@ -28,6 +28,12 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   )
 
+  protected open fun bindContentUpdate(
+    previous: NativeListItem,
+    item: NativeListItem,
+    theme: JSONObject?,
+  ): Boolean = false
+
   protected open fun bindSelectionContent(
     item: NativeListItem,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
@@ -50,7 +56,8 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
   }
 
   protected fun retainBoundItem(item: NativeListItem): Boolean {
-    if (current?.key != item.key) return false
+    if (renderedItem?.key != item.key) return false
+    renderedItem = item
     current = item
     tag = item
     return true
@@ -106,6 +113,8 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
   protected open val pressedColorName = "rowPressedBackground"
   protected open val pressedColorFallback = "#00000017"
   private var current: NativeListItem? = null
+  // Selection can advance current before RecyclerView binds the new content.
+  private var renderedItem: NativeListItem? = null
   protected val boundItem: NativeListItem?
     get() = current
   private var theme: JSONObject? = null
@@ -189,7 +198,8 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     val iconUpdate = NativeListIconUpdate(this)
     try {
 
-    val update = update(current, item)
+    val previous = renderedItem
+    val update = update(previous, item)
     val signature =
       nativeListCanonical(
         JSONObject()
@@ -201,8 +211,13 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
           .put("listStyle", listStyle)
       )
     sourceScale = usesSourceScale(item, useSourceScale)
-    if (update != NativeListRendererUpdate.UNCHANGED || signature != inputSignature) {
-      if (current != null) onBindingInvalidated?.invoke(this, bindingEpoch)
+    val signatureChanged = signature != inputSignature
+    val updatedContentInPlace = update == NativeListRendererUpdate.CONTENT &&
+      !signatureChanged && previous != null && bindContentUpdate(previous, item, theme)
+    if (!updatedContentInPlace &&
+      (update != NativeListRendererUpdate.UNCHANGED || signatureChanged)
+    ) {
+      if (previous != null) onBindingInvalidated?.invoke(this, bindingEpoch)
       bindingEpoch++
       if (update == NativeListRendererUpdate.REPLACE) {
         recycleContent()
@@ -211,6 +226,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
       bindContent(item, theme, layout, checkboxState)
       inputSignature = signature
     }
+    renderedItem = item
     current = item
     tag = item
     this.theme = theme
@@ -409,6 +425,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
     if (current != null) onBindingInvalidated?.invoke(this, bindingEpoch)
     bindingEpoch++
     current = null
+    renderedItem = null
     tag = null
     inputSignature = ""
     touchPressed = false

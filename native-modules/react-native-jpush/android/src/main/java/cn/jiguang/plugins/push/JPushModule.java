@@ -768,41 +768,29 @@ public class JPushModule extends ReactContextBaseJavaModule {
     public static void registerActivityLifecycle(Application application) {
         application.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
             @Override
-            public void onActivityCreated(Activity activity, Bundle bundle) {
-                JLogger.d("onActivityCreated");
-            }
+            public void onActivityCreated(Activity activity, Bundle bundle) {}
 
             @Override
-            public void onActivityStarted(Activity activity) {
-                JLogger.d("onActivityStarted");
-            }
+            public void onActivityStarted(Activity activity) {}
 
             @Override
             public void onActivityResumed(Activity activity) {
-                JLogger.d("onActivityResumed");
                 isAppForeground = true;
             }
 
             @Override
             public void onActivityPaused(Activity activity) {
-                JLogger.d("onActivityPaused");
                 isAppForeground = false;
             }
 
             @Override
-            public void onActivityStopped(Activity activity) {
-                JLogger.d("onActivityStopped");
-            }
+            public void onActivityStopped(Activity activity) {}
 
             @Override
-            public void onActivitySaveInstanceState(Activity activity, Bundle bundle) {
-                JLogger.d("onActivitySaveInstanceState");
-            }
+            public void onActivitySaveInstanceState(Activity activity, Bundle bundle) {}
 
             @Override
-            public void onActivityDestroyed(Activity activity) {
-                JLogger.d("onActivityDestroyed");
-            }
+            public void onActivityDestroyed(Activity activity) {}
         });
     }
 

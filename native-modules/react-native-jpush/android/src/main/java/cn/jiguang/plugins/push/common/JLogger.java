@@ -2,7 +2,7 @@ package cn.jiguang.plugins.push.common;
 
 import android.util.Log;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class JLogger {
@@ -10,8 +10,6 @@ public class JLogger {
     public static final String TAG = "RN-JPush";
 
     private static volatile boolean isLoggerEnable = true;
-    private static final int MAX_RECENT_LOGS = 200;
-    private static final List<String> RECENT_LOGS = new ArrayList<String>();
 
     private static volatile boolean sOneKeyLogResolved = false;
     private static Method sDebugMethod;
@@ -44,26 +42,24 @@ public class JLogger {
         }
     }
 
-    private static void recordRecentLog(String level, String msg) {
-        String entry = "[" + level + "] " + (msg != null ? msg : "");
-        synchronized (RECENT_LOGS) {
-            if (RECENT_LOGS.size() >= MAX_RECENT_LOGS) {
-                RECENT_LOGS.remove(0);
-            }
-            RECENT_LOGS.add(entry);
+    private static Method selectOneKeyMethod(int priority) {
+        switch (priority) {
+            case Log.INFO:
+                return sInfoMethod;
+            case Log.WARN:
+                return sWarnMethod;
+            case Log.ERROR:
+                return sErrorMethod;
+            default:
+                return sDebugMethod;
         }
     }
 
     public static List<String> getRecentLogs() {
-        synchronized (RECENT_LOGS) {
-            return new ArrayList<String>(RECENT_LOGS);
-        }
+        return Collections.emptyList();
     }
 
     public static void clearRecentLogs() {
-        synchronized (RECENT_LOGS) {
-            RECENT_LOGS.clear();
-        }
     }
 
     public static boolean isLoggerEnable() {
@@ -72,19 +68,15 @@ public class JLogger {
 
     public static void setLoggerEnable(boolean loggerEnable) {
         isLoggerEnable = loggerEnable;
-        dispatch("INFO", sInfoMethod, Log.INFO, "setLoggerEnable=" + loggerEnable, true);
     }
 
-    private static void dispatch(String level, Method oneKeyMethod, int priority, String msg, boolean force) {
-        if (!force && !isLoggerEnable) {
+    private static void dispatch(int priority, String msg) {
+        if (!isLoggerEnable) {
             return;
         }
         String safeMsg = msg != null ? msg : "";
-        recordRecentLog(level, safeMsg);
-        if (cn.jiguang.core.JCoreStorage.isLocalLogEnabled(null)) {
-            cn.jiguang.core.JCoreStorage.appendLocalLog("[" + level + "] " + safeMsg);
-        }
         resolveOneKeyLogIfNeeded();
+        Method oneKeyMethod = selectOneKeyMethod(priority);
         if (oneKeyMethod != null) {
             try {
                 oneKeyMethod.invoke(null, TAG, safeMsg);
@@ -99,23 +91,23 @@ public class JLogger {
     }
 
     public static void i(String msg) {
-        dispatch("INFO", sInfoMethod, Log.INFO, msg, false);
+        dispatch(Log.INFO, msg);
     }
 
     public static void d(String msg) {
-        dispatch("DEBUG", sDebugMethod, Log.DEBUG, msg, false);
+        dispatch(Log.DEBUG, msg);
     }
 
     public static void v(String msg) {
-        dispatch("DEBUG", sDebugMethod, Log.VERBOSE, msg, false);
+        dispatch(Log.VERBOSE, msg);
     }
 
     public static void w(String msg) {
-        dispatch("WARN", sWarnMethod, Log.WARN, msg, false);
+        dispatch(Log.WARN, msg);
     }
 
     public static void e(String error) {
-        dispatch("ERROR", sErrorMethod, Log.ERROR, error, false);
+        dispatch(Log.ERROR, error);
     }
 
 }

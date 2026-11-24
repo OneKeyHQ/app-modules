@@ -460,6 +460,7 @@ function bindGallery(
   }
   v.badge.textContent = row.badge?.text ?? '';
   if (row.badge) {
+    v.badge.style.cssText = '';
     Object.assign(v.badge.style, {
       position: 'absolute',
       right: '0',

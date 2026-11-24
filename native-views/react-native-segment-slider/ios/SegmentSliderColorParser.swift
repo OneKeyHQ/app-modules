@@ -100,8 +100,27 @@ final class SegmentSliderUIView: UIControl {
   var onTouchBegan: ((CGFloat) -> Void)?
   /// Touch moved to x (points, view coordinates).
   var onTouchMoved: ((CGFloat) -> Void)?
-  /// Touch ended or was cancelled.
+  /// Touch ended normally.
   var onTouchEnded: (() -> Void)?
+  /// A touch the system cancelled; it never counts as a tap.
+  var onTouchCancelled: (() -> Void)?
+  var onDetach: (() -> Void)?
+  var onAccessibilityStep: ((Bool) -> Void)?
+  var accessibilityValueProvider: (() -> String?)?
+
+  override var accessibilityValue: String? {
+    // Read the current value on demand so drag frames never format a string.
+    get { accessibilityValueProvider?() ?? super.accessibilityValue }
+    set { super.accessibilityValue = newValue }
+  }
+
+  override func accessibilityIncrement() {
+    onAccessibilityStep?(true)
+  }
+
+  override func accessibilityDecrement() {
+    onAccessibilityStep?(false)
+  }
 
   override func layoutSubviews() {
     super.layoutSubviews()
@@ -133,7 +152,9 @@ final class SegmentSliderUIView: UIControl {
     }
   }
 
-  private func unlockAncestorGestures() {
+  /// Re-enables the ancestor pan recognizers; also called when the slider
+  /// cancels its own interaction (for example on `disabled`).
+  func unlockAncestorGestures() {
     for gr in disabledRecognizers {
       gr.isEnabled = true
     }
@@ -162,7 +183,7 @@ final class SegmentSliderUIView: UIControl {
   override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
     super.touchesCancelled(touches, with: event)
     unlockAncestorGestures()
-    onTouchEnded?()
+    onTouchCancelled?()
   }
 
   // If the view is detached mid-drag (e.g. JS unmounts it during a gesture),
@@ -174,6 +195,7 @@ final class SegmentSliderUIView: UIControl {
     super.willMove(toWindow: newWindow)
     if newWindow == nil {
       unlockAncestorGestures()
+      onDetach?()
     }
   }
 
