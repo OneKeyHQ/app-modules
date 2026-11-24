@@ -372,12 +372,16 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
         return;
       }
       acquisition = undefined;
+      const failedToOpen = requestedMedia && !candidate;
       releaseCandidate();
       const code = error instanceof QrScannerError ? error.code : cameraErrorCode(error);
-      if (recovery && code === 'camera-busy' && settlementsAtRecoveryStart !== undefined) {
+      if (
+        recovery && failedToOpen && code === 'camera-busy' && settlementsAtRecoveryStart !== undefined
+      ) {
         interruptedCamera = { ...recovery, blockedAt: settlementsAtRecoveryStart };
         return;
       }
+      if (recovery && interruptedCamera === recovery) interruptedCamera = undefined;
       fail(code, error instanceof Error ? error.message : String(error));
     } finally {
       releaseCandidate();
@@ -392,9 +396,11 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       // An unanswered permission prompt may never settle. Only park a
       // restore after a busy result, and let each stale settlement wake it.
       if (active && !acquisition && interrupted && interrupted.blockedAt !== staleMediaSettlements) {
-        interruptedCamera = undefined;
         if ((!stream || stream === interrupted.stream) && !hasLiveCamera()) {
+          // A newer switch can supersede this restore and still need its target.
           await acquireCamera(interrupted.deviceId, true, interrupted);
+        } else {
+          interruptedCamera = undefined;
         }
       }
     }
