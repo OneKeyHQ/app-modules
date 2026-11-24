@@ -51,7 +51,7 @@
   ],
   "scripts": {
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
-    "prepare": "bob build && cp -r nitrogen lib/nitrogen",
+    "prepare": "bob build && rm -rf lib/nitrogen && cp -r nitrogen lib/nitrogen",
     "nitrogen": "nitrogen",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
@@ -65,14 +65,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OneKeyHQ/native-views/react-native-qr-scanner.git"
+    "url": "git+https://github.com/OneKeyHQ/app-modules.git",
+    "directory": "native-views/react-native-qr-scanner"
   },
   "author": "@onekeyfe <huanming@onekey.so> (https://github.com/OneKeyHQ/app-modules)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/OneKeyHQ/native-views/react-native-qr-scanner/issues"
+    "url": "https://github.com/OneKeyHQ/app-modules/issues"
   },
-  "homepage": "https://github.com/OneKeyHQ/native-views/react-native-qr-scanner#readme",
+  "homepage": "https://github.com/OneKeyHQ/app-modules/tree/main/native-views/react-native-qr-scanner#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
