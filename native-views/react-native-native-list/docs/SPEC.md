@@ -289,10 +289,14 @@ titleSegments?: readonly {
 - Each run uses the title's font family, size and line height, including
   `style.title` and the configured fonts. `tone` picks the primary or secondary
   text color and defaults to the title color; `fontWeight` picks the weight and
-  defaults to the title weight.
+  defaults to the title weight. `style.title` only supplies those defaults: its
+  color and weight never replace a run's own `tone` or `fontWeight`, and its
+  `lineHeight` is the line height of the runs on every platform.
 - The runs share one line. `titleLines` and `style.title.lines` do not apply
-  to them; a row that draws `title` instead (it has `titleMatch`, or is a wallet
-  sidebar row) keeps them for drawing and for measurement.
+  to them, for drawing or for auto-height measurement; a row that draws `title`
+  instead (it has `titleMatch`, or is a wallet sidebar row) keeps them for
+  both. A hard line break inside a run's text is drawn as one space; `title`
+  keeps it for the spoken label.
 - Layout. The runs take the whole width the title line leaves after the
   leading title icon and the title accessories (title icon, title image,
   suffixes, badges), so those accessories sit at the line's end rather than
@@ -304,10 +308,11 @@ titleSegments?: readonly {
   3. The shrinking run gets `min(base, W - sum of the other runs)` and
      truncates with a tail ellipsis; it may shrink to zero width.
   4. When the runs that do not shrink exceed W on their own, the line is cut at
-     its end. Native renderers end the last visible run with an ellipsis; Web
+     its end. Native renderers end the last visible run with an ellipsis, also
+     when the cut falls exactly between two runs and that run fits in full; Web
      clips it. This divergence is accepted: callers avoid the case with
      `maxWidthRatio`.
-- Development validation rejects an empty or oversized list, blank or
+- Development validation rejects an empty, sparse or oversized list, blank or
   oversized text (the 4096-code-unit text bound), unknown keys, tones or
   weights, a ratio outside `(0, 1]`, more than one shrinking run, `titleMatch`
   on the same row (its ranges index `title`), and
@@ -319,16 +324,20 @@ titleSegments?: readonly {
 `identity.titleLeadingIcon` is an optional `{ name, tintColor?,
 accessibilityLabel? }`: a 16-point glyph before the title text or its runs,
 with a 6-point gap, vertically centered on the title line. It keeps its 16
-points: a long title, or its shrinking run, truncates first. The name comes from
-the same closed icon set as `titleIcon`; an unmapped name leaves an empty
-16-point slot. `tintColor` is a hex `#RRGGBB` or `#RRGGBBAA` color and defaults
-to the theme's `iconSubdued`. Without `accessibilityLabel` the glyph is hidden
-from accessibility. It has no action of its own. Development validation
+points: a long title, or its shrinking run, truncates first, and auto-height
+measurement takes the glyph and its gap (22 points) out of the title's width.
+The name comes from the same closed icon set as `titleIcon`; an unmapped name
+leaves an empty 16-point slot, without a fallback text glyph. `tintColor` is a
+hex `#RRGGBB` or `#RRGGBBAA` color and defaults to the theme's `iconSubdued`.
+With `accessibilityLabel` the glyph is an image with that name; without it the
+glyph is hidden from accessibility. It has no action of its own. Development validation
 rejects unknown keys, a blank name, a malformed color and
 `presentation: 'walletSidebar'`; production drops an invalid icon.
 
 Both fields are identity patch fields. Omission in a full snapshot removes
-them; omission in a patch keeps the current value. A production patch that
+them; omission in a patch keeps the current value. Development validation of a
+patch on its own (`validatePatches`, `serializePatches`) applies the rules above
+to a replacement. A production patch that
 supplies an invalid replacement clears the current value, as `null` does, so
 the row shows `title` instead of stale runs or a stale glyph. Rebind and recycle remove the
 previous runs and glyph, so a row without them never shows another row's.
@@ -342,11 +351,13 @@ previous runs and glyph, so a row without them never shows another row's.
 Conformance: `src/validation.ts` (`assertTitleSegments`,
 `assertTitleLeadingIcon`, production sanitizing) with `validation.test.ts`;
 `src/web/templates/IdentityRowRenderer.ts` with `IdentityTitleRunsWeb.test.ts`
-(run styles, flex behavior, accessibility, rebind);
-`ios/NativeListTitleSegmentLayout.swift` (run widths, and when the runs and the
+(run styles under `style.title`, flex behavior, glyph size, accessibility,
+rebind); `ios/NativeListTitleSegmentLayout.swift` (run widths, the overflow
+ellipsis, one-line run text, the glyph's width, and when the runs and the
 glyph show) with the SwiftPM `NativeListTitleSegmentLayoutTests`; the iOS
 leading glyph beside a long plain title, wallet sidebar rows and the measured
-height of a highlighted title with the XCTest
+height of a highlighted title, of a title beside the glyph and of runs with the
+XCTest
 `NativeListIdentityTitleIconLayoutTests`; `NativeListTitleSegmentLayout.kt`
 with the JVM `NativeListTitleSegmentLayoutTest`. iOS, Android and Web runtime acceptance is pending: recipient rows
 with long wallet and account names in both truncation directions, narrow rows,
