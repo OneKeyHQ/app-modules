@@ -1,4 +1,4 @@
-import { applyTextWeight } from './RowText';
+import { applyTextWeight, fontWeight } from './RowText';
 import { applyTabularNumbers, hasExplicitRowHeight } from './RowElements';
 import type {
   IdentityRow,
@@ -63,7 +63,9 @@ function appendTitleRuns(
       document,
       'span',
       'ok-native-list-identity-title-run',
-      segment.text
+      // A run is one line on every platform: `white-space: pre` would turn a
+      // hard break into a second line here.
+      segment.text.replace(/\r\n|[\r\n]/g, ' ')
     );
     // Only the shrinking run gives up width; a cap is a share of the line.
     Object.assign(run.style, {
@@ -528,21 +530,32 @@ function createIdentityRow(
           titleText.appendChild(titleElement.firstChild);
         if (hasTitleRuns) {
           titleText.style.display = 'flex';
+          // Created after the loop above gave the runs' ancestors their share:
+          // without it a ratio would be a share of the text's own width.
+          titleText.style.flex = '1 1 auto';
           titleText.style.minWidth = '0';
         }
         titleElement.removeAttribute('data-nl-slot');
         titleElement.appendChild(titleText);
       }
+      // A label makes the passive glyph an image with that name.
       const icon = primitives.iconAction(
         descriptor.name,
         undefined,
         undefined,
-        descriptor.tintColor
+        descriptor.tintColor,
+        descriptor.accessibilityLabel
       );
       icon.className = 'ok-native-list-identity-title-leading-icon';
-      if (descriptor.accessibilityLabel)
-        icon.setAttribute('aria-label', descriptor.accessibilityLabel);
-      else icon.setAttribute('aria-hidden', 'true');
+      if (!descriptor.accessibilityLabel)
+        icon.setAttribute('aria-hidden', 'true');
+      // The slot is 16px. Host artwork comes at 24px, and a name without
+      // artwork leaves the slot empty rather than a text glyph.
+      const artwork = icon.querySelector('svg');
+      if (artwork) {
+        artwork.setAttribute('width', '16');
+        artwork.setAttribute('height', '16');
+      } else icon.textContent = '';
       titleElement.style.display = 'flex';
       titleElement.style.alignItems = 'center';
       // 6px to the title, whatever gap the title line already has.
@@ -719,9 +732,34 @@ function applyIdentityStyle(body: HTMLElement, row: IdentityRow) {
     body
       .querySelectorAll<HTMLElement>('[data-nl-slot="' + key + '"]')
       .forEach((element) => {
-        applyTextStyleToSlot(element, slotStyle);
+        if (
+          key === 'title' &&
+          element.querySelector('.ok-native-list-identity-title-runs')
+        )
+          applyTitleStyleToRuns(element, slotStyle);
+        else applyTextStyleToSlot(element, slotStyle);
       });
   });
+}
+// With runs, `style.title` only sets what a run inherits: a run that names its
+// tone or weight keeps it, and the runs stay on one line whatever `lines` says.
+function applyTitleStyleToRuns(
+  slot: HTMLElement,
+  style: NativeListTextStyle
+): void {
+  if (style.fontSize !== undefined)
+    slot.style.fontSize = String(style.fontSize) + 'px';
+  if (style.lineHeight !== undefined)
+    slot.style.lineHeight = String(style.lineHeight) + 'px';
+  if (style.fontWeight !== undefined)
+    applyTextWeight(slot, String(fontWeight(style.fontWeight, 400)));
+  if (style.color !== undefined) slot.style.color = style.color;
+  if (style.tabularNumbers !== undefined)
+    slot.style.fontVariantNumeric = style.tabularNumbers
+      ? 'tabular-nums'
+      : 'proportional-nums';
+  if (style.letterSpacing !== undefined)
+    slot.style.letterSpacing = String(style.letterSpacing) + 'px';
 }
 type Views = {
   visual?: {

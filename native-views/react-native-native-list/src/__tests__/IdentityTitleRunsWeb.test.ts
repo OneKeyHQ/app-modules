@@ -33,14 +33,31 @@ function setup() {
   const document = new JSDOM('<!doctype html><body></body>').window.document;
   const primitives = {
     visual: () => undefined,
+    // As the engine's factory: 24px host artwork for a name it knows, a text
+    // glyph for one it does not, and an image role with a label.
     iconAction: (
       name: string,
       _key: unknown,
       _disabled: unknown,
-      tint?: string
+      tint?: string,
+      label?: string
     ) => {
       const icon = document.createElement('span');
       icon.dataset.icon = name;
+      if (name === 'UnknownExampleGlyph') icon.textContent = 'U';
+      else {
+        const svg = document.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'svg'
+        );
+        svg.setAttribute('width', '24');
+        svg.setAttribute('height', '24');
+        icon.appendChild(svg);
+      }
+      if (label) {
+        icon.setAttribute('aria-label', label);
+        icon.setAttribute('role', 'img');
+      }
       if (tint) icon.style.color = tint;
       return icon;
     },
@@ -145,6 +162,57 @@ describe('Web identity title segments', () => {
     expect(title?.style.webkitLineClamp ?? '').toBe('');
     expect(runsOf(body)).toHaveLength(3);
   });
+
+  it('applies the title style as what runs inherit, not over their own tone and weight', () => {
+    const body = setup().render(
+      recipient({
+        titleSegments: [...segments, { text: ' (2)' }],
+        style: {
+          title: {
+            color: '#123456',
+            fontWeight: 'bold',
+            fontSize: 18,
+            lines: 2,
+          },
+        },
+      })
+    );
+    const title = body.querySelector<HTMLElement>('[data-nl-slot="title"]');
+    const runs = runsOf(body);
+
+    expect(title?.style.color).toBe('rgb(18, 52, 86)');
+    expect(title?.style.fontWeight).toBe('700');
+    expect(title?.style.fontSize).toBe('18px');
+    expect(runs[0]?.style.color).toBe('var(--nl-secondary)');
+    expect(runs[0]?.style.fontWeight).toBe('400');
+    expect(runs[2]?.style.color).toBe('var(--nl-primary)');
+    expect(runs[2]?.style.fontWeight).toBe('500');
+    // A run without its own tone and weight takes the title's.
+    expect(runs[3]?.style.color).toBe('');
+    expect(runs[3]?.style.fontWeight).toBe('');
+    // Still one line of runs.
+    expect(title?.style.display).toBe('flex');
+    expect(title?.style.webkitLineClamp ?? '').toBe('');
+    expect(runs.every((run) => run.style.whiteSpace === 'pre')).toBe(true);
+  });
+
+  it('folds a hard line break in a run into a space', () => {
+    const body = setup().render(
+      recipient({
+        title: 'Main\nWallet',
+        titleSegments: [{ text: 'Main\nWallet' }, { text: 'a\r\nb' }],
+      })
+    );
+
+    expect(runsOf(body).map((run) => run.textContent)).toEqual([
+      'Main Wallet',
+      'a b',
+    ]);
+    // The spoken label is the title as given.
+    expect(
+      body.querySelector('.ok-native-list-identity-title-spoken')?.textContent
+    ).toBe('Main\nWallet');
+  });
 });
 
 describe('Web identity title leading icon', () => {
@@ -182,6 +250,7 @@ describe('Web identity title leading icon', () => {
     );
 
     expect(icon?.getAttribute('aria-label')).toBe('Address book');
+    expect(icon?.getAttribute('role')).toBe('img');
     expect(icon?.getAttribute('aria-hidden')).toBeNull();
     expect(icon?.style.color).toBe('rgb(141, 141, 141)');
     // The title line already spaces its items 4px apart.
@@ -201,6 +270,29 @@ describe('Web identity title leading icon', () => {
       'ok-native-list-identity-title-leading-icon'
     );
     expect(runsOf(body)).toHaveLength(3);
+    // The text beside the glyph takes the rest of the line, so a cap stays a
+    // share of the line.
+    const titleText = titleLine?.querySelector<HTMLElement>(
+      '.ok-native-list-identity-title-text'
+    );
+    expect(titleText?.style.flex).toBe('1 1 auto');
+    expect(titleText?.style.minWidth).toBe('0');
+  });
+
+  it('draws host artwork at 16px and leaves the slot empty without it', () => {
+    const { render } = setup();
+    const known = render(
+      recipient({ titleLeadingIcon: { name: 'BookOpenOutline' } })
+    ).querySelector<HTMLElement>('.ok-native-list-identity-title-leading-icon');
+    const unknown = render(
+      recipient({ titleLeadingIcon: { name: 'UnknownExampleGlyph' } })
+    ).querySelector<HTMLElement>('.ok-native-list-identity-title-leading-icon');
+
+    expect(known?.querySelector('svg')?.getAttribute('width')).toBe('16');
+    expect(known?.querySelector('svg')?.getAttribute('height')).toBe('16');
+    expect(unknown).not.toBeNull();
+    expect(unknown?.textContent).toBe('');
+    expect(unknown?.childElementCount).toBe(0);
   });
 });
 
