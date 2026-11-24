@@ -28,7 +28,7 @@ class HybridQrImageDecoder: HybridQrImageDecoderSpec {
     guard maxPixels.isFinite, maxPixels >= 1 else {
       throw RuntimeError.error(withMessage: "invalid-image: maxPixels must be at least 1")
     }
-    let pixelBudget = min(Int(maxPixels), Self.maxPixelsCeiling)
+    let pixelBudget = Int(min(maxPixels, Double(Self.maxPixelsCeiling)))
     let promise = Promise<QrImageDecodeResult>()
     Self.queue.async {
       do {

@@ -144,7 +144,8 @@ final class QrImageDecodingPipelineTests: XCTestCase {
     _ = try QrImageDecodingPipeline(engines: [engine])
       .decode(url: fixture("no-qr.png"), maxPixels: 10_000)
     let original = try XCTUnwrap(engine.calls.first)
-    XCTAssertLessThanOrEqual(original.width * original.height, 10_000)
+    XCTAssertTrue(engine.calls.allSatisfy { $0.width * $0.height <= 10_000 })
+    XCTAssertEqual(engine.calls.count, 3, "over-budget padding is skipped")
     // Aspect ratio 4:3 is kept.
     XCTAssertEqual(Double(original.width) / Double(original.height), 4.0 / 3.0, accuracy: 0.05)
   }

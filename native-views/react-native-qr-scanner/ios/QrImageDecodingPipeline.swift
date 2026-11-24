@@ -71,7 +71,7 @@ final class QrImageDecodingPipeline {
     let image = try loadOriented(url: url, maxPixels: maxPixels)
     let passes: [(String, () -> CGImage?)] = [
       ("original", { image }),
-      ("padded", { self.padded(image) }),
+      ("padded", { self.padded(image, maxPixels: maxPixels) }),
       ("grayscale", { self.grayscale(image, inverted: false) }),
       ("inverted", { self.grayscale(image, inverted: true) }),
     ]
@@ -112,7 +112,8 @@ final class QrImageDecodingPipeline {
       throw QrImageDecodeError.resourceLimit("image has \(width)x\(height) pixels")
     }
     let scale = min(1, (Double(maxPixels) / sourcePixels).squareRoot())
-    let maxSide = max(1, Int((Double(max(width, height)) * scale).rounded(.down)))
+    let scaledSide = Int((Double(max(width, height)) * scale).rounded(.down))
+    let maxSide = max(1, min(maxPixels, scaledSide))
     let thumbnailOptions =
       [
         kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -129,11 +130,11 @@ final class QrImageDecodingPipeline {
 
   /// Adds a white quiet zone; codes rendered edge to edge (no margin) often
   /// fail to locate without one.
-  private func padded(_ image: CGImage) -> CGImage? {
+  private func padded(_ image: CGImage, maxPixels: Int) -> CGImage? {
     let margin = max(16, Int(Double(max(image.width, image.height)) * Self.paddingRatio))
     let width = image.width + margin * 2
     let height = image.height + margin * 2
-    guard
+    guard width <= maxPixels / height,
       let context = CGContext(
         data: nil, width: width, height: height, bitsPerComponent: 8,
         bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
