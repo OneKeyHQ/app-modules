@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'" />
+<title>electron-qr-scanner camera</title>
+<style>
+  html,body{margin:0;background:#111;color:#fff;font:14px "Segoe UI",sans-serif}
+  canvas{width:100%;display:block}
+  #bar{position:fixed;left:0;right:0;top:0;padding:8px 12px;background:#000c;display:flex;gap:8px;align-items:center}
+  #status{position:fixed;left:0;right:0;bottom:0;padding:8px 12px;background:#000c;white-space:pre-wrap;word-break:break-all}
+</style>
+<div id="bar">
+  <label for="camera">Camera:</label>
+  <select id="camera"></select>
+</div>
+<canvas id="preview" width="1280" height="720"></canvas>
+<div id="status">starting…</div>
