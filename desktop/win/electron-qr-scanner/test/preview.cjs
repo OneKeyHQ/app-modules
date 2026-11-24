@@ -28,8 +28,15 @@ app.whenReady().then(async () => {
     await win.loadFile(join(__dirname, "preview.html"));
 
     let drawn = 0;
+    let urDone = false;
+    let finishPreview;
+    const previewReady = new Promise((resolve) => { finishPreview = resolve; });
+    const finishIfReady = () => {
+      if (drawn >= 10 && urDone) finishPreview();
+    };
     ipcMain.on("preview-drawn", (_event, count) => {
       drawn = count;
+      finishIfReady();
     });
 
     let inFlight = false;
@@ -38,50 +45,55 @@ app.whenReady().then(async () => {
     let skipped = 0;
     const diagnostics = [];
     const decoder = new URDecoder();
-    let urDone = false;
-    let capture;
-    const done = new Promise((resolve, reject) => {
-      capture = api.createCapture({
-        source: { kind: "file", path: join(videoFixtures, "animated-ur.mp4"), loop: true },
-        onDiagnostic: (evt) => diagnostics.push(evt),
-        onText: (text) => {
-          if (urDone) return;
-          decoder.receivePart(text.toLowerCase());
-          urDone = decoder.isComplete();
-        },
-        onError: reject,
-        onFrame: (frame) => {
-          maxLent = Math.max(maxLent, capture.lentFrames());
-          if (inFlight || win.isDestroyed()) {
-            skipped += 1;
-            frame.release();
-            return;
-          }
-          inFlight = true;
-          const imported = sharedTexture.importSharedTexture({
-            textureInfo: {
-              pixelFormat: "bgra",
-              codedSize: { width: frame.width, height: frame.height },
-              handle: { ntHandle: frame.ntHandle },
-            },
-            allReferencesReleased: () => frame.release(),
+    let rejectPreview;
+    const previewFailure = new Promise((_resolve, reject) => { rejectPreview = reject; });
+    const capture = api.createCapture({
+      source: { kind: "file", path: join(videoFixtures, "animated-ur.mp4"), loop: true },
+      onDiagnostic: (evt) => diagnostics.push(evt),
+      onText: (text) => {
+        if (urDone) return;
+        decoder.receivePart(text.toLowerCase());
+        urDone = decoder.isComplete();
+        finishIfReady();
+      },
+      onError: rejectPreview,
+      onFrame: (frame) => {
+        maxLent = Math.max(maxLent, capture.lentFrames());
+        if (inFlight || win.isDestroyed()) {
+          skipped += 1;
+          frame.release();
+          return;
+        }
+        inFlight = true;
+        const imported = sharedTexture.importSharedTexture({
+          textureInfo: {
+            pixelFormat: "bgra",
+            codedSize: { width: frame.width, height: frame.height },
+            handle: { ntHandle: frame.ntHandle },
+          },
+          allReferencesReleased: () => frame.release(),
+        });
+        sharedTexture
+          .sendSharedTexture({ frame: win.webContents.mainFrame, importedSharedTexture: imported })
+          .then(() => {
+            sent += 1;
+          })
+          .catch(rejectPreview)
+          .finally(() => {
+            imported.release();
+            inFlight = false;
           });
-          sharedTexture
-            .sendSharedTexture({ frame: win.webContents.mainFrame, importedSharedTexture: imported })
-            .then(() => {
-              sent += 1;
-            })
-            .catch(reject)
-            .finally(() => {
-              imported.release();
-              inFlight = false;
-            });
-        },
-      });
-      setTimeout(resolve, 4_000);
+      },
     });
+    const timeout = setTimeout(() => rejectPreview(new Error(
+      `Preview timed out after drawing ${drawn} frames (UR complete: ${urDone})`,
+    )), 30_000);
     capture.start();
-    await done;
+    try {
+      await Promise.race([previewReady, previewFailure]);
+    } finally {
+      clearTimeout(timeout);
+    }
 
     const image = await win.webContents.capturePage();
     const saveIndex = process.argv.indexOf("--save");
