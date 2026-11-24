@@ -89,6 +89,8 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let canvas: HTMLCanvasElement | OffscreenCanvas | undefined;
   let engines: QrImageEngine[] = [];
   let deviceId = source.kind === 'camera' ? source.deviceId : undefined;
+  /** The camera of the current stream; undefined for the default camera. */
+  let streamDeviceId: string | undefined;
   let lastFrameText: string | undefined;
   let lastFrameTextAt = 0;
 
@@ -195,7 +197,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     stream = undefined;
   }
 
-  return {
+  const scanner: WebQrScanner = {
     async start() {
       if (disposed) throw new QrScannerError('decoder-unavailable', 'The scanner was disposed');
       cancelSchedule();
@@ -207,31 +209,49 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
         fail('decoder-unavailable', error instanceof Error ? error.message : String(error));
         return;
       }
+      // The camera this start opens; switchCamera() may change `deviceId`
+      // while the stream is still being acquired.
+      const requestedDeviceId = deviceId;
       if (source.kind === 'camera') {
         if (!navigator.mediaDevices?.getUserMedia) {
           fail('no-camera', 'getUserMedia is not available');
           return;
         }
         try {
-          const constraints: MediaStreamConstraints = {
+          const constraintsFor = (id: string | undefined): MediaStreamConstraints => ({
             audio: false,
             video: {
-              deviceId: deviceId ? { exact: deviceId } : undefined,
-              facingMode: deviceId ? undefined : { ideal: 'environment' },
+              deviceId: id ? { exact: id } : undefined,
+              facingMode: id ? undefined : { ideal: 'environment' },
               width: { ideal: 1280 },
               height: { ideal: 720 },
             },
+          });
+          const open = async (id: string | undefined) => {
+            try {
+              // The current camera stays on until the next one delivers, so
+              // a switch does not flash black.
+              return await navigator.mediaDevices.getUserMedia(constraintsFor(id));
+            } catch (error) {
+              // Some devices open one camera at a time: release, then retry.
+              if (!stream || cameraErrorCode(error) !== 'camera-busy') throw error;
+              releaseCamera();
+              return navigator.mediaDevices.getUserMedia(constraintsFor(id));
+            }
           };
           let next: MediaStream;
+          let nextDeviceId = requestedDeviceId;
           try {
-            // The current camera stays on until the next one delivers, so a
-            // switch does not flash black.
-            next = await navigator.mediaDevices.getUserMedia(constraints);
+            next = await open(requestedDeviceId);
           } catch (error) {
-            // Some devices open one camera at a time: release, then retry.
-            if (!stream || cameraErrorCode(error) !== 'camera-busy') throw error;
-            releaseCamera();
-            next = await navigator.mediaDevices.getUserMedia(constraints);
+            // A remembered camera that is no longer connected: use the
+            // default camera, as the native scanners do.
+            const name = (error as { name?: string })?.name;
+            if (!requestedDeviceId || (name !== 'OverconstrainedError' && name !== 'NotFoundError')) {
+              throw error;
+            }
+            nextDeviceId = undefined;
+            next = await open(undefined);
           }
           if (runGeneration !== generation || disposed) {
             next.getTracks().forEach((track) => track.stop());
@@ -239,6 +259,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
           }
           releaseCamera();
           stream = next;
+          streamDeviceId = nextDeviceId;
           video.srcObject = next;
           video.muted = true;
           video.playsInline = true;
@@ -266,6 +287,18 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
         }
       }
       if (runGeneration !== generation || disposed) return;
+      if (
+        source.kind === 'camera' &&
+        deviceId !== requestedDeviceId &&
+        deviceId !== streamDeviceId
+      ) {
+        // switchCamera() chose another camera during acquisition. Not when it
+        // asked for the camera that is already open (the default after a
+        // fallback); a fallback alone leaves `deviceId` as requested.
+        // A camera chosen during acquisition: open it now instead.
+        await scanner.start();
+        return;
+      }
       lastTime = -1;
       lastFrameText = undefined;
       handlers.onReady?.();
@@ -273,8 +306,12 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     },
     async switchCamera(nextDeviceId?: string) {
       deviceId = nextDeviceId;
+      // Without a stream, a start in flight picks the new camera up when it
+      // finishes; a stopped scanner uses it on the next start().
       if (disposed || source.kind !== 'camera' || !stream) return;
-      await this.start();
+      // Already showing it (e.g. the default camera after a fallback).
+      if (nextDeviceId === streamDeviceId) return;
+      await scanner.start();
     },
     stop() {
       generation += 1;
@@ -292,4 +329,5 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       releaseCamera();
     },
   };
+  return scanner;
 }
