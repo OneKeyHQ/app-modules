@@ -325,16 +325,19 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       if (permissionDenied) return
       val wait = PermissionWait()
       permissionWait = wait
-      wait.cancel = QrCameraPermission.request(activity) { granted ->
+      wait.cancel = QrCameraPermission.request(activity, container::hasWindowFocus) { result ->
         main.post {
           if (permissionWait !== wait) return@post
           permissionWait = null
           if (!shouldRun || dropped) return@post
-          if (granted) {
-            start()
-          } else {
-            permissionDenied = true
-            emitError("permission-denied", "Camera access was denied", gate.currentGeneration)
+          when (result) {
+            QrCameraPermission.Result.GRANTED -> start()
+            QrCameraPermission.Result.DENIED -> {
+              permissionDenied = true
+              emitError("permission-denied", "Camera access was denied", gate.currentGeneration)
+            }
+            QrCameraPermission.Result.CANCELLED ->
+              emitError("camera-busy", "The camera permission prompt could not open", gate.currentGeneration)
           }
         }
       }

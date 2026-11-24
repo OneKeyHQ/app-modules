@@ -216,6 +216,49 @@ describe('createWebQrScanner camera start', () => {
     }
   });
 
+  it.each([false, true])('waits for the superseded camera before restoring the preview (stopped=%s)', async (stopped) => {
+    const original = fakeStream();
+    const stale = fakeStream();
+    const recovered = fakeStream();
+    const openingStale = deferred<unknown>();
+    const calls: string[] = [];
+    const busy = Object.assign(new Error('camera busy'), { name: 'NotReadableError' });
+    const open = jest.fn((constraints: MediaStreamConstraints) => {
+      const { deviceId } = constraints.video as MediaTrackConstraints;
+      calls.push((deviceId as { exact: string }).exact);
+      if (calls.length === 1) return Promise.resolve(original.stream);
+      if (calls.length === 2) return openingStale.promise;
+      if (stale.track.stop.mock.calls.length === 0) return Promise.reject(busy);
+      return Promise.resolve(recovered.stream);
+    });
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true, value: { getUserMedia: open },
+    });
+    const video = fakeVideo(async () => {});
+    const onError = jest.fn();
+    const scanner = createWebQrScanner({
+      video, mode: 'auto', source: { kind: 'camera', deviceId: 'camera-a' }, onError,
+    });
+    try {
+      await scanner.start();
+      const switchB = scanner.switchCamera('camera-b');
+      while (calls.length < 2) await new Promise((resolve) => setImmediate(resolve));
+      original.track.readyState = 'ended';
+      await scanner.switchCamera('camera-c');
+      expect(calls).toEqual(['camera-a', 'camera-b', 'camera-c', 'camera-c']);
+      expect(onError).toHaveBeenCalledTimes(1);
+
+      if (stopped) scanner.stop();
+      openingStale.resolve(stale.stream);
+      await switchB;
+      expect(stale.track.stop).toHaveBeenCalledTimes(1);
+      expect(calls.slice(4)).toEqual(stopped ? [] : ['camera-a']);
+      expect(video.srcObject).toBe(stopped ? null : recovered.stream);
+    } finally {
+      scanner.dispose();
+    }
+  });
+
   it('maps getUserMedia errors to error codes', async () => {
     for (const [name, code] of [
       ['NotAllowedError', 'permission-denied'],

@@ -82,6 +82,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let disposed = false;
   let active = false;
   let acquisition: { deviceId?: string; cancelPreview?: () => void } | undefined;
+  let mediaAcquisitions = 0;
   const usesBuiltInSession = !handlers.onFrameText || !!handlers.onResult || !!handlers.onProgress;
   let stream: MediaStream | undefined;
   let interruptedCamera: { stream: MediaStream; deviceId?: string } | undefined;
@@ -265,7 +266,10 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
         throw new QrScannerError('no-camera', 'getUserMedia is not available');
       }
       const open = (id?: string) => {
-        requestedMedia = true;
+        if (!requestedMedia) {
+          requestedMedia = true;
+          mediaAcquisitions += 1;
+        }
         return navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
@@ -341,6 +345,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       streamDeviceId = attempt.deviceId;
       candidate = undefined;
       acquisition = undefined;
+      interruptedCamera = undefined;
       superseded?.getTracks().forEach((track) => track.stop());
       if (preview !== video) {
         preview.srcObject = null;
@@ -362,12 +367,13 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
         error instanceof Error ? error.message : String(error));
     } finally {
       releaseCandidate();
-      // A stale request can preempt the working camera while the newest
-      // request is still opening. Keep that recovery pending until it settles.
+      // Wait until the current switch settles and stale candidates release
+      // the camera before consuming the recovery target.
       if (reconcileAfterRelease && active && stream && !hasLiveCamera()) {
         interruptedCamera = { stream, deviceId: streamDeviceId };
       }
-      if (active && !acquisition && interruptedCamera) {
+      if (requestedMedia) mediaAcquisitions -= 1;
+      if (active && !acquisition && mediaAcquisitions === 0 && interruptedCamera) {
         const interrupted = interruptedCamera;
         interruptedCamera = undefined;
         if ((!stream || stream === interrupted.stream) && !hasLiveCamera()) {

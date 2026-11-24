@@ -249,8 +249,15 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
   checked before permission. Overlapping scanner views share a request per
   activity. Activity Result Registry hosts use a dedicated result callback
   that is independent of React Native's permission listener and modal focus.
+  An empty Android permission result means the prompt was cancelled, for
+  example when a different permission prompt was already in flight. The
+  scanner keeps one shared retry pending while views are waiting and retries
+  when the host is resumed and its activity or scanner window has focus.
+  After five minutes of repeated or blocked
+  retries it reports `camera-busy` without recording a denial.
   Legacy `PermissionAwareActivity` hosts retain a lost-callback deadline
-  after 60 s in the foreground, with a five-minute backstop. At expiry the
+  after 60 s with window focus on Activity hosts and RESUMED state where
+  available, with a five-minute backstop. At expiry the
   scanner rechecks the grant and releases the shared request. Deactivation
   releases the view's registration, and host destruction clears the request.
   Live decoder failures report `decoder-unavailable` at most once per
@@ -341,9 +348,10 @@ createWebQrScanner({
   an ended stream for this retry. While stopped, selection is saved for
   `start()`. A newer selection supersedes pending acquisition, including a
   return to the current camera. If a stale request ends the working track,
-  the scanner releases the stale stream and keeps recovery pending until the
-  newest switch settles. If that switch did not replace the ended track,
-  the scanner attempts to restore the last committed camera once. Stop and
+  the scanner keeps recovery pending until the newest switch settles and
+  superseded camera acquisitions release any streams they obtained. If the
+  newest switch did not replace the ended track, the scanner attempts to
+  restore the last committed camera once after those releases. Stop and
   disposal clear pending recovery. Each camera-change subscription
   has independent cleanup. On startup, a missing remembered ID falls back
   to the default. Cancellation prevents later permission requests and
