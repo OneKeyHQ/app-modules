@@ -153,7 +153,12 @@ describe('createWebQrScanner camera start', () => {
     }
   });
 
-  it.each([false, true])('keeps recovery pending through the newest switch (success=%s)', async (success) => {
+  it.each([
+    { label: 'unavailable camera', busy: false, success: false },
+    { label: 'successful switch', busy: false, success: true },
+    { label: 'successful busy retry', busy: true, success: true },
+    { label: 'failed busy retry', busy: true, success: false },
+  ])('keeps recovery pending through the newest switch ($label)', async ({ busy, success }) => {
     const original = fakeStream();
     const stale = fakeStream();
     const newest = fakeStream();
@@ -161,12 +166,16 @@ describe('createWebQrScanner camera start', () => {
     const openingStale = deferred<unknown>();
     const openingNewest = deferred<unknown>();
     const calls: (string | undefined)[] = [];
+    const busyError = () => Object.assign(new Error('camera busy'), { name: 'NotReadableError' });
     const open = jest.fn((constraints: MediaStreamConstraints) => {
       const { deviceId } = constraints.video as MediaTrackConstraints;
       calls.push((deviceId as { exact?: string }).exact);
       if (calls.length === 1) return Promise.resolve(original.stream);
       if (calls.length === 2) return openingStale.promise;
       if (calls.length === 3) return openingNewest.promise;
+      if (busy && calls.length === 4) {
+        return success ? Promise.resolve(newest.stream) : Promise.reject(busyError());
+      }
       return Promise.resolve(recovered.stream);
     });
     Object.defineProperty(navigator, 'mediaDevices', {
@@ -191,15 +200,17 @@ describe('createWebQrScanner camera start', () => {
       expect(stale.track.stop).toHaveBeenCalledTimes(1);
       expect(calls).toEqual(['camera-a', 'camera-b', 'camera-c']);
 
-      if (success) openingNewest.resolve(newest.stream);
+      if (busy) openingNewest.reject(busyError());
+      else if (success) openingNewest.resolve(newest.stream);
       else openingNewest.reject(Object.assign(new Error('disconnected'), { name: 'NotFoundError' }));
       await switchC;
 
       expect(video.srcObject).toBe(success ? newest.stream : recovered.stream);
       expect(onError).toHaveBeenCalledTimes(success ? 0 : 1);
-      expect(calls).toEqual(success
-        ? ['camera-a', 'camera-b', 'camera-c']
-        : ['camera-a', 'camera-b', 'camera-c', 'camera-a']);
+      const expected = ['camera-a', 'camera-b', 'camera-c'];
+      if (busy) expected.push('camera-c');
+      if (!success) expected.push('camera-a');
+      expect(calls).toEqual(expected);
     } finally {
       scanner.dispose();
     }

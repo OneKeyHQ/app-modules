@@ -248,9 +248,10 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
   the camera pauses in the background. Missing hardware (`no-camera`) is
   checked before permission; permission is requested through React Native's
   `PermissionAwareActivity`. Overlapping views share one permission request
-  per activity. The request expires after 60 s if React Native loses its
-  callback. Expiry checks the current grant and releases the shared request
-  so a later activation can start a new one. A deactivated or disposed view
+  per activity. If React Native loses its callback, the request expires after
+  60 s with the activity in focus. Time in the system prompt or background
+  does not count. Expiry checks the current grant and releases the shared
+  request so a later activation can start a new one. A deactivated or disposed view
   releases its registration.
   Live decoder failures report `decoder-unavailable` at most once per
   second per binding; a failed frame is closed and analysis can continue.
@@ -334,8 +335,10 @@ createWebQrScanner({
   permission) and infers position from the label. `subscribeWebCameraChanges()`
   listens to `devicechange`. `switchCamera(deviceId?)` stages a replacement
   until it produces a frame. It retains the running stream on failure when
-  the cameras can coexist. On a busy error, the current request may release
-  its old stream and retry once. While stopped, selection is saved for
+  the cameras can coexist. On a busy error, the current request can release
+  the stream it was replacing and retry once, including when that stream
+  already ended. Recovery retains the last committed camera when releasing
+  an ended stream for this retry. While stopped, selection is saved for
   `start()`. A newer selection supersedes pending acquisition, including a
   return to the current camera. If a stale request ends the working track,
   the scanner releases the stale stream and keeps recovery pending until the

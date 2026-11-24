@@ -84,7 +84,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let acquisition: { deviceId?: string; cancelPreview?: () => void } | undefined;
   const usesBuiltInSession = !handlers.onFrameText || !!handlers.onResult || !!handlers.onProgress;
   let stream: MediaStream | undefined;
-  let interruptedStream: MediaStream | undefined;
+  let interruptedCamera: { stream: MediaStream; deviceId?: string } | undefined;
   let frameHandle: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let analysing = false;
@@ -238,7 +238,11 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   const hasLiveCamera = () =>
     stream?.getVideoTracks().some((track) => track.readyState === 'live') ?? false;
 
-  async function acquireCamera(requestedId: string | undefined, allowDefault: boolean) {
+  async function acquireCamera(
+    requestedId: string | undefined,
+    allowDefault: boolean,
+    recovering = false
+  ) {
     invalidateAcquisition();
     const attempt: NonNullable<typeof acquisition> = { deviceId: requestedId };
     acquisition = attempt;
@@ -281,7 +285,10 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
           return;
         }
         const code = cameraErrorCode(error);
-        if (previous && stream === previous && hasLiveCamera() && code === 'camera-busy') {
+        if (previous && stream === previous && code === 'camera-busy') {
+          if (!recovering && !hasLiveCamera()) {
+            interruptedCamera = { stream: previous, deviceId: streamDeviceId };
+          }
           generation += 1;
           cancelSchedule();
           releaseCamera();
@@ -358,13 +365,13 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       // A stale request can preempt the working camera while the newest
       // request is still opening. Keep that recovery pending until it settles.
       if (reconcileAfterRelease && active && stream && !hasLiveCamera()) {
-        interruptedStream = stream;
+        interruptedCamera = { stream, deviceId: streamDeviceId };
       }
-      if (active && !acquisition && interruptedStream) {
-        const interrupted = interruptedStream;
-        interruptedStream = undefined;
-        if (stream === interrupted && !hasLiveCamera()) {
-          await acquireCamera(streamDeviceId, true);
+      if (active && !acquisition && interruptedCamera) {
+        const interrupted = interruptedCamera;
+        interruptedCamera = undefined;
+        if ((!stream || stream === interrupted.stream) && !hasLiveCamera()) {
+          await acquireCamera(interrupted.deviceId, true, true);
         }
       }
     }
@@ -401,7 +408,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     },
     stop() {
       active = false;
-      interruptedStream = undefined;
+      interruptedCamera = undefined;
       generation += 1;
       invalidateAcquisition();
       cancelSchedule();

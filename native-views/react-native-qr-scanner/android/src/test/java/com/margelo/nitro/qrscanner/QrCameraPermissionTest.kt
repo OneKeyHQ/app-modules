@@ -1,5 +1,6 @@
 package com.margelo.nitro.qrscanner
 
+import android.app.Activity as AndroidActivity
 import android.content.pm.PackageManager
 import android.os.Looper
 import com.facebook.react.modules.core.PermissionAwareActivity
@@ -8,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -35,6 +37,24 @@ class QrCameraPermissionTest {
     fun answer(granted: Boolean, requestCode: Int = code): Boolean {
       val result = if (granted) PackageManager.PERMISSION_GRANTED else PackageManager.PERMISSION_DENIED
       return reply?.onRequestPermissionsResult(requestCode, emptyArray(), intArrayOf(result)) ?: false
+    }
+  }
+
+  class PromptActivity : AndroidActivity(), PermissionAwareActivity {
+    var ownsFocus = false
+    private var reply: PermissionListener? = null
+    private var code = 0
+
+    override fun hasWindowFocus() = ownsFocus
+    override fun checkSelfPermission(permission: String) = PackageManager.PERMISSION_DENIED
+
+    override fun requestPermissions(permissions: Array<String>, requestCode: Int, listener: PermissionListener?) {
+      reply = listener
+      code = requestCode
+    }
+
+    fun allow() {
+      reply?.onRequestPermissionsResult(code, emptyArray(), intArrayOf(PackageManager.PERMISSION_GRANTED))
     }
   }
 
@@ -77,6 +97,32 @@ class QrCameraPermissionTest {
 
     shadowOf(Looper.getMainLooper()).idleFor(60, TimeUnit.SECONDS)
     assertEquals(listOf(true), results)
+  }
+
+  @Test fun keepsAwaitingARealPromptAfterTheTimeoutDuration() {
+    val activity = Robolectric.buildActivity(PromptActivity::class.java).setup().get()
+    val results = mutableListOf<Boolean>()
+    QrCameraPermission.request(activity) { results += it }
+    val looper = shadowOf(Looper.getMainLooper())
+
+    looper.idleFor(120, TimeUnit.SECONDS)
+    assertEquals(emptyList<Boolean>(), results)
+    activity.allow()
+    assertEquals(listOf(true), results)
+  }
+
+  @Test fun startsTheLostCallbackDeadlineWhenWindowFocusReturns() {
+    val activity = Robolectric.buildActivity(PromptActivity::class.java).setup().get()
+    val results = mutableListOf<Boolean>()
+    QrCameraPermission.request(activity) { results += it }
+    val looper = shadowOf(Looper.getMainLooper())
+
+    looper.idleFor(120, TimeUnit.SECONDS)
+    activity.ownsFocus = true
+    looper.idleFor(60, TimeUnit.SECONDS)
+    assertEquals(emptyList<Boolean>(), results)
+    looper.idleFor(1, TimeUnit.SECONDS)
+    assertEquals(listOf(false), results)
   }
 
 }
