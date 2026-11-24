@@ -1671,7 +1671,7 @@ final class NativeListView: UIView {
             before.string("alignment", default: "end") ==
               after.string("alignment", default: "end")
         }
-      if previous.type == "market", Set(changes.keys).isSubset(of: marketQuoteFields),
+      if previous.rendererKey == .market, Set(changes.keys).isSubset(of: marketQuoteFields),
         sameMetricStructure
       {
         marketQuoteKeys.insert(item.key)

@@ -262,8 +262,8 @@ Each cell describes the same public contract on **Web + iOS + Android**.
 | `rail` | title, badge, status | padding, leadingGap, titleBadgeGap, trailingGap, image |
 | `activity` | title, description, status, primaryAmount, secondaryAmount | padding, leadingGap, lineGap, titleBadgeGap, trailingGap, image |
 | `message` | title, body, time | padding, leadingGap, lineGap, image |
-| `dataRow` | columns, columnSecondary, index | padding, leadingGap, lineGap, titleBadgeGap, image |
-| `market` | title, subtitle, price, change | padding, leadingGap, lineGap, titleBadgeGap, trailingGap, image; Market-specific properties below |
+| `dataRow` | columns, columnSecondary, index | padding, columnGap (bounded table), leadingGap, lineGap, titleBadgeGap, image |
+| `market` | title, subtitle, price, change | padding, columnGap (bounded table), leadingGap, lineGap, titleBadgeGap, trailingGap, image; Market-specific properties below |
 | `mediaTile` | title, subtitle, badge | padding, leadingGap, lineGap, image |
 | `metricCard` | title, value, subtitle, trend | padding, leadingGap, lineGap, image |
 | `sectionHeader` | title, subtitle, value | padding, lineGap, trailingGap |
@@ -1020,3 +1020,9 @@ width from available width, content padding and spacing; mediaTile styles do
 not choose the column count. This extends native parser limits from four to
 seven without changing existing 2/3/4 geometry. Runtime acceptance for 6/7
 columns, rotation, and text scaling remains required.
+
+In the optional bounded table presentation, column order, alignment and widths
+come from `tableColumns`. The row style supplies horizontal and vertical padding,
+columnGap (default 8, range 0–64), image size (default 24), leading gap (default 4), line gap (default 0) and
+container height (base 56). Primary/secondary text uses `columns/columnSecondary`
+on dataRow and `price/subtitle` on market. All widths include the leading image.

@@ -189,7 +189,7 @@ final class NativeListDataRowCell: NativeListRendererCell {
   }
 }
 
-private final class NativeListTableColumnView: UIStackView {
+final class NativeListTableColumnView: UIStackView {
   private let primaryLine = UIStackView()
   private let primaryLabel = NativeListTextLabel()
   private let titleIconView = NativeListIconImageView()

@@ -95,6 +95,41 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     assertEquals("ETH, Ethereum, $102, +6%", row.contentDescription)
   }
 
+  fun testBoundedColumnsResizeAndReleaseActions() = withMarketRow { host ->
+    val columns = JSONArray()
+    repeat(7) { columns.put(JSONObject().put("key", "c$it").put("text", it.toString())) }
+    columns.getJSONObject(0).put("width", 44).put("actionKey", "favorite").put("accessibilityLabel", "Favorite")
+    columns.getJSONObject(1).put("secondaryText", "Long secondary")
+    val json = item().json.put("tableColumns", columns)
+    val model = NativeListItem.parse(json)
+    assertEquals(NativeListRendererKey.BOUNDED_TABLE, model.rendererKey)
+    val row = NativeListRendererRegistry.create(host.context as ThemedReactContext,
+      model.rendererKey.ordinal, NativeListFonts()) as NativeListBoundedTableView
+    val actions = mutableListOf<String>()
+    row.onAction = { _, key, _, _ -> actions.add(key) }
+    row.bind(model, null, "linear", "vertical", null, false, { _, _, fallback -> fallback })
+    assertEquals(7, row.childCount)
+    val density = row.resources.displayMetrics.density
+    val width = (1080 * density).toInt()
+    val height = (56 * density).toInt()
+    row.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+    row.layout(0, 0, width, height)
+    val second = row.getChildAt(1) as android.view.ViewGroup
+    assertTrue(kotlin.math.abs(second.left - row.getChildAt(0).right - 8 * density) <= 1)
+    val labels = second.getChildAt(1) as NativeListTableColumnView
+    assertTrue(labels.getChildAt(1).width > labels.getChildAt(0).width)
+    val button = row.getChildAt(0)
+    assertEquals("Favorite", button.contentDescription)
+    assertTrue(button.performClick())
+    json.put("tableColumns", JSONArray().put(columns.getJSONObject(1)).put(columns.getJSONObject(2)))
+    row.bind(NativeListItem.parse(json), null, "linear", "vertical", null, false, { _, _, fallback -> fallback })
+    assertEquals(2, row.childCount)
+    assertFalse(button.performClick())
+    assertEquals(listOf("favorite"), actions)
+    row.dispose()
+  }
+
   private fun bind(row: NativeListMarketRowView, item: NativeListItem) {
     row.bind(item, null, "linear", "vertical", null, false, { _, _, fallback -> fallback }, true)
   }

@@ -2815,3 +2815,21 @@ Internal Pod edges use unversioned CocoaPods dependencies, matching the npm
 internal `*` policy while retaining external constraints. Real specification
 readback is `>= 0`; normal SDK example and consumer Pod installs passed. This
 does not retroactively make alpha.445's invalid `*` Pod requirement usable.
+
+### Bounded table presentation (OK-67420)
+
+A dataRow or market row may supply ordered tableColumns to replace its ordinary
+content on Web, iOS and Android. The ordinary template fields remain required.
+A detail row accepts 2–6 cells and a market row accepts 2–7. Keys are unique
+within a row. Width is in logical layout units and includes the cell's visual
+and text. Adjacent cells are separated by style.columnGap (default 8 logical units, range 0–64). Unspecified widths share the remaining space equally after gaps. The caller
+computes widths from its container and owns horizontal scrolling. A cell
+supports formatted primary and secondary text, alignment, tones and an optional
+leading visual. An actionable cell supplies actionKey and accessibilityLabel
+together. Activating it delivers the existing row action event with its slot.
+
+Replacing cell values can use a row patch. Entering or leaving table mode or
+changing cell keys, order, widths or alignment requires a structural snapshot.
+The table takes precedence over webTable. Without it, existing templates and
+their limits apply. Runtime acceptance requires narrow/wide comparisons,
+recycling, inline actions and real native builds on both mobile platforms.

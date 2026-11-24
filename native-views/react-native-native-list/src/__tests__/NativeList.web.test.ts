@@ -5983,6 +5983,83 @@ describe('Web migration layout and table regressions', () => {
     }
   );
 
+  it('keeps an inline table action independent of the row and updates the recycled cell', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    const host = document.body.appendChild(document.createElement('div'));
+    const onRowAction = jest.fn();
+    const row = {
+      type: 'dataRow',
+      key: 'pool',
+      columns: [
+        { key: 'pool', text: 'Pool' },
+        { key: 'fee', text: '1%' },
+      ],
+      tableColumns: [
+        { key: 'pool', text: 'USDC/ETH', width: 140 },
+        {
+          key: 'address',
+          text: '0x123',
+          actionKey: 'copy',
+          accessibilityLabel: 'Copy address',
+        },
+      ],
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      { onRowAction },
+      false
+    );
+    try {
+      const button = host.querySelector(
+        'button[data-native-list-action="copy"]'
+      ) as HTMLButtonElement;
+      button.click();
+      expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
+        'copy',
+      ]);
+      expect(button.previousElementSibling?.getAttribute('style')).toContain(
+        '140px'
+      );
+      engine.applyPatches([
+        {
+          type: 'dataRow',
+          key: row.key,
+          changes: {
+            tableColumns: [
+              row.tableColumns[0],
+              {
+                ...row.tableColumns[1],
+                text: '0x456',
+                actionKey: 'explore',
+                accessibilityLabel: 'Open explorer',
+              },
+            ],
+          },
+        },
+      ]);
+      const updated = host.querySelector(
+        'button[data-native-list-action="explore"]'
+      ) as HTMLButtonElement;
+      expect(updated).toBe(button);
+      expect(updated.textContent).toContain('0x456');
+      updated.click();
+      expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
+        'copy',
+        'explore',
+      ]);
+    } finally {
+      engine.destroy();
+      if (original) Object.defineProperty(globalThis, 'Element', original);
+      else Reflect.deleteProperty(globalThis, 'Element');
+    }
+  });
+
   it('keeps favorite focus and row/image identity through table quote patches', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const originalElement = Object.getOwnPropertyDescriptor(

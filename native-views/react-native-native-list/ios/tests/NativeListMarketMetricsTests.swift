@@ -28,6 +28,43 @@ final class NativeListMarketMetricsTests: XCTestCase {
     ["key": "change", "text": "+2%", "tone": "positive", "alignment": "end"],
   ] }
 
+  func testBoundedTableRebindsWidthAndActionWithoutDispatchingRowPress() throws {
+    let source = try item()
+    var data = source.data
+    var columns: [[String: Any]] = (0..<7).map { ["key": "c" + String($0), "text": String($0)] }
+    columns[0]["width"] = 44
+    columns[0]["actionKey"] = "favorite"
+    columns[0]["accessibilityLabel"] = "Toggle favorite"
+    data["tableColumns"] = columns
+    let model = try NativeListItem(data: data)
+    XCTAssertEqual(model.rendererKey, .boundedTable)
+    let cell = try XCTUnwrap(NativeListRendererRegistry.create(model.rendererKey) as? NativeListBoundedTableCell)
+    cell.frame = CGRect(x: 0, y: 0, width: 700, height: 56)
+    cell.bind(item: model, theme: nil, layout: "linear", selected: false,
+      checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+    cell.layoutIfNeeded()
+    let strip = try XCTUnwrap(cell.root.arrangedSubviews.first)
+    XCTAssertEqual(strip.subviews.count, 7)
+    XCTAssertEqual(strip.subviews[0].bounds.width, 44, accuracy: 1)
+    XCTAssertEqual(strip.subviews[1].frame.minX - strip.subviews[0].frame.maxX, 8, accuracy: 1)
+    let button = try XCTUnwrap(strip.subviews[0].subviews.compactMap { $0 as? UIButton }.first)
+    var actions: [String] = []
+    cell.onAction = { _, key, _, _ in actions.append(key) }
+    let target = try XCTUnwrap(button.allTargets.first as? NSObject)
+    let selectorName = try XCTUnwrap(button.actions(forTarget: target, forControlEvent: .touchUpInside)?.first)
+    let selector = NSSelectorFromString(selectorName)
+    XCTAssertTrue(button.hitTest(CGPoint(x: button.bounds.midX, y: button.bounds.midY), with: nil) === button)
+    _ = target.perform(selector)
+    XCTAssertEqual(actions, ["favorite"])
+    data["tableColumns"] = Array(columns.suffix(2))
+    cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
+      checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+    XCTAssertEqual(strip.subviews.count, 2)
+    XCTAssertTrue(button.isHidden)
+    _ = target.perform(selector)
+    XCTAssertEqual(actions, ["favorite"])
+  }
+
   func testMetricCountAndCompactReuseClearInactiveViews() throws {
     let cell = NativeListMarketCell(frame: CGRect(x: 0, y: 0, width: 800, height: 72))
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 800, height: 200))

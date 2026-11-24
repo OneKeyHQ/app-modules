@@ -7,6 +7,8 @@ import {
   type RowModel,
 } from '@onekeyfe/react-native-native-list';
 
+import { marketTableFixtures } from './nativeListMarketTableFixtures';
+
 // docs/STYLE_SPEC.md section 3.1 names; the list keys are the legacy aliases.
 const THEME: NativeListTheme = {
   background: '#F5F5F5',
@@ -42,7 +44,7 @@ const header = (key: string, title: string, note: string): RowModel => ({
  * every row is untouched, so the whole page should be pixel-identical to the
  * build before the row style existed - that is the regression check.
  */
-function buildRows(styled: boolean): RowModel[] {
+function buildRows(styled: boolean, wide: boolean): RowModel[] {
   const rows: RowModel[] = [];
 
   rows.push(header('identity', 'identity', 'plain / styled'));
@@ -636,15 +638,17 @@ function buildRows(styled: boolean): RowModel[] {
     });
   }
 
-  return rows;
+  return [...marketTableFixtures(wide, styled), ...rows];
 }
 
 export function NativeListRowStylePage() {
+  const [wide, setWide] = useState(false);
+  const [action, setAction] = useState('');
   const [styled, setStyled] = useState(true);
   const snapshot = useMemo<NativeListSnapshot>(
     () => ({
       schemaVersion: 1,
-      generation: styled ? 2 : 1,
+      generation: (styled ? 2 : 1) + (wide ? 2 : 0),
       layout: { kind: 'sectioned', stickyHeaders: true, contentPadding: 8 },
       theme: THEME,
       // Absent by default, so the chrome falls back to each platform's own
@@ -652,13 +656,16 @@ export function NativeListRowStylePage() {
       listStyle: styled
         ? { separator: { inset: 20 }, groupCornerRadius: 16 }
         : undefined,
-      rows: buildRows(styled),
+      rows: buildRows(styled, wide),
     }),
-    [styled],
+    [styled, wide],
   );
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      onLayout={event => setWide(event.nativeEvent.layout.width >= 680)}
+    >
       <View style={styles.bar}>
         <Text style={styles.caption}>
           Every template appears twice: plain, then styled. Turn the style off
@@ -675,7 +682,14 @@ export function NativeListRowStylePage() {
           </Text>
         </Pressable>
       </View>
-      <NativeList style={styles.list} snapshot={snapshot} />
+      {action ? <Text accessibilityLiveRegion="polite">{action}</Text> : null}
+      <NativeList
+        style={styles.list}
+        snapshot={snapshot}
+        onRowAction={event =>
+          setAction([event.rowKey, event.actionKey].join(' · '))
+        }
+      />
     </View>
   );
 }

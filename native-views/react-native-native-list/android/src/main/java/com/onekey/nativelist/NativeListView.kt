@@ -2934,7 +2934,7 @@ class NativeListView(
       pending.forEach { (index, changes) ->
         val previous = nextItems[index]
         marketQuoteOnly = marketQuoteOnly &&
-          previous.type == "market" &&
+          previous.rendererKey == NativeListRendererKey.MARKET &&
           changes.keys().asSequence().all(MARKET_QUOTE_FIELDS::contains)
         val merged = NativeListItem.parse(mergeRow(previous.json, changes))
         marketQuoteOnly = marketQuoteOnly && hasSameMarketMetricStructure(previous, merged)

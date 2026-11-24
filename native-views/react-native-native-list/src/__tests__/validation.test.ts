@@ -4259,3 +4259,120 @@ it('clears an existing production title image when its replacement cannot be san
     environment.__DEV__ = original;
   }
 });
+
+describe.each([true, false])(
+  'bounded tables in development=%s',
+  (development) => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const columns = Array.from({ length: 7 }, (_, n) => ({
+      key: 'col-' + n,
+      text: String(n),
+    }));
+    const compact: DataRow = {
+      type: 'dataRow',
+      key: 'tx',
+      columns: columns.slice(0, 2),
+    };
+    const original = environment.__DEV__;
+    beforeEach(() => {
+      environment.__DEV__ = development;
+    });
+    afterEach(() => {
+      environment.__DEV__ = original;
+    });
+    it('bounds detail and selector columns separately and rejects ambiguous actions', () => {
+      const detail = { ...compact, tableColumns: columns.slice(0, 6) };
+      const selector = { ...marketRow(), tableColumns: columns };
+      expect(validateSnapshot(snapshot([detail, selector])).rows).toEqual([
+        detail,
+        selector,
+      ]);
+      expect(() =>
+        validateSnapshot(snapshot([{ ...detail, tableColumns: columns }]))
+      ).toThrow();
+      expect(() =>
+        validateSnapshot(
+          snapshot([{ ...selector, tableColumns: [...columns, columns[0]] }])
+        )
+      ).toThrow();
+      expect(() =>
+        validateSnapshot(
+          snapshot([{ ...detail, tableColumns: [columns[0], columns[0]] }])
+        )
+      ).toThrow();
+      expect(() =>
+        validateSnapshot(
+          snapshot([
+            {
+              ...detail,
+              tableColumns: [
+                columns[0],
+                { ...columns[1], actionKey: 'copy', accessibilityLabel: '' },
+              ],
+            },
+          ])
+        )
+      ).toThrow();
+    });
+    it('validates table geometry and patches selector prices with their fallback', () => {
+      const selector = {
+        ...marketRow(),
+        tableColumns: columns,
+        style: { columnGap: 4 },
+      };
+      for (const bad of [
+        { ...selector, style: { columnGap: 65 } },
+        {
+          ...selector,
+          tableColumns: [{ ...columns[0], width: 0 }, columns[1]],
+        },
+        {
+          ...selector,
+          tableColumns: [{ ...columns[0], layout: 'grid' }, columns[1]],
+        },
+      ]) {
+        expect(() => validateSnapshot(snapshot([bad]))).toThrow();
+      }
+      const next = {
+        ...selector,
+        price: '$101',
+        tableColumns: columns.map((col, i) =>
+          i === 2 ? { ...col, text: '$101' } : col
+        ),
+      };
+      const before = snapshot([selector]);
+      const after = snapshot([next]);
+      const patches = planNativeListPatches(before, after)!;
+      expect(patches).toHaveLength(1);
+      expect(applyRowPatches(before, patches).rows).toEqual(after.rows);
+    });
+    it('patches values and requires structural snapshots for widths and reorder', () => {
+      const detail = { ...compact, tableColumns: columns.slice(0, 6) };
+      const before = snapshot([detail]);
+      const changed = detail.tableColumns.map((col, i) =>
+        i === 3 ? { ...col, text: '$37' } : col
+      );
+      const after = snapshot([
+        {
+          ...detail,
+          tableColumns: changed,
+          columns: [columns[0], { ...columns[1], text: '$37' }],
+        },
+      ]);
+      const patches = planNativeListPatches(before, after)!;
+      expect(patches).toHaveLength(1);
+      expect(applyRowPatches(before, patches).rows).toEqual(after.rows);
+      for (const structural of [
+        changed.slice().reverse(),
+        changed.map((col) => ({ ...col, width: 42 })),
+      ]) {
+        expect(
+          planNativeListPatches(
+            before,
+            snapshot([{ ...detail, tableColumns: structural }])
+          )
+        ).toBeUndefined();
+      }
+    });
+  }
+);

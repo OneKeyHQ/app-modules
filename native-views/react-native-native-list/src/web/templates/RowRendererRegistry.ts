@@ -9,6 +9,7 @@ import { marketTableRowRenderer } from './MarketTableRowRenderer';
 import type { MetricCardRow } from '../../models';
 import { metricCardRowRenderer } from './MetricCardRowRenderer';
 import type { DataRow } from '../../models';
+import { boundedTableRenderer } from './BoundedTableRenderer';
 import { dataRowRenderer } from './DataRowRenderer';
 import type { ActivityRow } from '../../models';
 import { activityRowRenderer } from './ActivityRowRenderer';
@@ -90,6 +91,7 @@ const factories = {
   (row: RowModel) => ReturnType<typeof registration>
 >;
 const renderers = {
+  boundedTable: boundedTableRenderer,
   walletGroup: walletGroupRowRenderer,
   identity: identityRowRenderer,
   sectionHeader: sectionHeaderRowRenderer,
@@ -105,7 +107,7 @@ const renderers = {
   rail: railRowRenderer,
   mediaTile: mediaTileRowRenderer,
 };
-export type RowRendererKey = RowModel['type'] | 'marketTable';
+export type RowRendererKey = RowModel['type'] | 'marketTable' | 'boundedTable';
 const isRegistered = (key: string): key is keyof typeof factories =>
   Object.prototype.hasOwnProperty.call(factories, key);
 
@@ -113,9 +115,13 @@ const isRegistered = (key: string): key is keyof typeof factories =>
 export function rowRenderer(row: RowModel) {
   if (!isRegistered(row.type))
     throw new Error('No renderer registered for ' + row.type);
+  if ((row.type === 'market' || row.type === 'dataRow') && row.tableColumns)
+    return registration(boundedTableRenderer, row);
   return factories[row.type](row);
 }
 export function rowRendererKey(row: RowModel): RowRendererKey {
+  if ((row.type === 'market' || row.type === 'dataRow') && row.tableColumns)
+    return 'boundedTable';
   return row.type === 'market' && row.webTable ? 'marketTable' : row.type;
 }
 export function recycleRowBody(body: HTMLElement): boolean {

@@ -231,7 +231,7 @@ private fun updateLengthPrefixed(digest: MessageDigest, value: String) {
 }
 
 // Template type alone partitions reuse; data keys and styles never select a renderer.
-internal enum class NativeListRendererKey { MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER, WALLET_GROUP, BUTTON_GROUP }
+internal enum class NativeListRendererKey { MESSAGE, RAIL, MEDIA_TILE, ACTION, SYSTEM, ACTIVITY, DATA_ROW, METRIC_CARD, MARKET, IDENTITY, SECTION_HEADER, WALLET_GROUP, BUTTON_GROUP, BOUNDED_TABLE }
 
 internal data class NativeListItem(
   val key: String,
@@ -242,7 +242,8 @@ internal data class NativeListItem(
 ) {
   val content: String = json.toString()
   val rendererKey: NativeListRendererKey
-    get() = NativeListRendererRegistry.key(type)
+    get() = if ((type == "dataRow" || type == "market") && json.optJSONArray("tableColumns") != null)
+      NativeListRendererKey.BOUNDED_TABLE else NativeListRendererRegistry.key(type)
   val styledHeight: Double?
     get() = json.optJSONObject("style")?.optJSONObject("container")
       ?.takeIf { it.has("height") }?.optDouble("height")

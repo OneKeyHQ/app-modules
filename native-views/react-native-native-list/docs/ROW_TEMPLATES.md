@@ -475,3 +475,12 @@ while preserving a valid key/section does not introduce a new scroll API.
 
 For completion criteria and the source audit, return to
 [STYLE_SPEC §6–§9](STYLE_SPEC.md#65-consolidated-gap-audit).
+
+### Opt-in table cells for dataRow and market
+
+Supply `tableColumns` with 2–6 ordered cells on dataRow or 2–7 on market.
+Use the existing compact fields for the ordinary presentation. Fixed cells use
+`width` in layout units (up to 4096); other cells divide the remainder equally.
+Each cell can carry a leading visual and two formatted text lines, including
+subscript segments. Supply both `actionKey` and `accessibilityLabel` to make the
+cell independently actionable. Rows and column descriptors carry stable keys.

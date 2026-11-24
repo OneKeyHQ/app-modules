@@ -2008,6 +2008,7 @@ export class NativeListWebEngine {
     metricCard: [],
     market: [],
     marketTable: [],
+    boundedTable: [],
     identity: [],
     sectionHeader: [],
   };
@@ -3048,24 +3049,28 @@ export class NativeListWebEngine {
       else if (selected === false || selected === null)
         selection.delete(patch.key);
     });
-    const tableValuesOnly = patches.every((patch) => {
-      const index = this.rows.findIndex((row) => row.key === patch.key);
-      const before = this.rows[index],
-        after = next.rows[index];
-      return (
-        patch.type === 'market' &&
-        before?.type === 'market' &&
-        after?.type === 'market' &&
-        Object.keys(patch.changes).every(
-          (key) => MARKET_QUOTE_PATCH_FIELDS.has(key) || key === 'webTable'
-        ) &&
-        canPatchMarketTableValues(before, after)
-      );
-    });
-    if (
-      !restoredReorder &&
-      (webMarketImageBindDeltaForPatches(patches) === 0 || tableValuesOnly)
-    ) {
+    const quoteValuesOnly =
+      patches.length > 0 &&
+      patches.every((patch) => {
+        if (patch.type !== 'market') return false;
+        const index = this.rows.findIndex((row) => row.key === patch.key);
+        const before = this.rows[index];
+        const after = next.rows[index];
+        if (
+          before?.type !== 'market' ||
+          after?.type !== 'market' ||
+          after.tableColumns
+        )
+          return false;
+        return (
+          isWebMarketQuotePatch(patch) ||
+          (Object.keys(patch.changes).every(
+            (key) => MARKET_QUOTE_PATCH_FIELDS.has(key) || key === 'webTable'
+          ) &&
+            canPatchMarketTableValues(before, after))
+        );
+      });
+    if (!restoredReorder && quoteValuesOnly) {
       this.snapshot = next;
       this.rows = effectiveRows(next);
       this.selectedKeys = selection;
@@ -4543,6 +4548,12 @@ export class NativeListWebEngine {
   }
 
   private rowLabel(row: RowModel): string {
+    if ((row.type === 'dataRow' || row.type === 'market') && row.tableColumns) {
+      return row.tableColumns
+        .flatMap((cell) => [cell.text, cell.secondaryText])
+        .filter(Boolean)
+        .join(', ');
+    }
     if (row.type === 'walletGroup') return row.parent.title;
     if ('title' in row) return row.title;
     if ('message' in row && row.message) return row.message;

@@ -224,7 +224,9 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
   }
 }
 
-private class NativeListTableColumnView(context: android.content.Context, private val fonts: NativeListFonts) : LinearLayout(context) {
+internal class NativeListTableColumnView(
+  context: android.content.Context, private val fonts: NativeListFonts, wrapSecondary: Boolean = false,
+) : LinearLayout(context) {
   private val primaryLine = LinearLayout(context)
   private val primary = NativeListTextView(context)
   private val titleIcon = OneKeyIconView(context)
@@ -286,7 +288,8 @@ private class NativeListTableColumnView(context: android.content.Context, privat
     addView(primaryLine, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
     addView(
       secondaryLine,
-      LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) },
+      LayoutParams(if (wrapSecondary) LayoutParams.WRAP_CONTENT else LayoutParams.MATCH_PARENT,
+        LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) },
     )
   }
 

@@ -7,6 +7,7 @@ enum NativeListRendererKey: String, CaseIterable {
   case message, rail, mediaTile, action, buttonGroup, system, activity, dataRow, metricCard, market, identity, sectionHeader, walletGroup
   /// Not a template: legacy accepted any non-empty type and drew an empty row with the
   /// shared chrome. Unknown types keep that placeholder instead of failing the snapshot.
+  case boundedTable = "__nativeListBoundedTable"
   case unsupported = "__nativeListUnsupported"
 }
 
@@ -55,11 +56,12 @@ struct NativeListItem {
       throw NativeListModelError.invalidRow
     }
     let rendererKey = NativeListRendererKey(rawValue: type)
-      .flatMap { $0 == .unsupported ? nil : $0 } ?? .unsupported
+      .flatMap { $0 == .unsupported || $0 == .boundedTable ? nil : $0 } ?? .unsupported
     if rendererKey == .unsupported { Self.logUnsupported(type) }
     self.key = key
     self.type = type
-    self.rendererKey = rendererKey
+    self.rendererKey = (type == "market" || type == "dataRow") && data["tableColumns"] is [[String: Any]]
+      ? .boundedTable : rendererKey
     self.sectionKey = data["sectionKey"] as? String
     self.revision = data["revision"] as? Int ?? 0
     self.data = data
