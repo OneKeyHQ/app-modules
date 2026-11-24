@@ -47,3 +47,19 @@ internal fun nativeListAllowsTitleDecorations(presentation: String): Boolean =
  */
 internal fun nativeListShowsTitleRuns(presentation: String, runCount: Int, matchCount: Int): Boolean =
   runCount > 0 && matchCount == 0 && nativeListAllowsTitleDecorations(presentation)
+
+/**
+ * The run that has to end with an ellipsis because every run after it lost its
+ * whole width: it is drawn in full, so nothing else would show that the title
+ * goes on. Null when the line is not cut, or is cut inside a run, which then
+ * truncates by itself.
+ */
+internal fun nativeListTitleSegmentOverflowIndex(natural: List<Float>, widths: List<Float>): Int? {
+  val last = widths.indexOfLast { it > 0f }
+  if (last !in natural.indices) return null
+  val hidesLaterText = natural.indices.any { it > last && natural[it] > 0f }
+  return if (hidesLaterText && widths[last] >= natural[last]) last else null
+}
+
+/** A run is one line: a hard break folds into one space, as in a one-line title. */
+internal fun nativeListTitleRunText(text: String): String = text.replace(Regex("\\r\\n|[\\r\\n]"), " ")

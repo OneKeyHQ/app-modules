@@ -27,6 +27,15 @@ internal class NativeListTitleSegmentsView(context: android.content.Context) :
   private var runs: List<Run> = emptyList()
   private var builtForWidth = -1
 
+  // `style.title.lineHeight` in pixels. The plain title carries it as a span
+  // on its text, so the rebuilt text here needs the same span to match.
+  var explicitLineHeight: Int? = null
+    set(value) {
+      if (field == value) return
+      field = value
+      builtForWidth = -1
+    }
+
   fun setRuns(runs: List<Run>, spokenText: String) {
     this.runs = runs
     builtForWidth = -1
@@ -38,6 +47,7 @@ internal class NativeListTitleSegmentsView(context: android.content.Context) :
   fun clearRuns() {
     runs = emptyList()
     builtForWidth = -1
+    explicitLineHeight = null
     contentDescription = null
     text = ""
   }
@@ -75,12 +85,17 @@ internal class NativeListTitleSegmentsView(context: android.content.Context) :
         runs.map { it.maxWidthRatio },
         if (available == Int.MAX_VALUE) Float.MAX_VALUE else available.toFloat(),
       )
+    val overflowing = nativeListTitleSegmentOverflowIndex(natural, widths)
     val built = SpannableStringBuilder()
     runs.forEachIndexed { index, run ->
       val width = widths[index]
       if (width <= 0f) return@forEachIndexed
       val shown =
-        if (width >= natural[index]) run.text
+        // Text after this run is hidden: one character more than fits makes
+        // the truncation show it.
+        if (index == overflowing)
+          TextUtils.ellipsize(run.text + "\u2026", paints[index], width, TextUtils.TruncateAt.END)
+        else if (width >= natural[index]) run.text
         else TextUtils.ellipsize(run.text, paints[index], width, TextUtils.TruncateAt.END)
       if (shown.isEmpty()) return@forEachIndexed
       val start = built.length
@@ -89,6 +104,10 @@ internal class NativeListTitleSegmentsView(context: android.content.Context) :
       run.typeface?.let {
         built.setSpan(TypefaceRunSpan(it), start, built.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
       }
+    }
+    explicitLineHeight?.let {
+      if (built.isNotEmpty())
+        built.setSpan(NativeListLineHeightSpan(it), 0, built.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
     return built
   }

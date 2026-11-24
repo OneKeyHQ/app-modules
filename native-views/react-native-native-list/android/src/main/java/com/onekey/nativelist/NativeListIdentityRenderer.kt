@@ -377,12 +377,13 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     }
     // Legacy: overhanging selector icons/checkboxes must not be clipped by row padding.
     if (trailingColumn.parent === this && trailingColumn.requestsUnclippedHost) clipToPadding = false
-    if (titleSegments.visibility == VISIBLE) bindTitleRuns(item, theme)
+    if (titleSegments.visibility == VISIBLE)
+      bindTitleRuns(item, theme, style.optJSONObject("title"))
   }
 
   // Runs take the title's final text appearance and color unless they set
   // their own tone or weight.
-  private fun bindTitleRuns(item: NativeListItem, theme: JSONObject?) {
+  private fun bindTitleRuns(item: NativeListItem, theme: JSONObject?, titleStyle: JSONObject?) {
     titleSegments.typeface = title.typeface
     titleSegments.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, title.textSize)
     titleSegments.includeFontPadding = title.includeFontPadding
@@ -391,6 +392,11 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
     titleSegments.maxLines = 1
     titleSegments.ellipsize = TextUtils.TruncateAt.END
     TextViewCompat.setLineHeight(titleSegments, title.lineHeight)
+    // An explicit line height is a span on the title's text, which
+    // `title.lineHeight` does not report.
+    titleSegments.explicitLineHeight =
+      titleStyle?.takeIf { it.has("lineHeight") }?.let { stylePx(it.optDouble("lineHeight")) }
+    if (titleSegments.explicitLineHeight != null) titleSegments.setLineSpacing(0f, 1f)
     val baseColor = title.currentTextColor
     titleSegments.setTextColor(baseColor)
     val segments = item.json.optJSONArray("titleSegments") ?: return
@@ -398,7 +404,7 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
       (0 until segments.length()).mapNotNull { index ->
         val segment = segments.optJSONObject(index) ?: return@mapNotNull null
         NativeListTitleSegmentsView.Run(
-          text = segment.optString("text"),
+          text = nativeListTitleRunText(segment.optString("text")),
           typeface =
             when (segment.optString("fontWeight")) {
               "medium" -> fonts.medium(context)
@@ -855,6 +861,9 @@ internal class NativeListIdentityRowView(context: ThemedReactContext, fonts: Nat
       titleLeadingIcon.iconName = icon.optString("name")
       titleLeadingIcon.glyphSizeDp = 16
       titleLeadingIcon.useSourceScale = sourceScale
+      // The slot was created before this row's scale was known; it follows the
+      // scale the glyph is drawn with.
+      titleLeadingIcon.layoutParams = LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(6) }
       titleLeadingIcon.tintColor = safeColor(
         icon.optString("tintColor").takeIf(String::isNotEmpty),
         color(theme, "iconSubdued", "#00000072"),

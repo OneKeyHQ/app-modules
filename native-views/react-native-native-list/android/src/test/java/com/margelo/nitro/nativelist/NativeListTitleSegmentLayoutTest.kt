@@ -2,6 +2,7 @@ package com.margelo.nitro.nativelist
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -76,5 +77,31 @@ class NativeListTitleSegmentLayoutTest {
     assertFalse(nativeListShowsTitleRuns("walletSidebar", 2, 0))
     assertTrue(nativeListAllowsTitleDecorations(""))
     assertFalse(nativeListAllowsTitleDecorations("walletSidebar"))
+  }
+
+  // Two runs that do not shrink and one line that holds only the first: the
+  // first is drawn in full, so it has to carry the ellipsis.
+  @Test
+  fun aWholeRunCutFromTheEndPutsTheEllipsisOnTheLastRunShown() {
+    val natural = listOf(100f, 100f)
+    val widths = nativeListTitleSegmentWidths(natural, listOf(false, false), listOf(null, null), 100f)
+    assertWidths(listOf(100f, 0f), widths)
+    assertEquals(0, nativeListTitleSegmentOverflowIndex(natural, widths))
+  }
+
+  @Test
+  fun noEllipsisIsAddedWhenTheLineFitsOrIsCutInsideARun() {
+    assertNull(nativeListTitleSegmentOverflowIndex(listOf(80f, 20f, 90f), listOf(80f, 20f, 90f)))
+    // Cut inside a run: that run truncates by itself.
+    assertNull(nativeListTitleSegmentOverflowIndex(listOf(100f, 100f), listOf(100f, 40f)))
+    assertNull(nativeListTitleSegmentOverflowIndex(listOf(100f, 100f, 100f), listOf(100f, 40f, 0f)))
+    assertNull(nativeListTitleSegmentOverflowIndex(listOf(100f, 100f), listOf(0f, 0f)))
+  }
+
+  @Test
+  fun aRunFoldsLineBreaksIntoSpaces() {
+    assertEquals("Main Wallet", nativeListTitleRunText("Main\nWallet"))
+    assertEquals("a b c", nativeListTitleRunText("a\r\nb\rc"))
+    assertEquals("Account #1", nativeListTitleRunText("Account #1"))
   }
 }
