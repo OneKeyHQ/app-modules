@@ -470,10 +470,14 @@ class NativeListRiskAccessoryTest : InstrumentationTestCase() {
       assertTrue("the line's slack stays after the badge",
         titleLine.width - badges.first().right > NativeListScale.dp(activity.resources, 20))
 
+      val badgeWidth = badges.first().width
       val longTitle = "Contract interaction ".repeat(6)
       bind(longTitle, true)
       assertTrue("long title truncates in front of the badge", badges.first().right <= titleLine.width)
       assertEquals(title.right + gap, badges.first().left)
+      assertTrue("long title keeps visible text", title.width > 0)
+      assertTrue("long title is shortened", title.width < title.paint.measureText(longTitle))
+      assertEquals("badge keeps its full width", badgeWidth, badges.first().width)
 
       bind(longTitle, false)
       assertEquals("no stale cap after badges are removed", Int.MAX_VALUE, title.maxWidth)
