@@ -256,7 +256,7 @@ describe('createWebQrScanner camera start', () => {
       while (calls.length < 3) await new Promise((resolve) => setImmediate(resolve));
       original.track.readyState = 'ended';
       const switchD = scanner.switchCamera('camera-d');
-      while (calls.length < 6) await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       expect(calls).toEqual(['camera-a', 'camera-b', 'camera-c', 'camera-d', 'camera-d', 'camera-a']);
       expect(onError).toHaveBeenCalledTimes(1);
 
