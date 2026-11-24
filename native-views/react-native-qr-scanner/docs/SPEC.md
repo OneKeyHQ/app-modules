@@ -235,6 +235,21 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
   checked before permission; permission is requested through React Native's
   `PermissionAwareActivity`. The library manifest declares `CAMERA` and
   `android.hardware.camera.any` (not required).
+- Camera and gestures (Implemented; matches the camera-kit 17 behavior the
+  app had before):
+  - iOS picks the back virtual device first (`builtInTripleCamera`, then
+    `builtInDualWideCamera`, `builtInDualCamera`, `builtInWideAngleCamera`)
+    and starts at the wide lens's zoom factor (1x). Virtual devices move to
+    the ultra-wide lens by themselves when a code is closer than the wide lens
+    can focus. Rules live in `ios/QrCameraControl.swift`.
+  - Tap to focus: focus and exposure move to the tapped point and a 72 pt
+    focus box fades in and out. iOS returns to continuous focus over the
+    whole frame when the subject area changes; Android uses
+    `FocusMeteringAction` (AF + AE) with a 5 s auto-cancel.
+  - Pinch to zoom from the current zoom, clamped to the device range and at
+    most 8x the 1x factor (`QrCameraControl.clampZoom`,
+    `QrCameraZoom.clampRatio`).
+  - The view consumes touches on its area, as camera-kit did.
 
 Web (`./web`):
 
@@ -301,7 +316,7 @@ freed on terminal status plus `reset()`, or when the session is dropped.
 
 | Platform | Live engine | Image engine | Fallback | Status |
 | --- | --- | --- | --- | --- |
-| iOS | AVFoundation metadata output, 1080p, continuous near autofocus | Vision | ZXing-C++ (image only) | Implemented in source |
+| iOS | AVFoundation metadata output, 1080p, back virtual device at 1x, continuous near autofocus, tap to focus, pinch zoom | Vision | ZXing-C++ (image only) | Implemented in source |
 | Android | CameraX + bundled ML Kit (no Play Services) | Same ML Kit detector | ZXing-C++ (image only; arm ABIs) | Implemented, emulator verified (image) |
 | Web / extension / Linux Electron | `BarcodeDetector` when it supports `qr_code` | Same | `zxing-wasm` reader (page thread or Worker) | Implemented; Chrome, WebKit and extension-CSP verified |
 | macOS Electron | `desktop/mac/electron-qr-scanner` (AVFoundation + Vision) | Same | ZXing-C++ (image) | Implemented, not integrated |
@@ -342,12 +357,13 @@ above. No camera or decoding work runs on the UI thread (Proposed).
 | Native error codes to `QrScannerError` | `src/errors.ts` | `src/__tests__/errors.test.ts` |
 | iOS image passes and Vision engine | `ios/QrImageDecodingPipeline.swift` | Compiled and run on macOS (Vision only, no ZXing) against generated BTCPay-style lightning invoice QR images (`lightning:` + upper-case BOLT11, version 13, no margin, center icon, dark page): clean, 3x, and edge-to-edge images hit on `original`; a 2x image with an oversized center icon, which plain Vision and CIDetector both miss, hits on `padded`. A missing file rejects with `invalid-image`. Source evidence only, not a device run. |
 
-| iOS image pipeline at runtime | `ios/QrImageDecodingPipeline.swift`, `ios/HybridQrImageDecoder.swift`, `ios/QrZXingReader.mm` | `QrScanner-Unit-Tests` (`ios/tests/`, fixtures in `ios/tests/fixtures/`), 9 tests passing on the iOS 27.2 simulator (iPad Air 13-inch M4). Vision + ZXing decode the real expired BTCPay invoice payload (461 chars) from clean, BTCPay-dark (no QR margin, page padding, center icon), inverted and EXIF-rotated fixtures; ZXing alone decodes clean and inverted codes, proving it is linked; no-QR image resolves `nil`; corrupt and missing files throw `invalid-image`; fake engines prove pass order, stop-at-first-hit, platform-before-fallback and the `maxPixels` downscale. Also in the CI `services` group (`scripts/ios-native-plan.mjs`). |
+| iOS image pipeline at runtime | `ios/QrImageDecodingPipeline.swift`, `ios/HybridQrImageDecoder.swift`, `ios/QrZXingReader.mm` | `QrScanner-Unit-Tests` (`ios/tests/`, fixtures in `ios/tests/fixtures/`), 9 tests passing on the iOS 27.2 simulator (iPad Air 13-inch M4; 20 in the whole `QrScanner-Unit-Tests` target with the gate and camera-control suites). Vision + ZXing decode the real expired BTCPay invoice payload (461 chars) from clean, BTCPay-dark (no QR margin, page padding, center icon), inverted and EXIF-rotated fixtures; ZXing alone decodes clean and inverted codes, proving it is linked; no-QR image resolves `nil`; corrupt and missing files throw `invalid-image`; fake engines prove pass order, stop-at-first-hit, platform-before-fallback and the `maxPixels` downscale. Also in the CI `services` group (`scripts/ios-native-plan.mjs`). |
+| Camera selection and zoom | `ios/QrCameraControl.swift`, `android/.../QrCameraZoom.kt` | `ios/tests/QrCameraControlTests.swift` (5 XCTests: device preference order, 1x factor for triple, dual-wide, wide-first and physical devices, clamp to device range and the 8x cap) and `QrCameraZoomTest.kt` (3 Robolectric tests). Android emulator (Pixel 7, API 35), example app: tapping the live preview logs CameraX `startFocusAndMetering: updating 3A regions & triggering AF` and draws the focus box at the tap point. Pinch is not exercised at runtime (no multi-touch injection); the iOS gestures need a device (simulators have no camera). |
 | Live frame gate (animated UR) | `ios/QrFrameTextGate.swift` | `ios/tests/QrFrameTextGateTests.swift`, 6 XCTests on the iOS 27.2 simulator: nothing while stopped, repeat throttling with new text passing at once, new generation on stop/restart, a 12-part animated UR at 10 fps / 30 fps camera loses no part, concurrent start/stop stays consistent. |
 | Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
 | JS → Nitro → native on device runtime | example app `pages/QrScannerTestPage.tsx` | iOS 27.2 simulator (iPad Air 13-inch M4), example app Debug build: the native `QrScanner` view mounts; "Pick from album and decode" (image-crop-picker → `decodeQrImage`) returns the full BTCPay `lightning:LNBC…` invoice in 137 ms; "Start camera" reports `no-camera` with no permission prompt. |
 | Web pixel passes and engine selection | `src/web/imageOps.ts`, `src/web/engines.ts` | `src/web/__tests__/` (jest, 9 tests): budget fit, padding, grayscale/invert, pass order and stop-at-first-hit, no zxing without a loader, loader used once, native preferred only with `qr_code`, `disableNativeDetector`. |
-| Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt` | `android/src/test/` Robolectric (SDK 34, native graphics), 11 tests: gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms. In CI `android-unit`. |
+| Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt` | `android/src/test/` Robolectric (SDK 34, native graphics), 11 tests (14 with `QrCameraZoomTest`): gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms. In CI `android-unit`. |
 | Android on device runtime | example app, Android 15 emulator (Pixel 7, arm64) | `decodeQrImage` through JS → Nitro → Kotlin: BTCPay lightning fixture → full invoice (12-41 ms), EXIF-rotated JPEG → invoice (13 ms), no-QR → `null`, corrupt and missing → `invalid-image`. Live view: camera permission prompt via `PermissionAwareActivity`, CameraX binds camera 1, preview surface attached, `onReady` fires; stop releases the camera. Preview content was black (headless emulated camera), so live detection is not verified. |
 | Web backend in a browser | `src/web/` | Chrome 156 (built-in browser), esbuild bundle of `./web` with Buffer/process shims, served locally. Native `BarcodeDetector`: BTCPay lightning fixtures → exact payload (14-159 ms), no-QR → `null`, corrupt → `invalid-image`; live scanner on a `<video>` of the animated `crypto-psbt` UR (2,003 bytes) assembles with matching FNV-1a in 2.8 s. Forced zxing-wasm: same image results (16-61 ms), animated UR in 3.6 s; WASM fetched only through `loadZXingWasm`, no CDN request. `getUserMedia` camera not exercised. |
 | Web worker, engines and camera start | `src/web/engines.ts`, `src/web/zxingWorkerProtocol.ts`, `src/web/scanner.ts` | jest: worker handler (no decode before init, init failure then retry), worker client (one worker, copy transferred, crashed worker replaced), camera start (no-frame timeout → `camera-busy` and release, `NotAllowedError`/`NotFoundError`/`NotReadableError` mapping, stream arriving after `stop()` is stopped), `onFrameText` repeat throttle. 44 jest tests in total. |
@@ -377,6 +393,8 @@ Still required:
   none), including an animated UR played on a screen; completion time and
   parts per second still unmeasured. Binary-size delta of the `zxing-cpp`
   pod.
+- iOS and Android devices: tap to focus, pinch zoom, and (iPhone 13 Pro and
+  later) the automatic switch to the ultra-wide lens for close codes.
 - Android: live preview content and live detection on a device (the
   headless emulator's emulated camera produced black frames), real-device
   permission flows, binary-size delta (ML Kit model, ZXing .so ~1.6 MB on

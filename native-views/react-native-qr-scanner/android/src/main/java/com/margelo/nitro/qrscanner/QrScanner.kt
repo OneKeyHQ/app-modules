@@ -2,14 +2,22 @@ package com.margelo.nitro.qrscanner
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.annotation.SuppressLint
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Size
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
+import android.widget.FrameLayout
 import androidx.annotation.OptIn
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -31,6 +39,7 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * CameraX preview plus ML Kit QR detection. Native code reports raw text only;
@@ -40,6 +49,10 @@ import java.util.concurrent.Executors
 class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), LifecycleOwner {
   private companion object {
     const val PERMISSION_REQUEST_CODE = 0x5152
+    const val FOCUS_INDICATOR_DP = 72
+    // A tapped focus point is held this long, then CameraX returns to
+    // continuous focus over the whole frame.
+    const val FOCUS_HOLD_SECONDS = 5L
 
     // Shared and never shut down: ML Kit completion listeners may still be
     // queued on it after a view is dropped.
@@ -53,8 +66,25 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     scaleType = PreviewView.ScaleType.FILL_CENTER
     setBackgroundColor(Color.BLACK)
   }
+  private val density = context.resources.displayMetrics.density
+  private val focusIndicator = View(context).apply {
+    val size = (FOCUS_INDICATOR_DP * density).toInt()
+    layoutParams = FrameLayout.LayoutParams(size, size)
+    background = GradientDrawable().apply {
+      setStroke((1.5f * density).toInt().coerceAtLeast(1), Color.WHITE)
+      cornerRadius = 8 * density
+    }
+    alpha = 0f
+    isClickable = false
+  }
+  private val container = FrameLayout(context).apply {
+    addView(previewView, FrameLayout.LayoutParams(
+      FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
+    ))
+    addView(focusIndicator)
+  }
   override val view: View
-    get() = previewView
+    get() = container
 
   // Props
   override var active: Boolean = false
@@ -74,6 +104,9 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build(),
   )
   private var cameraProvider: ProcessCameraProvider? = null
+  /** The bound camera while running. Main thread only. */
+  private var camera: Camera? = null
+  private var pinchRatio = 1f
   private var running = false
   private var hostResumed = true
   private var dropped = false
@@ -89,6 +122,63 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     main.post {
       lifecycleRegistry.currentState = Lifecycle.State.CREATED
       (context.currentActivity as? LifecycleOwner)?.lifecycle?.addObserver(hostObserver)
+    }
+    installGestures()
+  }
+
+  @SuppressLint("ClickableViewAccessibility")
+  private fun installGestures() {
+    val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+      override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+        val zoom = camera?.cameraInfo?.zoomState?.value ?: return false
+        pinchRatio = zoom.zoomRatio
+        return true
+      }
+
+      override fun onScale(detector: ScaleGestureDetector): Boolean {
+        val camera = camera ?: return false
+        val zoom = camera.cameraInfo.zoomState.value ?: return false
+        pinchRatio *= detector.scaleFactor
+        pinchRatio = QrCameraZoom.clampRatio(pinchRatio, zoom.minZoomRatio, zoom.maxZoomRatio)
+        camera.cameraControl.setZoomRatio(pinchRatio)
+        return true
+      }
+    })
+    val tapDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+      override fun onDown(event: MotionEvent): Boolean = true
+
+      override fun onSingleTapUp(event: MotionEvent): Boolean {
+        focusAt(event.x, event.y)
+        return true
+      }
+    })
+    container.setOnTouchListener { _, event ->
+      scaleDetector.onTouchEvent(event)
+      if (!scaleDetector.isInProgress) tapDetector.onTouchEvent(event)
+      true
+    }
+  }
+
+  private fun focusAt(x: Float, y: Float) {
+    val camera = camera ?: return
+    showFocusIndicator(x, y)
+    val point = previewView.meteringPointFactory.createPoint(x, y)
+    val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+      .setAutoCancelDuration(FOCUS_HOLD_SECONDS, TimeUnit.SECONDS)
+      .build()
+    // Rejected when the camera cannot meter that point; scanning goes on.
+    camera.cameraControl.startFocusAndMetering(action)
+  }
+
+  private fun showFocusIndicator(x: Float, y: Float) {
+    focusIndicator.animate().cancel()
+    focusIndicator.x = x - focusIndicator.width / 2f
+    focusIndicator.y = y - focusIndicator.height / 2f
+    focusIndicator.alpha = 1f
+    focusIndicator.scaleX = 1.25f
+    focusIndicator.scaleY = 1.25f
+    focusIndicator.animate().scaleX(1f).scaleY(1f).setDuration(200).withEndAction {
+      focusIndicator.animate().alpha(0f).setStartDelay(800).setDuration(300)
     }
   }
 
@@ -184,7 +274,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     analysis.setAnalyzer(analysisExecutor, ::analyze)
     try {
       provider.unbindAll()
-      provider.bindToLifecycle(this, selector, preview, analysis)
+      camera = provider.bindToLifecycle(this, selector, preview, analysis)
     } catch (error: Exception) {
       emitError("camera-busy", error.message ?: "The camera could not start", generation)
       return
@@ -201,6 +291,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     gate.setCapturing(false)
     if (!running) return
     cameraProvider?.unbindAll()
+    camera = null
     running = false
     syncLifecycle()
   }
