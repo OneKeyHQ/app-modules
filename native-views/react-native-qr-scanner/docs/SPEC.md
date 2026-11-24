@@ -238,10 +238,12 @@ and `onReady(generation, cameraId)`, `onFrameText(text, generation)`,
 - Native readiness reports the ID of the camera bound to that generation,
   including when the requested ID was unavailable and a default opened. The ID
   uses the same format as `listCameras()`. `QrScanner.onReady(cameraId)`
-  forwards that ID after its generation check. On iOS readiness fires when the
-  session reports running, which can precede the first frame on screen. The
-  native ID is not part of the Web readiness callback. Hardware verification
-  of the reported IDs for startup, switching and disconnect fallback is pending.
+  forwards that ID after its generation check. A queued readiness callback
+  remains valid across scan session resets while `active` and `cameraId`
+  stay the same. On iOS readiness fires when the session reports running,
+  which can precede the first frame on screen. The native ID is not part of the
+  Web readiness callback. Hardware verification of the reported IDs for
+  startup, switching and disconnect fallback is pending.
 - The iOS built-in camera preview follows its window scene's interface
   orientation on attachment, after a
   camera input change or a rollback that restores the previous input, and
@@ -400,8 +402,9 @@ createWebQrScanner({
   capture and removes observers. Explicit `dispose()` performs the same
   terminal cleanup. Failed iOS configuration restores the prior input,
   output and preset. Native frames carry the generation that produced them.
-  React callbacks queued for an inactive, unmounted or replaced view state
-  are discarded.
+  React callbacks queued before a capture selection change, deactivation,
+  or unmount are discarded. Frames and errors also expire when the React
+  scan session is replaced.
 - Image decoding (iOS): one decode at a time on a serial queue; each decode
   holds up to a few full-size bitmaps for its passes.
 
@@ -473,7 +476,7 @@ camera sees one original frame followed by mixed frames.
 | iOS preview orientation | `ios/QrScanner.swift` | `ios/tests/QrCameraControlTests.swift` covers the four interface orientations and rejects an unknown orientation. On iPadOS 18.6 and 27.2 simulators a fixed-size preview view read the updated scene orientation on entry to landscape left, a 180° flip to landscape right, and a return to portrait. Live camera pixels require device testing. |
 | Camera list and switching | `src/cameras.ts`, `ios/HybridQrCameraList.swift`, `android/.../HybridQrCameraList.kt`, `QrCameraCatalog.kt`, `src/web/cameras.ts`, `src/web/scanner.ts` | jest: one native listener shared and cleared after the last unsubscribe; web label positions, unlabeled entries, `devicechange`; web switching opens the new camera before stopping the old, retries after release on `NotReadableError`, records the choice while stopped. XCTest: list dedupe. Robolectric `QrCameraCatalogTest` (3). Android emulator (API 35, emulated back and front cameras), example app: `listCameras` returns `[{id:"0",position:"back"},{id:"1",position:"front"}]`; switching while active closes camera 0 and opens camera 1 (`Opened CameraId-1 in 11 ms`), and back again (12.6 ms), one active client each time, `onReady` per switch. iOS switching needs a device. |
 | Live frame gate (animated UR) | `ios/QrFrameTextGate.swift` | `ios/tests/QrFrameTextGateTests.swift`, 6 XCTests on the iOS 27.2 simulator: nothing while stopped, repeat throttling with new text passing at once, new generation on stop/restart, a 12-part animated UR at 10 fps / 30 fps camera loses no part, concurrent start/stop stays consistent. |
-| Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
+| Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets assembly and drops queued frames while preserving current capture readiness; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
 | JS → Nitro → native on device runtime | example app `pages/QrScannerTestPage.tsx` | iOS 27.2 simulator (iPad Air 13-inch M4), example app Debug build: the native `QrScanner` view mounts; "Pick from album and decode" (image-crop-picker → `decodeQrImage`) returns the full BTCPay `lightning:LNBC…` invoice in 137 ms; "Start camera" reports `no-camera` with no permission prompt. |
 | Web pixel passes and engine selection | `src/web/imageOps.ts`, `src/web/engines.ts` | `src/web/__tests__/` (jest, 9 tests): budget fit, padding, grayscale/invert, pass order and stop-at-first-hit, no zxing without a loader, loader used once, native preferred only with `qr_code`, `disableNativeDetector`. |
 | Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt` | `android/src/test/` Robolectric (SDK 34, native graphics), 11 tests (14 with `QrCameraZoomTest`): gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms. In CI `android-unit`. |

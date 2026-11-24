@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { callback, getHostComponent } from 'react-native-nitro-modules';
 
@@ -77,28 +77,35 @@ export function QrScanner({
     [mode, allowPlainText, sessionKey]
   );
 
-  // Frames from an older capture generation arrive late; drop them. Native
+  // Events from an older capture generation arrive late; drop them. Native
   // generations only grow for the lifetime of the view, across sessions.
   const latestGeneration = useRef(0);
+  const acceptGeneration = useCallback((generation: number) => {
+    if (generation < latestGeneration.current) return false;
+    latestGeneration.current = generation;
+    return true;
+  }, []);
 
-  const committed = useRef<object | undefined>(undefined);
-  const identity = useMemo(() => ({}), [active, cameraId, session]);
+  const captureIdentity = useMemo(() => ({}), [active, cameraId]);
+  const sessionIdentity = useMemo(() => ({}), [captureIdentity, session]);
+  const committed = useRef<{ capture: object; session: object } | undefined>(undefined);
   useLayoutEffect(() => {
-    committed.current = active ? identity : undefined;
+    committed.current = active ? { capture: captureIdentity, session: sessionIdentity } : undefined;
     return () => { committed.current = undefined; };
-  }, [active, identity]);
+  }, [active, captureIdentity, sessionIdentity]);
 
-  const nativeCallbacks = useMemo(() => {
-    const accept = (generation: number) => {
-      if (committed.current !== identity || generation < latestGeneration.current) return false;
-      latestGeneration.current = generation;
-      return true;
-    };
+  const nativeOnReady = useMemo(
+    () => callback((generation: number, boundCameraId: string) => {
+      if (committed.current?.capture !== captureIdentity || !acceptGeneration(generation)) return;
+      handlers.current.onReady?.(boundCameraId);
+    }),
+    [acceptGeneration, captureIdentity]
+  );
+
+  const sessionCallbacks = useMemo(() => {
+    const accept = (generation: number) =>
+      committed.current?.session === sessionIdentity && acceptGeneration(generation);
     return {
-      onReady: callback((generation: number, cameraId: string) => {
-        if (!accept(generation)) return;
-        handlers.current.onReady?.(cameraId);
-      }),
       onFrameText: callback((text: string, generation: number) => {
         if (!accept(generation)) return;
         const outcome = session.receive(text);
@@ -121,9 +128,15 @@ export function QrScanner({
         );
       }),
     };
-  }, [identity, session]);
+  }, [acceptGeneration, session, sessionIdentity]);
 
   return (
-    <QrScannerView style={style} active={active} cameraId={cameraId} {...nativeCallbacks} />
+    <QrScannerView
+      style={style}
+      active={active}
+      cameraId={cameraId}
+      onReady={nativeOnReady}
+      {...sessionCallbacks}
+    />
   );
 }
