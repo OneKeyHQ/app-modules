@@ -244,7 +244,8 @@ createWebQrScanner({
   video: HTMLVideoElement;
   source?: { kind: "camera"; deviceId? } | { kind: "element" };
   mode; allowPlainText?; limits?; maxAnalysisSize?; // default 1280
-  onReady?; onProgress?; onResult?; onError?;
+  firstFrameTimeoutMs?; // default 8000
+  onReady?; onFrameText?; onProgress?; onResult?; onError?;
 }): { start(): Promise<void>; stop(): void; resetSession(): void; dispose(): void };
 ```
 
@@ -267,6 +268,10 @@ createWebQrScanner({
   crashed worker is replaced on the next request (`decoder-unavailable` for
   the failed one). The callers create the Worker because worker URLs are
   bundler-specific.
+- `onFrameText(text)` reports raw text of every decoded frame before the
+  scan session, under the native frame gate's rule: the same text again only
+  after 1 s, new text (the next UR part) at once, reset on each `start()`.
+  Callers that assemble UR themselves use it instead of `onResult`.
 - A camera whose track delivers no frame within `firstFrameTimeoutMs`
   (default 8000) fails `start()` with `camera-busy` and is released, instead
   of waiting forever on `video.play()`.
@@ -345,7 +350,7 @@ above. No camera or decoding work runs on the UI thread (Proposed).
 | Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt` | `android/src/test/` Robolectric (SDK 34, native graphics), 11 tests: gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms. In CI `android-unit`. |
 | Android on device runtime | example app, Android 15 emulator (Pixel 7, arm64) | `decodeQrImage` through JS → Nitro → Kotlin: BTCPay lightning fixture → full invoice (12-41 ms), EXIF-rotated JPEG → invoice (13 ms), no-QR → `null`, corrupt and missing → `invalid-image`. Live view: camera permission prompt via `PermissionAwareActivity`, CameraX binds camera 1, preview surface attached, `onReady` fires; stop releases the camera. Preview content was black (headless emulated camera), so live detection is not verified. |
 | Web backend in a browser | `src/web/` | Chrome 156 (built-in browser), esbuild bundle of `./web` with Buffer/process shims, served locally. Native `BarcodeDetector`: BTCPay lightning fixtures → exact payload (14-159 ms), no-QR → `null`, corrupt → `invalid-image`; live scanner on a `<video>` of the animated `crypto-psbt` UR (2,003 bytes) assembles with matching FNV-1a in 2.8 s. Forced zxing-wasm: same image results (16-61 ms), animated UR in 3.6 s; WASM fetched only through `loadZXingWasm`, no CDN request. `getUserMedia` camera not exercised. |
-| Web worker, engines and camera start | `src/web/engines.ts`, `src/web/zxingWorkerProtocol.ts`, `src/web/scanner.ts` | jest: worker handler (no decode before init, init failure then retry), worker client (one worker, copy transferred, crashed worker replaced), camera start (no-frame timeout → `camera-busy` and release, `NotAllowedError`/`NotFoundError`/`NotReadableError` mapping, stream arriving after `stop()` is stopped). 43 jest tests in total. |
+| Web worker, engines and camera start | `src/web/engines.ts`, `src/web/zxingWorkerProtocol.ts`, `src/web/scanner.ts` | jest: worker handler (no decode before init, init failure then retry), worker client (one worker, copy transferred, crashed worker replaced), camera start (no-frame timeout → `camera-busy` and release, `NotAllowedError`/`NotFoundError`/`NotReadableError` mapping, stream arriving after `stop()` is stopped), `onFrameText` repeat throttle. 44 jest tests in total. |
 | Web real camera | test harness `?camera=live` in the user's Chrome 157 (launched normally), MacBook Pro camera, codes shown on an iPhone | Camera ready in 498 ms at 1280x720 @ 30 fps; native BarcodeDetector; animated `crypto-psbt` (2,003 bytes) assembled in 2.86 s with matching FNV-1a; 211 static results (lightning invoice and `bitcoin:` URI) all matching their expected payloads (compared on the first 70 characters); track `ended` after stop. |
 | Web in other engines and the extension CSP | harness via Playwright 1.58 | Chrome 156 Worker mode: images exact (5-26 ms), animated UR 2.4 s, one worker. WebKit 26.0 (Safari's engine; no BarcodeDetector, so zxing automatically): page thread and Worker, images exact, animated UR ~2.4 s. MV3 extension with OneKey's production CSP (`script-src 'self' 'wasm-unsafe-eval'; object-src 'self'`): page thread and Worker, images exact, animated UR 2.4-2.6 s, no CSP violations. Real camera: Chrome 157 sees "MacBook Pro Camera" and getUserMedia returns a live 640x480 track, but no frames reached the `<video>` when launched from this automation (OS capture permission of the launching process); the SDK now reports `camera-busy` and releases the camera in that case. The built-in browser pane blocks capture, which verified `permission-denied`. |
 | iOS native build | `ios/`, `QrScanner.podspec` | `xcodebuild -scheme QrScanner` (iphonesimulator, Debug, Xcode 27.2) succeeds with zxing-cpp 2.2.0 and the two Podfile settings above, no warnings in package sources. Build evidence only. |

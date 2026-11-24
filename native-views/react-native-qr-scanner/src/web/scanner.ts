@@ -24,6 +24,12 @@ export interface WebQrScannerOptions {
   /** A camera that produces no frame within this many ms fails with `camera-busy`. Default 8000. */
   firstFrameTimeoutMs?: number;
   onReady?: () => void;
+  /**
+   * Raw text of every decoded frame, before the scan session. The same text
+   * is reported again only after 1 s (as the native `onFrameText`); a new
+   * text, such as the next UR part, is reported at once.
+   */
+  onFrameText?: (text: string) => void;
   onProgress?: (progress: number) => void;
   onResult?: (result: ScanResult) => void;
   onError?: (error: QrScannerError | ScanError) => void;
@@ -40,6 +46,9 @@ export interface WebQrScanner {
 
 /** With a native detector, zxing also runs on every Nth missed frame. */
 const ZXING_EVERY_N_FRAMES = 4;
+
+/** Same rule as the native frame gates (`QrFrameTextGate`). */
+const REPEAT_INTERVAL_MS = 1000;
 
 type VideoWithFrameCallback = HTMLVideoElement & {
   requestVideoFrameCallback?: (callback: () => void) => number;
@@ -72,6 +81,17 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let frameIndex = 0;
   let canvas: HTMLCanvasElement | OffscreenCanvas | undefined;
   let engines: QrImageEngine[] = [];
+  let lastFrameText: string | undefined;
+  let lastFrameTextAt = 0;
+
+  function reportFrameText(text: string) {
+    if (!handlers.onFrameText) return;
+    const now = Date.now();
+    if (text === lastFrameText && now - lastFrameTextAt < REPEAT_INTERVAL_MS) return;
+    lastFrameText = text;
+    lastFrameTextAt = now;
+    handlers.onFrameText(text);
+  }
 
   const fail = (code: QrScannerErrorCode, message: string) =>
     handlers.onError?.(new QrScannerError(code, message));
@@ -110,6 +130,8 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       const text = await engine.decode(image);
       if (runGeneration !== generation || disposed) return;
       if (!text) continue;
+      reportFrameText(text);
+      if (runGeneration !== generation || disposed) return;
       const outcome = session.receive(text);
       if (outcome.status === 'progress') handlers.onProgress?.(outcome.progress);
       else if (outcome.status === 'complete') {
@@ -226,6 +248,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       }
       if (runGeneration !== generation || disposed) return;
       lastTime = -1;
+      lastFrameText = undefined;
       handlers.onReady?.();
       schedule(runGeneration);
     },

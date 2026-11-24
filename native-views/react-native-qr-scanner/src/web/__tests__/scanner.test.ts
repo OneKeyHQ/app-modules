@@ -89,4 +89,54 @@ describe('createWebQrScanner camera start', () => {
     expect(track.stop).toHaveBeenCalled();
     expect(onReady).not.toHaveBeenCalled();
   });
+
+  it('reports raw frame text with the native repeat throttle', async () => {
+    jest.useFakeTimers();
+    const texts = ['ur:a/1-2/x', 'ur:a/1-2/x', 'ur:a/2-2/y', 'ur:a/2-2/y'];
+    let index = 0;
+    (globalThis as { BarcodeDetector?: unknown }).BarcodeDetector = Object.assign(
+      class {
+        async detect() {
+          const text = texts[Math.min(index, texts.length - 1)];
+          index += 1;
+          return [{ rawValue: text }];
+        }
+      },
+      nativeEngine
+    );
+    configureWebQrScanner({});
+    const context = {
+      drawImage: jest.fn(),
+      getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+    };
+    const canvas = { width: 0, height: 0, getContext: () => context };
+    (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas = jest.fn(() => canvas);
+    (globalThis as { ImageData?: unknown }).ImageData ??= class {};
+    let time = 0;
+    const video = {
+      videoWidth: 1,
+      videoHeight: 1,
+      get currentTime() {
+        time += 1;
+        return time;
+      },
+    } as unknown as HTMLVideoElement;
+    const onFrameText = jest.fn();
+    const scanner = createWebQrScanner({
+      video,
+      source: { kind: 'element' },
+      mode: 'static',
+      onFrameText,
+    });
+    await scanner.start();
+    for (let step = 0; step < 6; step += 1) {
+      await jest.advanceTimersByTimeAsync(100);
+    }
+    scanner.dispose();
+    delete (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas;
+    expect(onFrameText.mock.calls.map(([text]) => text)).toEqual([
+      'ur:a/1-2/x',
+      'ur:a/2-2/y',
+    ]);
+  });
 });
