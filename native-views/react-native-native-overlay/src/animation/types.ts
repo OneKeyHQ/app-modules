@@ -58,12 +58,14 @@ export interface IOverlayTransition {
 export interface IOverlayAnimation {
   enter?: IOverlayTransition;
   /**
-   * Defaults to the presentation's default exit (see
-   * `DEFAULT_OVERLAY_ANIMATIONS`), or the reverse of `enter` when the
-   * presentation has no default exit.
+   * Defaults to the reverse of a supplied `enter`, then the presentation's
+   * default exit or enter.
    */
   exit?: IOverlayTransition;
-  /** Backdrop fade; runs on the same clock as the content by default. */
+  /**
+   * Backdrop fade motion. Supplying it opts out of the synchronized iOS
+   * center exit and retains the usual card exit resolution.
+   */
   backdrop?: { motion?: IOverlayMotionInput };
 }
 

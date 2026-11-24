@@ -91,6 +91,36 @@ function resolveTransition(
   };
 }
 
+const IOS_CENTER_EXIT_MOTION: IOverlayMotion = {
+  type: 'timing',
+  timing: { durationMs: 150, easing: [0.42, 0, 1, 1] },
+};
+
+export function resolveIOSOverlayExit(
+  presentation: IOverlayPresentation,
+  overrides: IOverlayAnimation | undefined,
+  animation: IResolvedOverlayAnimation
+): IResolvedOverlayAnimation {
+  // The iOS host removes both views when the card exits. Keep the original
+  // card timing for a custom backdrop so it retains its dismissal window.
+  if (
+    presentation !== 'center' ||
+    overrides?.enter ||
+    overrides?.exit ||
+    overrides?.backdrop?.motion
+  ) {
+    return animation;
+  }
+
+  // Keep the opaque card moving until the backdrop and card reach their
+  // endpoints together, without exposing the page through the card.
+  return {
+    ...animation,
+    exit: { ...animation.exit, scale: 0.9, motion: IOS_CENTER_EXIT_MOTION },
+    backdrop: { motion: IOS_CENTER_EXIT_MOTION },
+  };
+}
+
 /** Fills presentation defaults and turns preset names into concrete curves. */
 export function resolveOverlayAnimation(
   presentation: IOverlayPresentation,

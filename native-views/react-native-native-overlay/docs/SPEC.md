@@ -187,6 +187,11 @@ visible)`, `removePage(ownerKey)`.
   mirror of a caller-supplied `animation.enter` (so custom enters keep their
   old reverse exit), otherwise the presentation's own default exit (currently
   only `center`, see below), otherwise the default `enter`.
+- iOS applies the synchronized centered exit only when `animation.enter`,
+  `animation.exit`, and `animation.backdrop.motion` are all omitted. A
+  backdrop-only motion override uses that motion for the backdrop and keeps
+  the card's opaque 0.96 `quick` exit. The iOS host removes both when the card
+  animation ends.
 - `motion` is a preset name or a concrete `{ type: 'spring', spring: { mass, stiffness, damping, overshootClamping } }`
   or `{ type: 'timing', timing: { durationMs, easing: cubicBezier } }`.
 - Presets are resolved per platform:
@@ -207,15 +212,23 @@ visible)`, `removePage(ownerKey)`.
   - Web mirrors the CSS driver: `quick` is 150 ms `cubic-bezier(.25,.1,.25,1)`.
   - Converting native springs for web is opt-in (`springToCssLinear`), because
     it would slow web overlays down 4–9×.
-- Presentation defaults (`DEFAULT_OVERLAY_ANIMATIONS`):
+- Effective presentation defaults in `OverlayView`:
 
 | Presentation | Enter                                                                              | Exit                                                            | Backdrop      |
 | ------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------- |
 | sheet        | slide from bottom, `quick`                                                         | same as enter                                                   | fade, `quick` |
-| center       | scale 0.85 + fade, `quick`                                                         | scale 0.96 without fade, `quick`                                | fade, `quick` |
+| center       | scale 0.85 + fade, `quick`                                                         | scale 0.90 without fade, 150 ms ease-in for the synchronized iOS exit; otherwise scale 0.96 without fade, `quick` | fade on the synchronized iOS exit curve when applicable, `quick` otherwise |
 | toast        | slide from top + fade, `toastSlide` (native 300 ms quad in-out, web 400 ms ease)   | same as enter                                                   | none          |
 | fullscreen   | fade, `quick`                                                                      | same as enter                                                   | none          |
 | anchored     | scale 0.95 + fade from the resolved anchor placement, `popoverQuick`               | same as enter                                                   | fade          |
+
+- `DEFAULT_OVERLAY_ANIMATIONS` and the public `resolveOverlayAnimation`
+  helper provide the shared defaults. With native presets alone, the helper
+  resolves a centered exit to opaque scale 0.96 on the `quick` spring.
+  The iOS `OverlayView` sends the synchronized exit configuration in the
+  same native prop update as `visible=false` and restores the shared
+  configuration when reopened. `overlayView.iosAnimation.test.ts` covers
+  those prop updates with a mock native host.
 
 - **Centered card keeps its surface opaque on exit (Implemented; consumer Web
   runtime evidence pending):** a centered Dialog is a solid card over the page
@@ -224,11 +237,12 @@ visible)`, `removePage(ownerKey)`.
   readable through the card for the whole transition, which consumers reported
   as a doubled render right after closing a dialog (OK-66647, desktop, 120 fps
   recording: the card reached ~20–30 % opacity while the list rows behind
-  stayed opaque). The default exit therefore shrinks the card from scale 1 to
-  0.96 with `fade: false`; the host unmounts it when the exit completes.
-  `fade: false` is honoured by all three renderers (`hidesOpacity` on iOS and
-  Android, `hiddenKeyframe` on Web), and the backdrop still fades on the same
-  clock. A fade-free exit also starts from full opacity: when it interrupts a
+  stayed opaque). The host keeps the card opaque and unmounts it when the
+  exit completes. The synchronized iOS exit uses the same 150 ms ease-in
+  curve for the card and backdrop, so the card continues to shrink until
+  both leave together (OK-67749). The iOS enter uses the default spring.
+  Android and Web use the exit curves in the table.
+  A fade-free exit also starts from full opacity: when it interrupts a
   still-running fade-in, the partly transparent surface is snapped back to
   alpha 1 before the scale-out begins, so a rapid close cannot show the
   content behind the card either. That interruption is covered by
