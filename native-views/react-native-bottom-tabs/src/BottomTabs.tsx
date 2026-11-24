@@ -610,7 +610,11 @@ const BottomTabs = <Route extends BaseRoute>({
   const handleNativeLayout = React.useCallback(
     (event: NativeSyntheticEvent<{ width: number; height: number }>) => {
       const { width, height } = event.nativeEvent;
-      setMeasuredDimensions({ width, height });
+      setMeasuredDimensions((previous) =>
+        previous?.width === width && previous.height === height
+          ? previous
+          : { width, height }
+      );
     },
     [setMeasuredDimensions]
   );
@@ -645,6 +649,9 @@ const BottomTabs = <Route extends BaseRoute>({
       );
     }
   }, [renderCustomTabBar]);
+
+  const sceneSize =
+    isIOS || !renderCustomTabBar ? measuredDimensions : styles.fullWidth;
 
   return (
     <BottomTabBarHeightContext.Provider value={tabBarHeight}>
@@ -707,7 +714,7 @@ const BottomTabs = <Route extends BaseRoute>({
                   <View
                     key={route.key}
                     collapsable={false}
-                    style={styles.fullWidth}
+                    style={isIOS ? [styles.screen, sceneSize] : styles.fullWidth}
                   >
                     {renderLazyPlaceholder?.({ route })}
                   </View>
@@ -722,11 +729,7 @@ const BottomTabs = <Route extends BaseRoute>({
               return (
                 <View
                   key={route.key}
-                  style={[
-                    styles.screen,
-                    renderCustomTabBar ? styles.fullWidth : measuredDimensions,
-                    customStyle,
-                  ]}
+                  style={[styles.screen, sceneSize, customStyle]}
                   collapsable={false}
                   pointerEvents={focused ? "auto" : "none"}
                   accessibilityElementsHidden={!focused}

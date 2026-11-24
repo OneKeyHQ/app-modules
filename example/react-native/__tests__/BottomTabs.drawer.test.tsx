@@ -1,5 +1,11 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 
 jest.mock(
@@ -25,11 +31,63 @@ jest.mock(
 
 import BottomTabs from '../../../native-views/react-native-bottom-tabs/src/BottomTabs';
 import DrawerWeb from '../../../native-views/react-native-bottom-tabs/src/BottomTabsDrawerNativeComponent.web';
+import NativeBottomTabs from '../../../native-views/react-native-bottom-tabs/src/BottomTabsNativeComponent';
 import { useBottomTabBarHeight } from '../../../native-views/react-native-bottom-tabs/src/utils/useBottomTabBarHeight';
 
 function HeightProbe() {
   return <Text testID="tab-height-probe">{useBottomTabBarHeight()}</Text>;
 }
+
+describe('iOS tab scene sizing', () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+  afterEach(async () => {
+    await act(() => renderer?.unmount());
+  });
+
+  it.each(['native', 'custom'])(
+    'sizes every scene to the page with a %s bar',
+    async bar => {
+      await act(() => {
+        renderer = ReactTestRenderer.create(
+          <BottomTabs
+            navigationState={{
+              index: 0,
+              routes: [{ key: 'home' }, { key: 'styled' }, { key: 'lazy' }],
+            }}
+            getLazy={({ route }) => route.key === 'lazy'}
+            getSceneStyle={({ route }) =>
+              route.key === 'styled' ? { left: 24, width: 320 } : undefined
+            }
+            renderScene={() => <View />}
+            renderLazyPlaceholder={() => <View />}
+            onIndexChange={() => {}}
+            tabBar={bar === 'custom' ? () => <View /> : undefined}
+            tabBarHidden={false}
+          />,
+        );
+      });
+      const tabs = renderer!.root.findByType(NativeBottomTabs);
+      const sceneStyles = () =>
+        React.Children.toArray(tabs.props.children).map(scene =>
+          StyleSheet.flatten(
+            (scene as React.ReactElement<{ style: StyleProp<ViewStyle> }>).props
+              .style,
+          ),
+        );
+
+      expect(sceneStyles()[2]).toMatchObject({ width: '100%', height: '100%' });
+      await act(() => {
+        tabs.props.onNativeLayout({ nativeEvent: { width: 510, height: 640 } });
+      });
+      expect(sceneStyles()).toEqual([
+        { position: 'absolute', width: 510, height: 640 },
+        { position: 'absolute', left: 24, width: 320, height: 640 },
+        { position: 'absolute', width: 510, height: 640 },
+      ]);
+    },
+  );
+});
 
 describe('native drawer slots', () => {
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
