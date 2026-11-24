@@ -23,14 +23,15 @@ export function listCameras(): Promise<QrCameraInfo[]> {
 
 /** Calls `listener` when a camera is connected or disconnected. */
 export function subscribeCameraChanges(listener: () => void): () => void {
-  listeners.add(listener);
+  const registration = () => listener();
+  listeners.add(registration);
   if (listeners.size === 1) {
     getCameraList().setOnChange(() => {
       listeners.forEach((each) => each());
     });
   }
   return () => {
-    if (!listeners.delete(listener) || listeners.size > 0) return;
+    if (!listeners.delete(registration) || listeners.size > 0) return;
     getCameraList().setOnChange(undefined);
   };
 }

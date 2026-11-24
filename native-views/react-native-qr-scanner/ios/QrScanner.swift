@@ -61,7 +61,18 @@ class HybridQrScanner: HybridQrScannerSpec {
   private let sessionQueue = DispatchQueue(label: "so.onekey.qrscanner.session")
   private let metadataQueue = DispatchQueue(label: "so.onekey.qrscanner.metadata")
   private let session = AVCaptureSession()
-  private var isConfigured = false
+  private struct CaptureProps {
+    var active = false
+    var ready: ((Double) -> Void)?
+    var text: ((String, Double) -> Void)?
+    var error: ((String, String, Double) -> Void)?
+  }
+
+  private var captureProps = CaptureProps()
+  private var disposed = false
+  private var permissionPending = false
+  private var output: AVCaptureMetadataOutput?
+  private var metadataDelegate: MetadataDelegate?
   private var running = false
   /// The configured input device. Owned by `sessionQueue`.
   private var device: AVCaptureDevice?
@@ -73,7 +84,7 @@ class HybridQrScanner: HybridQrScannerSpec {
   private var pinchStartZoom: CGFloat = 1
   private lazy var gestureHandler = GestureHandler(owner: self)
   private var observers: [NSObjectProtocol] = []
-  private lazy var metadataDelegate = MetadataDelegate(owner: self)
+  private var pinchGeneration: Int?
 
   // Shared by `sessionQueue` (start/stop) and `metadataQueue` (detections).
   // The same text is reported again after 1 s, so a caller that reset its
@@ -91,32 +102,45 @@ class HybridQrScanner: HybridQrScannerSpec {
   }
 
   func afterUpdate() {
-    let shouldRun = active
+    let props = CaptureProps(active: active, ready: onReady, text: onFrameText, error: onError)
     let cameraId = cameraId
     sessionQueue.async { [weak self] in
-      guard let self else { return }
+      guard let self, !self.disposed else { return }
+      let previous = self.captureProps
+      let previousCamera = self.requestedCameraId
+      self.captureProps = props
       self.requestedCameraId = cameraId
-      if !shouldRun {
+      if !props.active {
         self.stop()
       } else if self.running {
         self.switchCameraIfNeeded()
-      } else {
+      } else if !previous.active || cameraId != previousCamera {
         self.start()
       }
     }
   }
 
-  func onDropView() {
-    sessionQueue.async { [weak self] in
-      self?.stop()
-      self?.removeObservers()
+  func onDropView() { dispose() }
+
+  func dispose() {
+    // Retain the scanner until its queue has released the session and observers.
+    sessionQueue.async {
+      guard !self.disposed else { return }
+      self.disposed = true
+      self.captureProps = CaptureProps()
+      self.stop()
+      self.removeObservers()
     }
+  }
+
+  deinit {
+    removeObservers()
   }
 
   // MARK: - Session (sessionQueue)
 
   private func start() {
-    guard !running else { return }
+    guard !running, !disposed, captureProps.active, !permissionPending else { return }
     let currentGeneration = nextGeneration()
     // Check for hardware first: a device without a camera must not prompt.
     guard QrCameraControl.device(forId: requestedCameraId) != nil else {
@@ -127,15 +151,16 @@ class HybridQrScanner: HybridQrScannerSpec {
     case .authorized:
       break
     case .notDetermined:
+      permissionPending = true
       AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
         self?.sessionQueue.async {
-          guard let self, self.currentGeneration() == currentGeneration, self.active else {
-            return
-          }
+          guard let self else { return }
+          self.permissionPending = false
+          guard self.captureProps.active, !self.disposed else { return }
           if granted {
             self.start()
           } else {
-            self.emitError("permission-denied", "Camera access was denied", currentGeneration)
+            self.emitError("permission-denied", "Camera access was denied", self.currentGeneration())
           }
         }
       }
@@ -145,23 +170,18 @@ class HybridQrScanner: HybridQrScannerSpec {
       return
     }
 
-    if !isConfigured {
-      if let error = configure() {
-        emitError(error.code, error.message, currentGeneration)
-        return
-      }
-      isConfigured = true
-      addObservers()
-    } else if let error = useCamera(QrCameraControl.device(forId: requestedCameraId)) {
-      // The camera chosen while stopped differs from the configured one.
+    if let error = configureCamera(
+      QrCameraControl.device(forId: requestedCameraId), generation: currentGeneration)
+    {
       emitError(error.code, error.message, currentGeneration)
       return
     }
+    if observers.isEmpty { addObservers() }
     session.startRunning()
     running = session.isRunning
     setCapturing(running)
     if running {
-      onReady?(Double(currentGeneration))
+      captureProps.ready?(Double(currentGeneration))
     } else {
       emitError("camera-busy", "The camera could not start", currentGeneration)
     }
@@ -170,79 +190,92 @@ class HybridQrScanner: HybridQrScannerSpec {
   private func stop() {
     // A new generation makes late metadata from the old one stale.
     _ = nextGeneration()
-    setCapturing(false)
+    pinchGeneration = nil
+    output?.setMetadataObjectsDelegate(nil, queue: nil)
     guard running || session.isRunning else { return }
     session.stopRunning()
     running = false
   }
 
-  private func configure() -> (code: String, message: String)? {
-    session.beginConfiguration()
-    defer { session.commitConfiguration() }
-    if session.canSetSessionPreset(.hd1920x1080) {
-      session.sessionPreset = .hd1920x1080
-    }
-    if let error = useCamera(QrCameraControl.device(forId: requestedCameraId)) {
-      return error
-    }
-
-    let output = AVCaptureMetadataOutput()
-    guard session.canAddOutput(output) else {
-      return ("decoder-unavailable", "The QR detector could not be added")
-    }
-    session.addOutput(output)
-    guard output.availableMetadataObjectTypes.contains(.qr) else {
-      return ("decoder-unavailable", "QR detection is not available")
-    }
-    output.setMetadataObjectsDelegate(metadataDelegate, queue: metadataQueue)
-    output.metadataObjectTypes = [.qr]
-    return nil
-  }
-
-  /// Makes `device` the session input, replacing the current one. A no-op when
-  /// it already is. Runs inside or outside a configuration block.
-  private func useCamera(_ device: AVCaptureDevice?) -> (code: String, message: String)? {
-    guard let device else { return ("no-camera", "No camera is available") }
-    if device.uniqueID == self.device?.uniqueID, input != nil { return nil }
+  /// Replaces the input and metadata output in one transaction. A fresh
+  /// output/delegate gives queued callbacks immutable capture provenance.
+  private func configureCamera(
+    _ target: AVCaptureDevice?, generation: Int
+  ) -> (code: String, message: String)? {
+    guard let target else { return ("no-camera", "No camera is available") }
     let newInput: AVCaptureDeviceInput
     do {
-      newInput = try AVCaptureDeviceInput(device: device)
+      newInput = try AVCaptureDeviceInput(device: target)
     } catch {
       return ("camera-busy", error.localizedDescription)
     }
+
+    let newOutput = AVCaptureMetadataOutput()
+    let delegate = MetadataDelegate(owner: self, generation: generation)
+    let oldPreset = session.sessionPreset
     session.beginConfiguration()
-    defer { session.commitConfiguration() }
+    if let output { session.removeOutput(output) }
     if let input { session.removeInput(input) }
+    var installed = false
+    defer {
+      if !installed {
+        if session.outputs.contains(newOutput) { session.removeOutput(newOutput) }
+        if session.inputs.contains(newInput) { session.removeInput(newInput) }
+        session.sessionPreset = oldPreset
+        if let input, session.canAddInput(input) { session.addInput(input) }
+        if let output, session.canAddOutput(output) { session.addOutput(output) }
+      }
+      session.commitConfiguration()
+    }
+
+    let presets: [AVCaptureSession.Preset] = [.hd1920x1080, .hd1280x720, .high, .medium, .low, .inputPriority]
+    if let preset = presets.first(where: {
+      target.supportsSessionPreset($0) && session.canSetSessionPreset($0)
+    }) {
+      session.sessionPreset = preset
+    }
     guard session.canAddInput(newInput) else {
-      if let input, session.canAddInput(input) { session.addInput(input) }
       return ("camera-busy", "The camera input could not be added")
     }
     session.addInput(newInput)
-    input = newInput
-    self.device = device
-    if (try? device.lockForConfiguration()) != nil {
-      // Virtual devices start on their widest lens; begin at the familiar 1x.
-      device.videoZoomFactor = QrCameraControl.wideAngleZoomFactor(for: device)
-      Self.applyContinuousFocus(device)
-      device.unlockForConfiguration()
+    guard session.canAddOutput(newOutput) else {
+      return ("decoder-unavailable", "The QR detector could not be added")
     }
-    observeSubjectArea(of: device)
+    session.addOutput(newOutput)
+    guard newOutput.availableMetadataObjectTypes.contains(.qr) else {
+      return ("decoder-unavailable", "QR detection is not available")
+    }
+    newOutput.setMetadataObjectsDelegate(delegate, queue: metadataQueue)
+    newOutput.metadataObjectTypes = [.qr]
+    output?.setMetadataObjectsDelegate(nil, queue: nil)
+    output = newOutput
+    metadataDelegate = delegate
+    input = newInput
+    let changedCamera = target.uniqueID != device?.uniqueID
+    device = target
+    installed = true
+
+    if changedCamera, (try? target.lockForConfiguration()) != nil {
+      target.videoZoomFactor = QrCameraControl.wideAngleZoomFactor(for: target)
+      Self.applyContinuousFocus(target)
+      target.unlockForConfiguration()
+    }
+    observeSubjectArea(of: target)
     return nil
   }
 
-  /// Applies a changed `cameraId` (or a disconnected camera) while running:
-  /// frames of the previous camera belong to the old generation.
   private func switchCameraIfNeeded() {
-    guard isConfigured, let target = QrCameraControl.device(forId: requestedCameraId),
+    guard running, let target = QrCameraControl.device(forId: requestedCameraId),
       target.uniqueID != device?.uniqueID
     else { return }
-    let generation = nextGeneration()
-    if let error = useCamera(target) {
-      emitError(error.code, error.message, generation)
+    let generation = currentGeneration() + 1
+    if let error = configureCamera(target, generation: generation) {
+      emitError(error.code, error.message, currentGeneration())
       return
     }
-    setCapturing(running)
-    if running { onReady?(Double(generation)) }
+    _ = nextGeneration()
+    setCapturing(true)
+    captureProps.ready?(Double(generation))
   }
 
   private func observeSubjectArea(of device: AVCaptureDevice) {
@@ -302,12 +335,16 @@ class HybridQrScanner: HybridQrScannerSpec {
     let state = recognizer.state
     let scale = recognizer.scale
     sessionQueue.async { [weak self] in
-      guard let self, let device = self.device else { return }
+      guard let self, self.running, let device = self.device else { return }
+      let generation = self.currentGeneration()
       if state == .began {
+        self.pinchGeneration = generation
         self.pinchStartZoom = device.videoZoomFactor
         return
       }
-      guard state == .changed, (try? device.lockForConfiguration()) != nil else { return }
+      guard state == .changed, self.pinchGeneration == generation,
+        (try? device.lockForConfiguration()) != nil
+      else { return }
       defer { device.unlockForConfiguration() }
       device.videoZoomFactor = QrCameraControl.clampZoom(
         self.pinchStartZoom * scale,
@@ -347,7 +384,11 @@ class HybridQrScanner: HybridQrScannerSpec {
         let reason = (note.userInfo?[AVCaptureSessionInterruptionReasonKey] as? Int)
           .flatMap(AVCaptureSession.InterruptionReason.init(rawValue:))
         if reason == .videoDeviceInUseByAnotherClient {
-          self.emitError("camera-busy", "The camera is in use by another app", self.currentGeneration())
+          let generation = self.currentGeneration()
+          self.sessionQueue.async {
+            guard self.running, self.currentGeneration() == generation else { return }
+            self.emitError("camera-busy", "The camera is in use by another app", generation)
+          }
         }
       })
     observers.append(
@@ -356,7 +397,9 @@ class HybridQrScanner: HybridQrScannerSpec {
       ) { [weak self] note in
         guard let self else { return }
         let error = note.userInfo?[AVCaptureSessionErrorKey] as? Error
+        let generation = self.currentGeneration()
         self.sessionQueue.async {
+          guard self.running, self.currentGeneration() == generation else { return }
           self.running = false
           self.setCapturing(false)
           self.emitError(
@@ -382,13 +425,20 @@ class HybridQrScanner: HybridQrScannerSpec {
   private func currentGeneration() -> Int { gate.currentGeneration }
 
   private func emitError(_ code: String, _ message: String, _ generation: Int) {
-    onError?(code, message, Double(generation))
+    guard captureProps.active, !disposed else { return }
+    captureProps.error?(code, message, Double(generation))
   }
 
   /// Called on `metadataQueue`.
-  fileprivate func handle(texts: [String]) {
-    for report in gate.filter(texts, now: ProcessInfo.processInfo.systemUptime) {
-      onFrameText?(report.text, Double(report.generation))
+  fileprivate func handle(texts: [String], generation: Int) {
+    let reports = gate.filter(
+      texts, now: ProcessInfo.processInfo.systemUptime, generation: generation)
+    guard !reports.isEmpty else { return }
+    sessionQueue.async { [weak self] in
+      guard let self, self.running, self.currentGeneration() == generation else { return }
+      for report in reports {
+        self.captureProps.text?(report.text, Double(report.generation))
+      }
     }
   }
 }
@@ -413,8 +463,11 @@ private final class GestureHandler: NSObject {
 private final class MetadataDelegate: NSObject, AVCaptureMetadataOutputObjectsDelegate {
   private weak var owner: HybridQrScanner?
 
-  init(owner: HybridQrScanner) {
+  private let generation: Int
+
+  init(owner: HybridQrScanner, generation: Int) {
     self.owner = owner
+    self.generation = generation
   }
 
   func metadataOutput(
@@ -425,7 +478,7 @@ private final class MetadataDelegate: NSObject, AVCaptureMetadataOutputObjectsDe
       ($0 as? AVMetadataMachineReadableCodeObject)?.stringValue
     }
     if !texts.isEmpty {
-      owner?.handle(texts: texts)
+      owner?.handle(texts: texts, generation: generation)
     }
   }
 }

@@ -34,16 +34,21 @@ function inProcessWorker(options: { crashOnDecode?: boolean } = {}) {
     postMessage(message, transfer) {
       sent.push({ message, transfer });
       if (options.crashOnDecode && message.type === 'decode') {
-        setTimeout(() => worker.onerror?.(new Error('boom')));
+        setTimeout(() => worker.onerror?.(Object.assign(new Event('error'), { message: 'boom', filename: '', lineno: 0, colno: 0, error: null })));
         return;
       }
       void handle(message).then((response: ZXingWorkerResponse) =>
-        worker.onmessage?.({ data: response })
+        worker.onmessage?.(new MessageEvent('message', { data: response }))
       );
     },
   };
   return { worker, sent };
 }
+
+// Compile the public factory with the same native Worker used in the README.
+const nativeWorkerFactory: NonNullable<import('../engines').WebQrScannerConfig['createZXingWorker']> =
+  () => new Worker('qr-worker.js');
+void nativeWorkerFactory;
 
 describe('zxing worker handler', () => {
   it('refuses to decode before init and decodes after it', async () => {
@@ -78,6 +83,22 @@ describe('worker-backed zxing engine', () => {
     // The caller's buffer is not the one transferred away.
     expect(decodeMessage.data.buffer).not.toBe(input.data.buffer);
     expect(input.data.byteLength).toBe(16);
+  });
+
+  it('retries an initialization failure with a new Worker and binary', async () => {
+    const failed = inProcessWorker();
+    const healthy = inProcessWorker();
+    const createZXingWorker = jest.fn()
+      .mockReturnValueOnce(failed.worker)
+      .mockReturnValueOnce(healthy.worker);
+    const loadZXingWasm = jest.fn()
+      .mockRejectedValueOnce(new Error('asset temporarily unavailable'))
+      .mockResolvedValueOnce(new ArrayBuffer(8));
+    configureWebQrScanner({ loadZXingWasm, createZXingWorker });
+    await expect(zxingEngine.decode(image())).rejects.toMatchObject({ code: 'decoder-unavailable' });
+    await expect(zxingEngine.decode(image())).resolves.toBe('from-zxing');
+    expect(loadZXingWasm).toHaveBeenCalledTimes(2);
+    expect(failed.worker.terminate).toHaveBeenCalledTimes(1);
   });
 
   it('turns a crashed worker into decoder-unavailable and starts a new one next time', async () => {

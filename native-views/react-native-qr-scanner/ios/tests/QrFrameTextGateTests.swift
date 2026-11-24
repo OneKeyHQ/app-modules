@@ -84,4 +84,15 @@ final class QrFrameTextGateTests: XCTestCase {
       }
     }
   }
+  func testDropsMetadataFromAnEarlierCaptureAfterRestart() {
+    let gate = QrFrameTextGate()
+    let previous = gate.nextGeneration()
+    gate.setCapturing(true)
+    let current = gate.nextGeneration()
+    gate.setCapturing(true)
+
+    XCTAssertTrue(gate.filter(["old"], now: 1, generation: previous).isEmpty)
+    XCTAssertEqual(gate.filter(["new"], now: 1, generation: current).first?.generation, current)
+  }
+
 }

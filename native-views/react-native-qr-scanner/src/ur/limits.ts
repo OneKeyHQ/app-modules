@@ -1,7 +1,10 @@
 // Not re-exported by the package root; pinned with the dependency version.
-import urWords from '@ngraveio/bc-ur/dist/bytewords';
+import bytewords from '@ngraveio/bc-ur/dist/bytewords.js';
 
 import type { UrLimits } from './types';
+
+// Native Node ESM exposes the CommonJS module object as its default.
+const urWords = (bytewords as { default?: typeof bytewords }).default ?? bytewords;
 
 export const DEFAULT_UR_LIMITS: Readonly<UrLimits> = Object.freeze({
   maxMessageBytes: 1024 * 1024,
@@ -137,7 +140,7 @@ function readFountainHeader(input: Uint8Array): FountainHeader {
 
 export type ParsedUrPart =
   | { verdict: 'malformed' }
-  | { verdict: 'too-large' }
+  | { verdict: 'too-large'; type: string; header?: FountainHeader }
   | { verdict: 'single'; type: string; payload: Uint8Array }
   | { verdict: 'part'; type: string; header: FountainHeader };
 
@@ -153,6 +156,9 @@ export function parseUrPart(part: string, limits: UrLimits): ParsedUrPart {
   const match = UR_PART_PATTERN.exec(part);
   if (!match) return { verdict: 'malformed' };
   const [, type, textSeqNum, textSeqLength, words] = match;
+  if (textSeqNum !== undefined && words!.length > (MAX_FRAME_PAYLOAD_BYTES + 4) * 2) {
+    return { verdict: 'malformed' };
+  }
   let payload: Uint8Array;
   try {
     // Minimal-style UR words carry their own CRC32; decode throws on mismatch.
@@ -161,7 +167,7 @@ export function parseUrPart(part: string, limits: UrLimits): ParsedUrPart {
     return { verdict: 'malformed' };
   }
   if (textSeqNum === undefined) {
-    if (payload.length > limits.maxMessageBytes) return { verdict: 'too-large' };
+    if (payload.length > limits.maxMessageBytes) return { verdict: 'too-large', type: type! };
     try {
       assertBoundedCbor(payload, limits);
     } catch {
@@ -197,7 +203,7 @@ export function parseUrPart(part: string, limits: UrLimits): ParsedUrPart {
     header.messageLength > limits.maxMessageBytes ||
     header.seqLength > limits.maxSeqLength
   ) {
-    return { verdict: 'too-large' };
+    return { verdict: 'too-large', type: type!, header };
   }
   return { verdict: 'part', type: type!, header };
 }

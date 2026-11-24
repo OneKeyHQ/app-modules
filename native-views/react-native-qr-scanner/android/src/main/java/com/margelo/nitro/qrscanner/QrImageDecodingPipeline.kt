@@ -8,6 +8,7 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.RectF
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import kotlin.math.floor
@@ -41,15 +42,23 @@ class QrImageDecodingPipeline(private val engines: List<QrImageEngine>) {
       val pixels = width.toLong() * height
       if (pixels <= maxPixels) return width to height
       val scale = sqrt(maxPixels.toDouble() / pixels)
-      return max(1, floor(width * scale).toInt()) to max(1, floor(height * scale).toInt())
+      val budget = maxPixels.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+      return floor(width * scale).toInt().coerceIn(1, budget) to
+        floor(height * scale).toInt().coerceIn(1, budget)
     }
 
-    fun padded(source: Bitmap): Bitmap {
+    fun padded(source: Bitmap, maxPixels: Long = 50_000_000): Bitmap {
       val margin = max(MIN_PADDING, (max(source.width, source.height) * PADDING_RATIO).toInt())
-      val out = Bitmap.createBitmap(source.width + margin * 2, source.height + margin * 2, Bitmap.Config.ARGB_8888)
+      val expandedWidth = source.width + margin * 2
+      val expandedHeight = source.height + margin * 2
+      val (width, height) = fitToPixelBudget(expandedWidth, expandedHeight, maxPixels)
+      val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+      val insetX = margin.toFloat() * width / expandedWidth
+      val insetY = margin.toFloat() * height / expandedHeight
       Canvas(out).apply {
         drawColor(Color.WHITE)
-        drawBitmap(source, margin.toFloat(), margin.toFloat(), null)
+        val destination = RectF(insetX, insetY, width - insetX, height - insetY)
+        drawBitmap(source, null, destination, Paint(Paint.FILTER_BITMAP_FLAG))
       }
       return out
     }
@@ -88,30 +97,42 @@ class QrImageDecodingPipeline(private val engines: List<QrImageEngine>) {
   fun decode(file: File, maxPixels: Long): QrImageHit? {
     val image = loadOriented(file, maxPixels)
     try {
-      return decodeBitmap(image)
+      return decodeBitmap(image, maxPixels)
     } finally {
       image.recycle()
     }
   }
 
-  fun decodeBitmap(image: Bitmap): QrImageHit? {
+  fun decodeBitmap(image: Bitmap, maxPixels: Long = 50_000_000): QrImageHit? {
     val passes: List<Pair<String, () -> Bitmap>> = listOf(
       "original" to { image },
-      "padded" to { padded(image) },
+      "padded" to { padded(image, maxPixels) },
       "grayscale" to { grayscale(image, inverted = false) },
       "inverted" to { grayscale(image, inverted = true) },
     )
+    var attempted = false
+    var decoded = false
     for ((pass, make) in passes) {
       val variant = make()
       try {
         for (engine in engines) {
-          val text = engine.decode(variant)
-          if (!text.isNullOrEmpty()) return QrImageHit(text, engine.name, pass)
+          attempted = true
+          try {
+            val text = engine.decode(variant)
+            decoded = true
+            if (!text.isNullOrEmpty()) return QrImageHit(text, engine.name, pass)
+          } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw error
+          } catch (_: Exception) {
+            // A failed pass leaves the remaining engines and passes available.
+          }
         }
       } finally {
         if (variant !== image) variant.recycle()
       }
     }
+    if (attempted && !decoded) throw QrImageDecodeException("decoder-unavailable", "A QR decoder failed")
     return null
   }
 
@@ -140,7 +161,7 @@ class QrImageDecodingPipeline(private val engines: List<QrImageEngine>) {
 
     val (targetWidth, targetHeight) = fitToPixelBudget(decoded.width, decoded.height, maxPixels)
     val matrix = Matrix()
-    if (targetWidth != decoded.width) {
+    if (targetWidth != decoded.width || targetHeight != decoded.height) {
       matrix.postScale(targetWidth.toFloat() / decoded.width, targetHeight.toFloat() / decoded.height)
     }
     applyExifOrientation(file, matrix)

@@ -6,7 +6,17 @@ import Foundation
 final class ZXingQrEngine: QrImageEngine {
   let name = "zxing"
 
-  func decode(_ image: CGImage) -> String? {
+  private struct BarcodeText: Decodable {
+    let text: String?
+    let humanReadable: String?
+
+    enum CodingKeys: String, CodingKey {
+      case text = "Text"
+      case humanReadable = "HRI"
+    }
+  }
+
+  func decode(_ image: CGImage) throws -> String? {
     let width = image.width
     let height = image.height
     guard width > 0, height > 0 else { return nil }
@@ -22,12 +32,16 @@ final class ZXingQrEngine: QrImageEngine {
       return true
     }
     guard drawn else { return nil }
-    var text: UnsafeMutablePointer<CChar>?
+    var text: UnsafeMutablePointer<UInt8>?
+    var length = 0
     let found = pixels.withUnsafeBufferPointer { buffer in
-      oqs_zxing_decode(buffer.baseAddress, Int32(width), Int32(height), &text)
+      oqs_zxing_decode(buffer.baseAddress, Int32(width), Int32(height), &text, &length)
     }
     guard found == 1, let text else { return nil }
-    defer { oqs_zxing_free(text) }
-    return String(cString: text)
+    defer { oqs_zxing_free(text, length) }
+    let bytes = Data(bytesNoCopy: text, count: length, deallocator: .none)
+    let decoded = try JSONDecoder().decode(BarcodeText.self, from: bytes)
+    if let raw = decoded.text, raw.contains("\0") { return raw }
+    return decoded.humanReadable ?? decoded.text
   }
 }

@@ -4,6 +4,9 @@ Camera QR scanning, local image decoding and BC-UR assembly for OneKey.
 
 Behavior contract: [docs/SPEC.md](docs/SPEC.md).
 
+For UR scanning, install `buffer` and set `global.Buffer ??= Buffer` before
+loading the scanner. The React Native example initializes it in its entry point.
+
 ## Installation
 
 ```sh

@@ -1,3 +1,5 @@
+import { QrScannerError } from '../errors';
+
 /**
  * Pixel operations for the image passes, on plain RGBA buffers so they run
  * the same in browsers, workers and tests (no canvas needed).
@@ -23,26 +25,40 @@ export function fitToPixelBudget(
   if (pixels <= maxPixels) return { width, height };
   const scale = Math.sqrt(maxPixels / pixels);
   return {
-    width: Math.max(1, Math.floor(width * scale)),
-    height: Math.max(1, Math.floor(height * scale)),
+    width: Math.max(1, Math.min(Math.floor(maxPixels), Math.floor(width * scale))),
+    height: Math.max(1, Math.min(Math.floor(maxPixels), Math.floor(height * scale))),
   };
 }
 
 /** Adds a white quiet zone around the image. */
-export function padded(image: RgbaImage): RgbaImage {
+export function padded(image: RgbaImage, maxPixels = 50_000_000): RgbaImage {
   const margin = Math.max(
     MIN_PADDING,
     Math.floor(Math.max(image.width, image.height) * PADDING_RATIO)
   );
-  const width = image.width + margin * 2;
-  const height = image.height + margin * 2;
+  const expandedWidth = image.width + margin * 2;
+  const expandedHeight = image.height + margin * 2;
+  const { width, height } = fitToPixelBudget(expandedWidth, expandedHeight, maxPixels);
   const data = new Uint8ClampedArray(width * height * 4).fill(255);
-  for (let y = 0; y < image.height; y += 1) {
-    const from = y * image.width * 4;
-    data.set(
-      image.data.subarray(from, from + image.width * 4),
-      ((y + margin) * width + margin) * 4
-    );
+  const left = Math.min(Math.floor((margin * width) / expandedWidth), Math.floor((width - 1) / 2));
+  const top = Math.min(Math.floor((margin * height) / expandedHeight), Math.floor((height - 1) / 2));
+  const innerWidth = width - left * 2;
+  const innerHeight = height - top * 2;
+  for (let y = 0; y < innerHeight; y += 1) {
+    const from = Math.floor((y * image.height) / innerHeight) * image.width * 4;
+    const to = ((y + top) * width + left) * 4;
+    if (innerWidth === image.width) {
+      data.set(image.data.subarray(from, from + image.width * 4), to);
+    } else {
+      for (let x = 0; x < innerWidth; x += 1) {
+        const offset = from + Math.floor((x * image.width) / innerWidth) * 4;
+        const dest = to + x * 4;
+        data[dest] = image.data[offset]!;
+        data[dest + 1] = image.data[offset + 1]!;
+        data[dest + 2] = image.data[offset + 2]!;
+        data[dest + 3] = image.data[offset + 3]!;
+      }
+    }
   }
   return { data, width, height };
 }
@@ -83,20 +99,30 @@ export interface QrImageHit {
  */
 export async function decodePixels(
   image: RgbaImage,
-  engines: readonly QrImageEngine[]
+  engines: readonly QrImageEngine[],
+  maxPixels?: number
 ): Promise<QrImageHit | null> {
   const passes: [DecodePass, () => RgbaImage][] = [
     ['original', () => image],
-    ['padded', () => padded(image)],
+    ['padded', () => padded(image, maxPixels)],
     ['grayscale', () => grayscale(image)],
     ['inverted', () => grayscale(image, true)],
   ];
+  let attempted = false;
+  let decoded = false;
   for (const [pass, make] of passes) {
     const variant = make();
     for (const engine of engines) {
-      const text = await engine.decode(variant);
-      if (text) return { text, engine: engine.name, pass };
+      attempted = true;
+      try {
+        const text = await engine.decode(variant);
+        decoded = true;
+        if (text) return { text, engine: engine.name, pass };
+      } catch {
+        // A failed pass leaves the remaining engines and passes available.
+      }
     }
   }
+  if (attempted && !decoded) throw new QrScannerError('decoder-unavailable', 'A QR decoder failed');
   return null;
 }

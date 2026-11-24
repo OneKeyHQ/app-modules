@@ -6,9 +6,12 @@
 // completes or after --seconds (default 120).
 //   open -n -W -a <Electron.app> --args test/camera-live.cjs --out /tmp/r.json
 const { app, BrowserWindow, ipcMain, sharedTexture } = require("electron");
-const { writeFileSync } = require("node:fs");
+const { readFileSync, writeFileSync } = require("node:fs");
 const { join } = require("node:path");
-const { URDecoder } = require("@ngraveio/bc-ur");
+const animated = require("./fixtures/animated-ur.json");
+const staticFixture = readFileSync(join(
+  __dirname, "../../../../native-views/react-native-qr-scanner/ios/tests/fixtures/lightning-payload.txt",
+), "utf8");
 const api = require("../index.cjs");
 
 const arg = (name, fallback) => {
@@ -25,6 +28,7 @@ function fnv1a(bytes) {
 }
 
 app.whenReady().then(async () => {
+  const { createUrAssembler } = await import("@onekeyfe/react-native-qr-scanner/ur");
   const win = new BrowserWindow({
     width: 800,
     height: 520,
@@ -44,38 +48,60 @@ app.whenReady().then(async () => {
     errors: [],
     drawn: 0,
     maxLent: 0,
-    texts: [],
+    staticDetections: 0,
+    staticFixtureMatches: 0,
+    malformedUrFrames: 0,
     ur: null,
   };
-  const decoder = new URDecoder();
-  const urParts = new Set();
+  const decoder = createUrAssembler();
+  let progress = 0;
+  let acceptedParts = 0;
   let urStartedAt;
-  let inFlight = false;
+  let transfer;
   let finished = false;
 
   const status = () => {
     const lines = [
       report.readyMs === null ? "waiting for camera…" : `camera ready in ${report.readyMs} ms · frames drawn ${report.drawn}`,
-      urParts.size ? `UR parts ${urParts.size} · ${Math.round(decoder.estimatedPercentComplete() * 100)}%` : "",
-      report.ur ? `UR done: ${report.ur.type} ${report.ur.bytes} bytes fnv ${report.ur.fnv} in ${report.ur.ms} ms` : "",
-      ...report.texts.slice(-2).map((t) => `text: ${t.text.slice(0, 70)}${t.text.length > 70 ? "…" : ""}`),
+      acceptedParts ? `UR parts ${acceptedParts} · ${Math.round(progress * 100)}%` : "",
+      report.ur ? `UR complete in ${report.ur.ms} ms · fixture ${report.ur.fixtureMatch ? "matched" : "did not match"}` : "",
+      `static detections ${report.staticDetections} · fixture matches ${report.staticFixtureMatches}`,
       ...report.errors.slice(-1).map((e) => `error ${e.code}: ${e.message}`),
     ].filter(Boolean);
     if (!win.isDestroyed()) win.webContents.send("camera-status", lines.join("\n"));
   };
-  ipcMain.on("camera-drawn", (_event, count) => {
-    report.drawn = count;
-  });
+  const onDrawn = (_event, count) => { report.drawn = count; };
+  ipcMain.on("camera-drawn", onDrawn);
+  // Keep the app alive through the final slot measurement even if the window closes.
+  app.on("window-all-closed", finish);
 
-  const finish = () => {
+  let statusTimer;
+  let deadline;
+  let completeTimer;
+
+  async function finish() {
     if (finished) return;
     finished = true;
+    clearInterval(statusTimer);
+    clearTimeout(deadline);
+    clearTimeout(completeTimer);
+    capture.stop();
+    const drainDeadline = Date.now() + 1500;
+    while ((transfer || capture.lentFrames() > 0) && Date.now() < drainDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    report.lentBeforeDispose = capture.lentFrames();
     capture.dispose();
-    report.lentAfterDispose = capture.lentFrames();
+    ipcMain.removeListener("camera-drawn", onDrawn);
     report.totalMs = Date.now() - started;
-    writeFileSync(outPath, JSON.stringify(report, null, 2));
-    setTimeout(() => app.exit(0), 1500);
-  };
+    try {
+      writeFileSync(outPath, JSON.stringify(report, null, 2));
+      app.exit(0);
+    } catch (error) {
+      console.error(`Could not write camera report to ${outPath}:`, error.message);
+      app.exit(1);
+    }
+  }
 
   const capture = api.createCapture({
     onReady: () => {
@@ -88,52 +114,71 @@ app.whenReady().then(async () => {
     },
     onText: (text) => {
       if (/^ur:/i.test(text)) {
-        urStartedAt ??= Date.now();
-        urParts.add(text.toLowerCase());
-        decoder.receivePart(text.toLowerCase());
-        if (decoder.isComplete() && decoder.isSuccess() && !report.ur) {
-          const ur = decoder.resultUR();
+        const outcome = decoder.receive(text);
+        if (outcome.status === "progress") {
+          urStartedAt ??= Date.now();
+          progress = outcome.progress;
+          acceptedParts = outcome.receivedParts;
+        } else if (outcome.status === "complete" && outcome.result.kind === "ur") {
+          const { type, cbor } = outcome.result;
           report.ur = {
-            type: ur.type,
-            bytes: ur.cbor.length,
-            fnv: fnv1a(ur.cbor),
-            ms: Date.now() - urStartedAt,
-            distinctParts: urParts.size,
+            fixtureMatch: type === animated.type &&
+              cbor.length === animated.bytes && fnv1a(cbor) === animated.fnv1a,
+            ms: Date.now() - (urStartedAt ?? Date.now()),
+            distinctParts: decoder.stats().accepted,
           };
-          status();
-          setTimeout(finish, 2000);
+          progress = 1;
+          completeTimer = setTimeout(finish, 2000);
+        } else if (outcome.status === "rejected") {
+          report.errors.push(outcome.error);
+          decoder.reset();
+          urStartedAt = undefined;
+          acceptedParts = 0;
+          progress = 0;
+        } else if (outcome.status === "ignored" && outcome.reason === "malformed") {
+          report.malformedUrFrames += 1;
         }
-      } else if (!report.texts.some((t) => t.text === text)) {
-        report.texts.push({ text, atMs: Date.now() - started });
+      } else {
+        report.staticDetections += 1;
+        if (text === staticFixture) report.staticFixtureMatches += 1;
       }
       status();
     },
     onFrame: (frame) => {
       report.maxLent = Math.max(report.maxLent, capture.lentFrames());
-      if (inFlight || win.isDestroyed()) {
+      if (finished || transfer || win.isDestroyed()) {
         frame.release();
         return;
       }
-      inFlight = true;
-      const imported = sharedTexture.importSharedTexture({
-        textureInfo: {
-          pixelFormat: "bgra",
-          codedSize: { width: frame.width, height: frame.height },
-          handle: { ioSurface: frame.ioSurface },
-        },
-        allReferencesReleased: () => frame.release(),
-      });
-      sharedTexture
-        .sendSharedTexture({ frame: win.webContents.mainFrame, importedSharedTexture: imported })
-        .catch(() => {})
-        .finally(() => {
-          imported.release();
-          inFlight = false;
-        });
+      transfer = (async () => {
+        let imported;
+        try {
+          imported = sharedTexture.importSharedTexture({
+            textureInfo: {
+              pixelFormat: "bgra",
+              codedSize: { width: frame.width, height: frame.height },
+              handle: { ioSurface: frame.ioSurface },
+            },
+            allReferencesReleased: () => frame.release(),
+          });
+          await sharedTexture.sendSharedTexture({
+            frame: win.webContents.mainFrame, importedSharedTexture: imported,
+          });
+        } catch (error) {
+          report.errors.push({ code: "preview-transfer", message: error.message });
+          status();
+        } finally {
+          if (imported) imported.release();
+          else frame.release();
+        }
+      })().finally(() => { transfer = undefined; });
     },
   });
   capture.start();
-  setInterval(status, 500);
-  setTimeout(finish, seconds * 1000);
+  statusTimer = setInterval(status, 500);
+  deadline = setTimeout(finish, seconds * 1000);
   win.on("closed", finish);
+}).catch((error) => {
+  console.error("Could not start camera check:", error.message);
+  app.exit(1);
 });

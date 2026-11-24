@@ -12,7 +12,7 @@ use napi_derive::napi;
 const MAX_PIXELS_CEILING: i64 = 50_000_000;
 const DEFAULT_MAX_PIXELS: i64 = 12_000_000;
 
-type EventCallback = extern "C" fn(*mut c_void, i32, *const c_char, *const c_char, i64);
+type EventCallback = extern "C" fn(*mut c_void, i32, *const u8, usize, *const c_char, i64);
 type FrameCallback = extern "C" fn(*mut c_void, i64, *mut c_void, i32, i32, i64);
 
 extern "C" {
@@ -20,9 +20,11 @@ extern "C" {
         path: *const c_char,
         max_pixels: i64,
         engines: i32,
-        out_text: *mut *mut c_char,
+        out_text: *mut *mut u8,
+        out_length: *mut usize,
         out_error: *mut *mut c_char,
     ) -> i32;
+    fn oqs_free_bytes(value: *mut u8);
     fn oqs_free_string(value: *mut c_char);
     fn oqs_list_cameras() -> *mut c_char;
     fn oqs_capture_create(
@@ -35,7 +37,7 @@ extern "C" {
     ) -> *mut c_void;
     fn oqs_capture_release_frame(handle: *mut c_void, token: i64);
     fn oqs_capture_lent_frames(handle: *mut c_void) -> i32;
-    fn oqs_capture_start(handle: *mut c_void);
+    fn oqs_capture_start(handle: *mut c_void) -> i64;
     fn oqs_capture_stop(handle: *mut c_void);
     fn oqs_capture_destroy(handle: *mut c_void);
 }
@@ -52,21 +54,23 @@ const ENGINE_VISION: i32 = 1;
 const ENGINE_ZXING: i32 = 2;
 
 /// ZXing-C++ fallback, called from the Swift image pipeline. `rgba` is a
-/// tightly packed width * height * 4 buffer. Returns 1 and a string to free
+/// tightly packed width * height * 4 buffer. Returns 1 and JSON bytes to free
 /// with `oqs_zxing_free` when a QR code is found, 0 otherwise.
 #[no_mangle]
 pub extern "C" fn oqs_zxing_decode(
     rgba: *const u8,
     width: i32,
     height: i32,
-    out_text: *mut *mut c_char,
+    out_text: *mut *mut u8,
+    out_length: *mut usize,
 ) -> i32 {
-    if rgba.is_null() || width <= 0 || height <= 0 || out_text.is_null() {
+    if rgba.is_null() || width <= 0 || height <= 0 || out_text.is_null() || out_length.is_null() {
         return 0;
     }
     let length = width as usize * height as usize * 4;
     let pixels = unsafe { std::slice::from_raw_parts(rgba, length) };
-    let Ok(image) = zxingcpp::ImageView::from_slice(pixels, width, height, zxingcpp::ImageFormat::RGBA)
+    let Ok(image) =
+        zxingcpp::ImageView::from_slice(pixels, width, height, zxingcpp::ImageFormat::RGBA)
     else {
         return 0;
     };
@@ -80,22 +84,29 @@ pub extern "C" fn oqs_zxing_decode(
     let Ok(barcodes) = reader.from(image) else {
         return 0;
     };
-    let Some(text) = barcodes.iter().map(|b| b.text()).find(|t| !t.is_empty()) else {
+    let Some(barcode) = barcodes.iter().find(|barcode| barcode.is_valid()) else {
         return 0;
     };
-    match CString::new(text) {
-        Ok(text) => {
-            unsafe { *out_text = text.into_raw() };
-            1
-        }
-        Err(_) => 0,
+    // The pinned C API's text accessor is NUL-terminated. Its JSON metadata
+    // escapes control characters while preserving ZXing's character decoding.
+    let bytes = barcode
+        .extra_with_key("ALL")
+        .into_bytes()
+        .into_boxed_slice();
+    if bytes.is_empty() {
+        return 0;
     }
+    unsafe {
+        *out_length = bytes.len();
+        *out_text = Box::into_raw(bytes).cast::<u8>();
+    }
+    1
 }
 
 #[no_mangle]
-pub extern "C" fn oqs_zxing_free(text: *mut c_char) {
+pub extern "C" fn oqs_zxing_free(text: *mut u8, length: usize) {
     if !text.is_null() {
-        drop(unsafe { CString::from_raw(text) });
+        drop(unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(text, length)) });
     }
 }
 
@@ -110,17 +121,35 @@ impl Task for DecodeImageTask {
     type JsValue = Option<String>;
 
     fn compute(&mut self) -> Result<Self::Output> {
-        let mut text: *mut c_char = ptr::null_mut();
+        let mut text: *mut u8 = ptr::null_mut();
+        let mut text_length = 0;
         let mut error: *mut c_char = ptr::null_mut();
-        let status =
-            unsafe {
-            oqs_decode_image(self.path.as_ptr(), self.max_pixels, self.engines, &mut text, &mut error)
+        let status = unsafe {
+            oqs_decode_image(
+                self.path.as_ptr(),
+                self.max_pixels,
+                self.engines,
+                &mut text,
+                &mut text_length,
+                &mut error,
+            )
         };
         match status {
-            1 => Ok(Some(unsafe { take_string(text) })),
+            1 => {
+                let value = unsafe {
+                    let value =
+                        String::from_utf8_lossy(std::slice::from_raw_parts(text, text_length))
+                            .into_owned();
+                    oqs_free_bytes(text);
+                    value
+                };
+                Ok(Some(value))
+            }
             0 => Ok(None),
             // "<code>: <reason>"; index.cjs turns it into a coded Error.
-            _ => Err(Error::new(Status::GenericFailure, unsafe { take_string(error) })),
+            _ => Err(Error::new(Status::GenericFailure, unsafe {
+                take_string(error)
+            })),
         }
     }
 
@@ -154,7 +183,10 @@ pub fn decode_image(
                 };
             }
             if mask == 0 {
-                return Err(Error::new(Status::InvalidArg, "decoder-unavailable: no engine"));
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "decoder-unavailable: no engine",
+                ));
             }
             mask
         }
@@ -171,7 +203,11 @@ pub fn decode_image(
     };
     let path = CString::new(path)
         .map_err(|_| Error::new(Status::InvalidArg, "invalid-image: path contains NUL"))?;
-    Ok(AsyncTask::new(DecodeImageTask { path, max_pixels, engines }))
+    Ok(AsyncTask::new(DecodeImageTask {
+        path,
+        max_pixels,
+        engines,
+    }))
 }
 
 #[napi(object)]
@@ -232,7 +268,8 @@ extern "C" fn on_frame(
 extern "C" fn on_event(
     context: *mut c_void,
     kind: i32,
-    first: *const c_char,
+    first: *const u8,
+    first_length: usize,
     second: *const c_char,
     generation: i64,
 ) {
@@ -241,11 +278,21 @@ extern "C" fn on_event(
     }
     // Valid until oqs_capture_destroy returns; Swift never calls after that.
     let tsfn = unsafe { &*(context as *const EventTsfn) };
-    let first = unsafe { CStr::from_ptr(first) }.to_string_lossy().into_owned();
-    let second = unsafe { CStr::from_ptr(second) }.to_string_lossy().into_owned();
+    let first = if first_length == 0 {
+        String::new()
+    } else {
+        String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(first, first_length) })
+            .into_owned()
+    };
+    let second = unsafe { CStr::from_ptr(second) }
+        .to_string_lossy()
+        .into_owned();
     let payload = match kind {
         0 => event("ready", generation),
-        1 => CaptureEvent { text: Some(first), ..event("text", generation) },
+        1 => CaptureEvent {
+            text: Some(first),
+            ..event("text", generation)
+        },
         2 => CaptureEvent {
             code: Some(first),
             message: Some(second),
@@ -302,7 +349,10 @@ impl NativeCapture {
                 (1, Some(path))
             }
             other => {
-                return Err(Error::new(Status::InvalidArg, format!("Unknown source: {other}")))
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("Unknown source: {other}"),
+                ))
             }
         };
         let context = Box::into_raw(Box::new(callback));
@@ -310,7 +360,11 @@ impl NativeCapture {
             oqs_capture_create(
                 context as *mut c_void,
                 on_event,
-                if preview.unwrap_or(false) { Some(on_frame) } else { None },
+                if preview.unwrap_or(false) {
+                    Some(on_frame)
+                } else {
+                    None
+                },
                 kind,
                 path.as_ref().map_or(ptr::null(), |p| p.as_ptr()),
                 loop_file.unwrap_or(false),
@@ -320,10 +374,9 @@ impl NativeCapture {
     }
 
     #[napi]
-    pub fn start(&self) -> Result<()> {
+    pub fn start(&self) -> Result<f64> {
         self.live()?;
-        unsafe { oqs_capture_start(self.handle) };
-        Ok(())
+        Ok(unsafe { oqs_capture_start(self.handle) } as f64)
     }
 
     #[napi]
@@ -359,7 +412,10 @@ impl NativeCapture {
 
     fn live(&self) -> Result<()> {
         if self.handle.is_null() {
-            Err(Error::new(Status::GenericFailure, "The capture was disposed"))
+            Err(Error::new(
+                Status::GenericFailure,
+                "The capture was disposed",
+            ))
         } else {
             Ok(())
         }

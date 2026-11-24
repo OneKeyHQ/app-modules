@@ -39,4 +39,20 @@ describe('cameras', () => {
     unsubscribeSecond();
     expect(mockNative.setOnChange).toHaveBeenLastCalledWith(undefined);
   });
+  it('cleans up subscriptions independently when both use the same listener', () => {
+    mockNative.setOnChange.mockClear();
+    const listener = jest.fn();
+    const unsubscribeFirst = subscribeCameraChanges(listener);
+    const unsubscribeSecond = subscribeCameraChanges(listener);
+    const nativeListener = mockNative.setOnChange.mock.calls[0]?.[0];
+    nativeListener?.();
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribeFirst();
+    nativeListener?.();
+    expect(listener).toHaveBeenCalledTimes(3);
+    expect(mockNative.setOnChange).toHaveBeenCalledTimes(1);
+    unsubscribeSecond();
+    expect(mockNative.setOnChange).toHaveBeenLastCalledWith(undefined);
+  });
+
 });

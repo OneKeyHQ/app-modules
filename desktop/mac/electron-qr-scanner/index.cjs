@@ -57,7 +57,7 @@ function createCapture(options) {
   if (source.kind !== "camera" && source.kind !== "file") {
     throw errorWithCode("decoder-unavailable", `Unknown source: ${source.kind}`);
   }
-  let latestGeneration = 0;
+  let activeGeneration;
   let disposed = false;
   const native = new (binding().NativeCapture)(
     source.kind,
@@ -73,7 +73,7 @@ function createCapture(options) {
           released = true;
           native.releaseFrame(event.token);
         };
-        if (disposed || event.generation < latestGeneration) {
+        if (disposed || event.generation !== activeGeneration) {
           release();
           return;
         }
@@ -91,8 +91,7 @@ function createCapture(options) {
         }
         return;
       }
-      if (disposed || event.generation < latestGeneration) return;
-      latestGeneration = event.generation;
+      if (disposed || event.generation !== activeGeneration) return;
       switch (event.kind) {
         case "ready":
           onReady?.(event.generation);
@@ -101,6 +100,7 @@ function createCapture(options) {
           onText?.(event.text, event.generation);
           break;
         case "error":
+          activeGeneration = undefined;
           onError?.(
             errorWithCode(
               ERROR_CODES.has(event.code) ? event.code : "decoder-unavailable",
@@ -110,6 +110,7 @@ function createCapture(options) {
           );
           break;
         default:
+          activeGeneration = undefined;
           onEnded?.(event.generation);
       }
     },
@@ -117,10 +118,12 @@ function createCapture(options) {
   return {
     start() {
       if (disposed) throw errorWithCode("decoder-unavailable", "The capture was disposed");
-      native.start();
+      if (activeGeneration === undefined) activeGeneration = native.start();
     },
     stop() {
-      if (!disposed) native.stop();
+      if (disposed) return;
+      activeGeneration = undefined;
+      native.stop();
     },
     /** Preview frames currently held by the consumer (at most 3). */
     lentFrames() {

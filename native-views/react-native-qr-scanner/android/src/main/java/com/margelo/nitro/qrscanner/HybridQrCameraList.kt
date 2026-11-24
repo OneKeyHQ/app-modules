@@ -1,13 +1,13 @@
 package com.margelo.nitro.qrscanner
 
-import android.content.Context
-import android.hardware.camera2.CameraManager
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.CameraIdentifier
 import androidx.camera.core.CameraInfo
+import androidx.camera.core.CameraPresenceListener
 import androidx.camera.core.CameraSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
@@ -20,8 +20,9 @@ import com.margelo.nitro.core.Promise
 class HybridQrCameraList : HybridQrCameraListSpec() {
   private val main = Handler(Looper.getMainLooper())
   private var listener: (() -> Unit)? = null
-  private var callback: CameraManager.AvailabilityCallback? = null
-  private val knownIds = HashSet<String>()
+  private var registration: Pair<ProcessCameraProvider, CameraPresenceListener>? = null
+  private var pending = false
+  private var knownIds = emptySet<String>()
 
   override fun listCameras(): Promise<Array<QrCameraInfo>> {
     val promise = Promise<Array<QrCameraInfo>>()
@@ -44,37 +45,37 @@ class HybridQrCameraList : HybridQrCameraListSpec() {
   override fun setOnChange(listener: (() -> Unit)?) {
     main.post {
       this.listener = listener
-      val manager = NitroModules.applicationContext?.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
-        ?: return@post
       if (listener == null) {
-        callback?.let { manager.unregisterAvailabilityCallback(it) }
-        callback = null
+        registration?.let { (provider, callback) -> provider.removeCameraPresenceListener(callback) }
+        registration = null
         return@post
       }
-      if (callback != null) return@post
-      knownIds.clear()
-      knownIds.addAll(manager.cameraIdList)
-      // Availability also flips when any app opens a camera; only a new or
-      // vanished id is a connect or disconnect.
-      val next = object : CameraManager.AvailabilityCallback() {
-        override fun onCameraAvailable(cameraId: String) = check(manager)
-        override fun onCameraUnavailable(cameraId: String) = check(manager)
-      }
-      callback = next
-      manager.registerAvailabilityCallback(next, main)
-    }
-  }
+      if (pending || registration != null) return@post
+      val context = NitroModules.applicationContext ?: return@post
+      val executor = ContextCompat.getMainExecutor(context)
+      val future = ProcessCameraProvider.getInstance(context)
+      pending = true
+      future.addListener({
+        pending = false
+        if (this.listener == null) return@addListener
+        val provider = try { future.get() } catch (_: Exception) { return@addListener }
+        knownIds = provider.availableCameraInfos.map(::cameraId).toSet()
+        val callback = object : CameraPresenceListener {
+          override fun onCamerasAdded(cameraIdentifiers: Set<CameraIdentifier>) = check()
+          override fun onCamerasRemoved(cameraIdentifiers: Set<CameraIdentifier>) = check()
 
-  private fun check(manager: CameraManager) {
-    val ids = try {
-      manager.cameraIdList.toHashSet()
-    } catch (_: Exception) {
-      return
+          private fun check() {
+            if (registration?.second !== this) return
+            val ids = provider.availableCameraInfos.map(::cameraId).toSet()
+            if (ids == knownIds) return
+            knownIds = ids
+            this@HybridQrCameraList.listener?.invoke()
+          }
+        }
+        registration = provider to callback
+        provider.addCameraPresenceListener(executor, callback)
+      }, executor)
     }
-    if (ids == knownIds) return
-    knownIds.clear()
-    knownIds.addAll(ids)
-    listener?.invoke()
   }
 
   companion object {

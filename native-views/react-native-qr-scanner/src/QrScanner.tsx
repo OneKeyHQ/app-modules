@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 
 import { callback, getHostComponent } from 'react-native-nitro-modules';
 
@@ -61,7 +61,9 @@ export function QrScanner({
   onError,
 }: QrScannerComponentProps) {
   const handlers = useRef({ onReady, onProgress, onResult, onError });
-  handlers.current = { onReady, onProgress, onResult, onError };
+  useLayoutEffect(() => {
+    handlers.current = { onReady, onProgress, onResult, onError };
+  }, [onReady, onProgress, onResult, onError]);
 
   // Limits are read once per session; callers pass a constant object.
   const limitsRef = useRef(limits);
@@ -79,15 +81,26 @@ export function QrScanner({
   // generations only grow for the lifetime of the view, across sessions.
   const latestGeneration = useRef(0);
 
-  const nativeCallbacks = useMemo(
-    () => ({
+  const committed = useRef<object | undefined>(undefined);
+  const identity = useMemo(() => ({}), [active, cameraId, session]);
+  useLayoutEffect(() => {
+    committed.current = active ? identity : undefined;
+    return () => { committed.current = undefined; };
+  }, [active, identity]);
+
+  const nativeCallbacks = useMemo(() => {
+    const accept = (generation: number) => {
+      if (committed.current !== identity || generation < latestGeneration.current) return false;
+      latestGeneration.current = generation;
+      return true;
+    };
+    return {
       onReady: callback((generation: number) => {
-        latestGeneration.current = Math.max(latestGeneration.current, generation);
+        if (!accept(generation)) return;
         handlers.current.onReady?.();
       }),
       onFrameText: callback((text: string, generation: number) => {
-        if (generation < latestGeneration.current) return;
-        latestGeneration.current = generation;
+        if (!accept(generation)) return;
         const outcome = session.receive(text);
         if (outcome.status === 'progress') {
           handlers.current.onProgress?.(outcome.progress);
@@ -99,7 +112,7 @@ export function QrScanner({
         }
       }),
       onError: callback((code: string, message: string, generation: number) => {
-        if (generation < latestGeneration.current) return;
+        if (!accept(generation)) return;
         handlers.current.onError?.(
           new QrScannerError(
             isQrScannerErrorCode(code) ? code : 'decoder-unavailable',
@@ -107,9 +120,8 @@ export function QrScanner({
           )
         );
       }),
-    }),
-    [session]
-  );
+    };
+  }, [identity, session]);
 
   return (
     <QrScannerView style={style} active={active} cameraId={cameraId} {...nativeCallbacks} />

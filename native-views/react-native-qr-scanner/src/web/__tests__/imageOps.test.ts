@@ -71,6 +71,26 @@ describe('decodePixels', () => {
     ]);
   });
 
+  it('tries the fallback engine after a primary decoder error', async () => {
+    const failure = { name: 'native', decode: async () => { throw new Error('failed'); } };
+    const fallback = { name: 'zxing', decode: async () => 'hello' };
+    const image = solid(10, 10, [0, 0, 0]);
+    await expect(decodePixels(image, [failure, fallback])).resolves.toEqual({
+      text: 'hello', engine: 'zxing', pass: 'original',
+    });
+    await expect(decodePixels(image, [failure])).rejects.toMatchObject({
+      code: 'decoder-unavailable',
+    });
+  });
+
+  it('runs a padded pass that fits the budget and keeps a white border', async () => {
+    const image = solid(1000, 4, [0, 0, 0]);
+    const paddedImage = padded(image, 4_000);
+    expect(paddedImage.width * paddedImage.height).toBeLessThanOrEqual(4_000);
+    expect(Array.from(paddedImage.data.subarray(0, 4))).toEqual([255, 255, 255, 255]);
+    expect(paddedImage.data).toContain(0);
+  });
+
   it('returns null when nothing is found', async () => {
     const none: QrImageEngine = { name: 'x', decode: async () => null };
     expect(await decodePixels(solid(4, 4, [255, 255, 255]), [none])).toBeNull();

@@ -27,6 +27,12 @@ interface MessageBinding {
 // estimate can reach 1 before the final mix resolves.
 const MAX_PENDING_PROGRESS = 0.99;
 
+// Conservative upper bounds for bc-ur's shuffle, subset scans and XORs.
+// A mixed part can enqueue at most one reduced part per stored mixed part.
+const MAX_WORK_PER_FRAME = 2_000_000;
+const MAX_RETAINED_INDEX_BYTES = 8 * 1024 * 1024;
+const BYTES_PER_INDEX = 8;
+
 function sameBinding(
   binding: MessageBinding,
   type: string,
@@ -49,6 +55,8 @@ export function createUrAssembler(options?: {
   let decoder: URDecoder | undefined;
   let seenSeqNums = new Set<number>();
   let retainedBytes = 0;
+  let mixedParts = 0;
+  let retainedIndexes = 0;
   let finished = false;
   let stats: ScanStats = { accepted: 0, duplicate: 0, malformed: 0, foreign: 0 };
 
@@ -92,6 +100,8 @@ export function createUrAssembler(options?: {
 
     const parsed = parseUrPart(part, limits);
     if (parsed.verdict === 'malformed') return ignore('malformed');
+    if (binding && (!('header' in parsed) || !parsed.header ||
+        !sameBinding(binding, parsed.type, parsed.header))) return ignore('foreign');
     if (parsed.verdict === 'too-large') {
       return reject(
         'too-large',
@@ -99,19 +109,36 @@ export function createUrAssembler(options?: {
       );
     }
     if (parsed.verdict === 'single') {
-      if (binding) return ignore('foreign');
       stats.accepted += 1;
       return complete(parsed.type, parsed.payload);
     }
 
     const { type, header } = parsed;
-    if (binding && !sameBinding(binding, type, header)) return ignore('foreign');
     if (seenSeqNums.has(header.seqNum)) return ignore('duplicate');
     if (seenSeqNums.size + 1 > limits.maxDistinctParts) {
       return reject('resource-limit', 'Too many distinct UR parts');
     }
     if (retainedBytes + header.fragmentLength > limits.maxRetainedBytes) {
       return reject('resource-limit', 'UR parts exceed the retained size limit');
+    }
+
+    const { seqNum, seqLength, fragmentLength } = header;
+    const mixed = seqNum > seqLength;
+    const nextMixedParts = mixedParts + Number(mixed);
+    const indexCount = mixed ? seqLength : 1;
+    const indexBytes = (seqLength * 2 + retainedIndexes + indexCount) * BYTES_PER_INDEX;
+    // The vendor also compares every expected index at completion using
+    // Array.includes. Reserve that worst-case cost even for original parts.
+    const completionWork = seqLength * seqLength;
+    const simpleReductionWork = seqLength + fragmentLength;
+    const mixedWork = mixed
+      ? completionWork + seenSeqNums.size * simpleReductionWork +
+        nextMixedParts * (2 * completionWork + fragmentLength)
+      : 0;
+    const cascadeWork = nextMixedParts * (nextMixedParts + 1) * simpleReductionWork;
+    if (indexBytes > MAX_RETAINED_INDEX_BYTES ||
+        completionWork + mixedWork + cascadeWork > MAX_WORK_PER_FRAME) {
+      return reject('resource-limit', 'UR fountain decoder exceeds its work or index budget');
     }
 
     const activeDecoder = decoder ?? new URDecoder();
@@ -133,13 +160,15 @@ export function createUrAssembler(options?: {
       decoder = activeDecoder;
     }
     seenSeqNums.add(header.seqNum);
-    retainedBytes += header.fragmentLength;
+    retainedBytes += fragmentLength;
+    mixedParts = nextMixedParts;
+    retainedIndexes += indexCount;
     stats.accepted += 1;
 
+    if (activeDecoder.isError()) {
+      return reject('invalid-payload', 'UR message failed its checksum');
+    }
     if (activeDecoder.isComplete()) {
-      if (!activeDecoder.isSuccess()) {
-        return reject('invalid-payload', 'UR message failed its checksum');
-      }
       const ur = activeDecoder.resultUR();
       if (ur.type !== binding.type) {
         return reject('invalid-payload', 'UR type changed during assembly');
@@ -166,6 +195,8 @@ export function createUrAssembler(options?: {
       decoder = undefined;
       seenSeqNums = new Set();
       retainedBytes = 0;
+      mixedParts = 0;
+      retainedIndexes = 0;
       finished = false;
       stats = { accepted: 0, duplicate: 0, malformed: 0, foreign: 0 };
     },

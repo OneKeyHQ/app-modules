@@ -1,4 +1,4 @@
-import { UR, UREncoder } from '@ngraveio/bc-ur';
+import { UR, URDecoder, UREncoder } from '@ngraveio/bc-ur';
 
 import { createUrAssembler } from '../assembler';
 import { DEFAULT_UR_LIMITS } from '../limits';
@@ -145,6 +145,44 @@ describe('createUrAssembler', () => {
     });
     // The session is still usable after malformed frames.
     expect(assembler.receive(original).status).toBe('progress');
+  });
+
+  it('keeps a bound message when a foreign single or multipart code exceeds the limit', () => {
+    const cbor = cborBytes(200);
+    const parts = fountainParts(cbor, 50, 5);
+    const foreign = cborBytes(300);
+    const single = UREncoder.encodeSinglePart(new UR(foreign, 'bytes'));
+    const [multipart] = fountainParts(foreign, 50, 1);
+    const assembler = createUrAssembler({ limits: { maxMessageBytes: 250 } });
+
+    expect(assembler.receive(parts[0]!).status).toBe('progress');
+    expect(assembler.receive(single)).toEqual({ status: 'ignored', reason: 'foreign' });
+    expect(assembler.receive(multipart!)).toEqual({ status: 'ignored', reason: 'foreign' });
+    expect(parts.slice(1).map((part) => assembler.receive(part)).pop()).toEqual({
+      status: 'complete',
+      result: { kind: 'ur', type: 'bytes', cbor: Uint8Array.from(cbor) },
+    });
+  });
+
+  it('ends the session when the fountain decoder reports a checksum failure', () => {
+    const [part] = fountainParts(cborBytes(200), 50, 1);
+    const checksum = jest.spyOn(URDecoder.prototype, 'isError').mockReturnValueOnce(true);
+    try {
+      const assembler = createUrAssembler();
+      expect(assembler.receive(part!)).toMatchObject({
+        status: 'rejected', error: { code: 'invalid-payload' },
+      });
+      expect(assembler.receive(part!)).toEqual({ status: 'ignored', reason: 'finished' });
+    } finally {
+      checksum.mockRestore();
+    }
+  });
+
+  it('bounds work even when size limits admit a large fragment count', () => {
+    const [part] = fountainParts(cborBytes(18_000), 10, 1);
+    expect(createUrAssembler().receive(part!)).toMatchObject({
+      status: 'rejected', error: { code: 'resource-limit' },
+    });
   });
 
   it('rejects a code beyond the declared-size limits', () => {

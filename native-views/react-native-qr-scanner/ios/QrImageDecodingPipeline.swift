@@ -10,11 +10,13 @@ import Vision
 enum QrImageDecodeError: Error {
   case invalidImage(String)
   case resourceLimit(String)
+  case decoderUnavailable
 
   var codedMessage: String {
     switch self {
     case .invalidImage(let reason): return "invalid-image: \(reason)"
     case .resourceLimit(let reason): return "resource-limit: \(reason)"
+    case .decoderUnavailable: return "decoder-unavailable: A QR decoder failed"
     }
   }
 }
@@ -29,21 +31,17 @@ struct QrImageHit: Equatable {
 
 protocol QrImageEngine {
   var name: String { get }
-  func decode(_ image: CGImage) -> String?
+  func decode(_ image: CGImage) throws -> String?
 }
 
 final class VisionQrEngine: QrImageEngine {
   let name = "vision"
 
-  func decode(_ image: CGImage) -> String? {
+  func decode(_ image: CGImage) throws -> String? {
     let request = VNDetectBarcodesRequest()
     request.symbologies = [.qr]
     let handler = VNImageRequestHandler(cgImage: image, options: [:])
-    do {
-      try handler.perform([request])
-    } catch {
-      return nil
-    }
+    try handler.perform([request])
     return request.results?
       .lazy
       .compactMap { $0.payloadStringValue }
@@ -75,18 +73,28 @@ final class QrImageDecodingPipeline {
       ("grayscale", { self.grayscale(image, inverted: false) }),
       ("inverted", { self.grayscale(image, inverted: true) }),
     ]
+    var attempted = false
+    var decoded = false
     for (pass, makeVariant) in passes {
       let hit: QrImageHit? = autoreleasepool {
         guard let variant = makeVariant() else { return nil }
         for engine in engines {
-          if let text = engine.decode(variant) {
-            return QrImageHit(text: text, engine: engine.name, pass: pass)
+          attempted = true
+          do {
+            let text = try engine.decode(variant)
+            decoded = true
+            if let text {
+              return QrImageHit(text: text, engine: engine.name, pass: pass)
+            }
+          } catch {
+            // A failed pass leaves the remaining engines and passes available.
           }
         }
         return nil
       }
       if let hit { return hit }
     }
+    if attempted && !decoded { throw QrImageDecodeError.decoderUnavailable }
     return nil
   }
 
@@ -132,18 +140,22 @@ final class QrImageDecodingPipeline {
   /// fail to locate without one.
   private func padded(_ image: CGImage, maxPixels: Int) -> CGImage? {
     let margin = max(16, Int(Double(max(image.width, image.height)) * Self.paddingRatio))
-    let width = image.width + margin * 2
-    let height = image.height + margin * 2
-    guard width <= maxPixels / height,
-      let context = CGContext(
+    let expandedWidth = image.width + margin * 2
+    let expandedHeight = image.height + margin * 2
+    let scale = min(1, sqrt(Double(maxPixels) / (Double(expandedWidth) * Double(expandedHeight))))
+    let width = max(1, Int(Double(expandedWidth) * scale))
+    let height = max(1, Int(Double(expandedHeight) * scale))
+    guard let context = CGContext(
         data: nil, width: width, height: height, bitsPerComponent: 8,
         bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
     else { return nil }
     context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-    context.draw(
-      image, in: CGRect(x: margin, y: margin, width: image.width, height: image.height))
+    let insetX = CGFloat(margin) * CGFloat(width) / CGFloat(expandedWidth)
+    let insetY = CGFloat(margin) * CGFloat(height) / CGFloat(expandedHeight)
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height)
+      .insetBy(dx: insetX, dy: insetY))
     return context.makeImage()
   }
 

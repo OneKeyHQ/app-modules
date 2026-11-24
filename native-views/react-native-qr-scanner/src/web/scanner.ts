@@ -80,6 +80,9 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let session = createScanSession({ mode, allowPlainText, limits });
   let generation = 0;
   let disposed = false;
+  let active = false;
+  let acquisition: { deviceId?: string; cancelPreview?: () => void } | undefined;
+  const usesBuiltInSession = !handlers.onFrameText || !!handlers.onResult || !!handlers.onProgress;
   let stream: MediaStream | undefined;
   let frameHandle: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -96,11 +99,15 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
 
   function reportFrameText(text: string) {
     if (!handlers.onFrameText) return;
-    const now = Date.now();
+    const now = performance.now();
     if (text === lastFrameText && now - lastFrameTextAt < REPEAT_INTERVAL_MS) return;
     lastFrameText = text;
     lastFrameTextAt = now;
-    handlers.onFrameText(text);
+    try {
+      handlers.onFrameText(text);
+    } catch {
+      // A consumer observer cannot interrupt the built-in session.
+    }
   }
 
   const fail = (code: QrScannerErrorCode, message: string) =>
@@ -133,22 +140,35 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   async function analyse(runGeneration: number) {
     const image = readFrame();
     if (!image) return;
+    const frameSession = session;
+    const isCurrent = () => runGeneration === generation && frameSession === session;
     frameIndex += 1;
+    let failed: { error: unknown } | undefined;
     for (const [index, engine] of engines.entries()) {
-      const isFallback = index > 0;
-      if (isFallback && frameIndex % ZXING_EVERY_N_FRAMES !== 0) continue;
-      const text = await engine.decode(image);
-      if (runGeneration !== generation || disposed) return;
+      if (index > 0 && !failed && frameIndex % ZXING_EVERY_N_FRAMES !== 0) continue;
+      let text: string | null;
+      try {
+        text = await engine.decode(image);
+      } catch (error) {
+        failed = { error };
+        if (!isCurrent()) return;
+        continue;
+      }
+      if (!isCurrent()) return;
       if (!text) continue;
       reportFrameText(text);
-      if (runGeneration !== generation || disposed) return;
-      const outcome = session.receive(text);
+      if (!isCurrent() || !usesBuiltInSession) return;
+      const outcome = frameSession.receive(text);
       if (outcome.status === 'progress') handlers.onProgress?.(outcome.progress);
       else if (outcome.status === 'complete') {
         if (outcome.result.kind === 'ur') handlers.onProgress?.(1);
-        handlers.onResult?.(outcome.result);
+        if (isCurrent()) handlers.onResult?.(outcome.result);
       } else if (outcome.status === 'rejected') handlers.onError?.(outcome.error);
       return;
+    }
+    if (failed && isCurrent()) {
+      const { error } = failed;
+      fail('decoder-unavailable', error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -197,136 +217,173 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     stream = undefined;
   }
 
+  function invalidateAcquisition() {
+    const previous = acquisition;
+    acquisition = undefined;
+    previous?.cancelPreview?.();
+  }
+
+  function startAnalysis(nextEngines: QrImageEngine[]) {
+    cancelSchedule();
+    generation += 1;
+    const current = generation;
+    engines = nextEngines;
+    lastTime = -1;
+    lastFrameText = undefined;
+    handlers.onReady?.();
+    schedule(current);
+  }
+
+  const hasLiveCamera = () =>
+    stream?.getVideoTracks().some((track) => track.readyState === 'live') ?? false;
+
+  async function acquireCamera(requestedId: string | undefined, allowDefault: boolean) {
+    invalidateAcquisition();
+    const attempt: NonNullable<typeof acquisition> = { deviceId: requestedId };
+    acquisition = attempt;
+    const isCurrent = () => acquisition === attempt;
+    let candidate: MediaStream | undefined;
+    let preview: HTMLVideoElement | undefined;
+    function releaseCandidate() {
+      if (!candidate) return;
+      if (preview?.srcObject === candidate) preview.srcObject = null;
+      candidate.getTracks().forEach((track) => track.stop());
+      candidate = undefined;
+    }
+
+    try {
+      const nextEngines = await getEngines();
+      if (!isCurrent()) return;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new QrScannerError('no-camera', 'getUserMedia is not available');
+      }
+      const open = (id?: string) => navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          deviceId: id ? { exact: id } : undefined,
+          facingMode: id ? undefined : { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+      const previous = stream;
+      try {
+        candidate = await open(requestedId);
+      } catch (error) {
+        if (!isCurrent()) return;
+        const code = cameraErrorCode(error);
+        if (previous && stream === previous && code === 'camera-busy') {
+          generation += 1;
+          cancelSchedule();
+          releaseCamera();
+          candidate = await open(requestedId);
+        } else if (allowDefault && requestedId && code === 'no-camera') {
+          attempt.deviceId = undefined;
+          candidate = await open();
+        } else {
+          throw error;
+        }
+      }
+      if (!isCurrent()) return;
+
+      // A separate video validates the candidate while the working preview
+      // keeps rendering and analysing its own stream.
+      preview = stream ? document.createElement('video') : video;
+      preview.muted = true;
+      preview.playsInline = true;
+      preview.srcObject = candidate;
+      const candidateStream = candidate;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const started = await Promise.race([
+          preview.play().then(() => true),
+          new Promise<false>((resolve) => {
+            timeout = setTimeout(() => resolve(false), firstFrameTimeoutMs);
+            attempt.cancelPreview = () => {
+              releaseCandidate();
+              resolve(false);
+            };
+          }),
+        ]);
+        if (!isCurrent()) return;
+        if (!started) throw new QrScannerError('camera-busy', 'The camera produced no frames');
+      } finally {
+        clearTimeout(timeout);
+        attempt.cancelPreview = undefined;
+      }
+
+      // Handoff has no await so a stale request cannot release the new stream.
+      const superseded = stream;
+      video.srcObject = candidate;
+      stream = candidate;
+      streamDeviceId = attempt.deviceId;
+      candidate = undefined;
+      acquisition = undefined;
+      superseded?.getTracks().forEach((track) => track.stop());
+      if (preview !== video) {
+        preview.srcObject = null;
+        void video.play().catch((error: unknown) => {
+          if (stream === candidateStream) {
+            fail(cameraErrorCode(error), error instanceof Error ? error.message : String(error));
+          }
+        });
+      }
+      startAnalysis(nextEngines);
+    } catch (error) {
+      if (!isCurrent()) return;
+      acquisition = undefined;
+      releaseCandidate();
+      fail(error instanceof QrScannerError ? error.code : cameraErrorCode(error),
+        error instanceof Error ? error.message : String(error));
+    } finally {
+      releaseCandidate();
+    }
+  }
+
   const scanner: WebQrScanner = {
     async start() {
       if (disposed) throw new QrScannerError('decoder-unavailable', 'The scanner was disposed');
-      cancelSchedule();
-      generation += 1;
-      const runGeneration = generation;
-      try {
-        engines = await getEngines();
-      } catch (error) {
-        fail('decoder-unavailable', error instanceof Error ? error.message : String(error));
-        return;
-      }
-      // The camera this start opens; switchCamera() may change `deviceId`
-      // while the stream is still being acquired.
-      const requestedDeviceId = deviceId;
+      active = true;
       if (source.kind === 'camera') {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          fail('no-camera', 'getUserMedia is not available');
-          return;
-        }
-        try {
-          const constraintsFor = (id: string | undefined): MediaStreamConstraints => ({
-            audio: false,
-            video: {
-              deviceId: id ? { exact: id } : undefined,
-              facingMode: id ? undefined : { ideal: 'environment' },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
-          });
-          const open = async (id: string | undefined) => {
-            try {
-              // The current camera stays on until the next one delivers, so
-              // a switch does not flash black.
-              return await navigator.mediaDevices.getUserMedia(constraintsFor(id));
-            } catch (error) {
-              // Some devices open one camera at a time: release, then retry.
-              if (!stream || cameraErrorCode(error) !== 'camera-busy') throw error;
-              releaseCamera();
-              return navigator.mediaDevices.getUserMedia(constraintsFor(id));
-            }
-          };
-          let next: MediaStream;
-          let nextDeviceId = requestedDeviceId;
-          try {
-            next = await open(requestedDeviceId);
-          } catch (error) {
-            // A remembered camera that is no longer connected: use the
-            // default camera, as the native scanners do.
-            const name = (error as { name?: string })?.name;
-            if (!requestedDeviceId || (name !== 'OverconstrainedError' && name !== 'NotFoundError')) {
-              throw error;
-            }
-            nextDeviceId = undefined;
-            next = await open(undefined);
-          }
-          if (runGeneration !== generation || disposed) {
-            next.getTracks().forEach((track) => track.stop());
-            return;
-          }
-          releaseCamera();
-          stream = next;
-          streamDeviceId = nextDeviceId;
-          video.srcObject = next;
-          video.muted = true;
-          video.playsInline = true;
-          // A live track can still deliver no frames (another app holds the
-          // device, OS-level capture permission); play() then never settles.
-          const started = await Promise.race([
-            video.play().then(() => true),
-            new Promise<false>((resolve) =>
-              setTimeout(() => resolve(false), firstFrameTimeoutMs)
-            ),
-          ]);
-          if (!started) {
-            if (runGeneration === generation) {
-              releaseCamera();
-              fail('camera-busy', 'The camera produced no frames');
-            }
-            return;
-          }
-        } catch (error) {
-          if (runGeneration === generation) {
-            releaseCamera();
-            fail(cameraErrorCode(error), error instanceof Error ? error.message : String(error));
-          }
-          return;
-        }
-      }
-      if (runGeneration !== generation || disposed) return;
-      if (
-        source.kind === 'camera' &&
-        deviceId !== requestedDeviceId &&
-        deviceId !== streamDeviceId
-      ) {
-        // switchCamera() chose another camera during acquisition. Not when it
-        // asked for the camera that is already open (the default after a
-        // fallback); a fallback alone leaves `deviceId` as requested.
-        // A camera chosen during acquisition: open it now instead.
-        await scanner.start();
+        await acquireCamera(deviceId, true);
         return;
       }
-      lastTime = -1;
-      lastFrameText = undefined;
-      handlers.onReady?.();
-      schedule(runGeneration);
+      const current = ++generation;
+      cancelSchedule();
+      try {
+        const nextEngines = await getEngines();
+        if (current === generation) startAnalysis(nextEngines);
+      } catch (error) {
+        if (current === generation) {
+          fail('decoder-unavailable', error instanceof Error ? error.message : String(error));
+        }
+      }
     },
     async switchCamera(nextDeviceId?: string) {
       deviceId = nextDeviceId;
-      // Without a stream, a start in flight picks the new camera up when it
-      // finishes; a stopped scanner uses it on the next start().
-      if (disposed || source.kind !== 'camera' || !stream) return;
-      // Already showing it (e.g. the default camera after a fallback).
-      if (nextDeviceId === streamDeviceId) return;
-      await scanner.start();
+      if (disposed || source.kind !== 'camera' || !active) return;
+      if (nextDeviceId === streamDeviceId && hasLiveCamera()) {
+        invalidateAcquisition();
+        return;
+      }
+      if (acquisition && nextDeviceId === acquisition.deviceId) return;
+      await acquireCamera(nextDeviceId, !hasLiveCamera());
     },
     stop() {
+      active = false;
       generation += 1;
+      invalidateAcquisition();
       cancelSchedule();
       releaseCamera();
     },
     resetSession() {
       session = createScanSession({ mode, allowPlainText, limits });
+      lastFrameText = undefined;
     },
     dispose() {
       if (disposed) return;
       disposed = true;
-      generation += 1;
-      cancelSchedule();
-      releaseCamera();
+      scanner.stop();
     },
   };
   return scanner;

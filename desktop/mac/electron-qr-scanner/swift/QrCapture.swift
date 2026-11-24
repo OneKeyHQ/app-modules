@@ -26,12 +26,13 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
   private let queue: DispatchQueue
   private let deviceId: String?
   private var deliver: ((CVPixelBuffer) -> Void)?
-  private var configured = false
 
   init(queue: DispatchQueue, deviceId: String?) {
     self.queue = queue
     self.deviceId = deviceId
   }
+
+  var hasDevice: Bool { Self.device(id: deviceId) != nil }
 
   static func device(id: String?) -> AVCaptureDevice? {
     if let id, let device = AVCaptureDevice(uniqueID: id), device.isConnected { return device }
@@ -53,7 +54,9 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
     var seen = Set<String>()
     return devices.compactMap { device in
       guard seen.insert(device.uniqueID).inserted else { return nil }
-      let position = device.deviceType == .builtInWideAngleCamera ? "front" : "external"
+      let continuity: Bool
+      if #available(macOS 13.0, *) { continuity = device.isContinuityCamera } else { continuity = false }
+      let position = device.deviceType == .builtInWideAngleCamera && !continuity ? "front" : "external"
       return (device.uniqueID, position, device.localizedName)
     }
   }
@@ -62,7 +65,7 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
     -> (code: String, message: String)?
   {
     self.deliver = deliver
-    if !configured {
+    do {
       guard let device = Self.device(id: deviceId) else {
         return ("no-camera", "No camera is available")
       }
@@ -89,7 +92,6 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
         return ("decoder-unavailable", "The frame output could not be added")
       }
       session.addOutput(output)
-      configured = true
     }
     session.startRunning()
     return session.isRunning ? nil : ("camera-busy", "The camera could not start")
@@ -97,7 +99,6 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
 
   func stop() {
     if session.isRunning { session.stopRunning() }
-    deliver = nil
   }
 
   func captureOutput(
@@ -115,8 +116,9 @@ final class QrFileSource: QrFrameSource {
   private let url: URL
   private let loop: Bool
   private let queue: DispatchQueue
+  private let cancelled = DispatchSemaphore(value: 0)
   private let lock = NSLock()
-  private var running = false
+  private var stopped = false
 
   init(url: URL, loop: Bool, queue: DispatchQueue) {
     self.url = url
@@ -131,32 +133,27 @@ final class QrFileSource: QrFrameSource {
     guard asset.tracks(withMediaType: .video).first != nil else {
       return ("invalid-image", "The file has no video track")
     }
-    setRunning(true)
     queue.async { [weak self] in
       guard let self else { return }
       repeat {
         guard self.readOnce(asset: asset, deliver: deliver) else { break }
-      } while self.loop && self.isRunning
-      if self.isRunning {
-        self.setRunning(false)
-        ended()
-      }
+      } while self.loop && !self.isStopped
+      if !self.isStopped { ended() }
     }
     return nil
   }
 
-  func stop() { setRunning(false) }
-
-  private var isRunning: Bool {
+  func stop() {
     lock.lock()
-    defer { lock.unlock() }
-    return running
+    stopped = true
+    lock.unlock()
+    cancelled.signal()
   }
 
-  private func setRunning(_ value: Bool) {
+  private var isStopped: Bool {
     lock.lock()
-    running = value
-    lock.unlock()
+    defer { lock.unlock() }
+    return stopped
   }
 
   /// Reads the file once; false when it could not be read or was stopped.
@@ -177,17 +174,21 @@ final class QrFileSource: QrFrameSource {
     guard reader.startReading() else { return false }
     let startedAt = ProcessInfo.processInfo.systemUptime
     var firstPts: Double?
-    while isRunning, let sample = output.copyNextSampleBuffer() {
+    while !isStopped, let sample = output.copyNextSampleBuffer() {
       let pts = CMSampleBufferGetPresentationTimeStamp(sample).seconds
       let base = firstPts ?? pts
       firstPts = base
       let due = startedAt + (pts - base)
       let wait = due - ProcessInfo.processInfo.systemUptime
-      if wait > 0 { Thread.sleep(forTimeInterval: wait) }
+      if wait.isFinite, wait > 0 {
+        if cancelled.wait(timeout: .now() + wait) == .success { break }
+      }
+      guard !isStopped else { break }
       if let buffer = CMSampleBufferGetImageBuffer(sample) { deliver(buffer) }
     }
+    let completed = reader.status == .completed
     reader.cancelReading()
-    return isRunning
+    return completed && firstPts != nil && !isStopped
   }
 }
 
@@ -254,7 +255,6 @@ final class QrCaptureController {
   private var source: QrFrameSource?
   private let makeSource: (DispatchQueue) -> QrFrameSource
   private let usesCamera: Bool
-  private var running = false
 
   init(
     usesCamera: Bool, makeSource: @escaping (DispatchQueue) -> QrFrameSource,
@@ -274,31 +274,37 @@ final class QrCaptureController {
 
   /// Runs on the analysis queue, before Vision, so preview latency does not
   /// include detection time.
-  private func preview(_ buffer: CVPixelBuffer) {
+  private func preview(_ buffer: CVPixelBuffer, generation: Int) {
     emitLock.lock()
     defer { emitLock.unlock() }
-    guard previewing, let frameEmitter, let lent = previewPool.lend(buffer) else { return }
+    guard previewing, gate.currentGeneration == generation,
+      let frameEmitter, let lent = previewPool.lend(buffer) else { return }
     frameEmitter(
       lent.token, Unmanaged.passUnretained(lent.surface).toOpaque(),
-      CVPixelBufferGetWidth(buffer), CVPixelBufferGetHeight(buffer), gate.currentGeneration)
+      CVPixelBufferGetWidth(buffer), CVPixelBufferGetHeight(buffer), generation)
   }
 
   private func emit(_ kind: QrCaptureEventKind, _ a: String, _ b: String, _ generation: Int) {
     emitLock.lock()
     defer { emitLock.unlock() }
+    guard gate.currentGeneration == generation else { return }
     emitter?(kind, a, b, generation)
   }
 
-  func start() {
-    sessionQueue.async { [weak self] in self?.startOnQueue() }
+  func start() -> Int {
+    let generation = gate.nextGeneration()
+    sessionQueue.async { [weak self] in self?.startOnQueue(generation: generation) }
+    return generation
   }
 
   func stop() {
+    _ = gate.nextGeneration()
     sessionQueue.async { [weak self] in self?.stopOnQueue() }
   }
 
   /// Stops capture and guarantees no callback runs after it returns.
   func destroy() {
+    _ = gate.nextGeneration()
     sessionQueue.sync { stopOnQueue() }
     emitLock.lock()
     emitter = nil
@@ -308,11 +314,12 @@ final class QrCaptureController {
     previewPool.clear()
   }
 
-  private func startOnQueue() {
-    guard !running else { return }
-    let generation = gate.nextGeneration()
+  private func startOnQueue(generation: Int) {
+    guard gate.currentGeneration == generation else { return }
+    stopOnQueue()
+    let source = makeSource(analysisQueue)
     if usesCamera {
-      guard QrCameraSource.device(id: nil) != nil else {
+      guard let camera = source as? QrCameraSource, camera.hasDevice else {
         emit(.error, "no-camera", "No camera is available", generation)
         return
       }
@@ -324,7 +331,7 @@ final class QrCaptureController {
           self?.sessionQueue.async {
             guard let self, self.gate.currentGeneration == generation else { return }
             if granted {
-              self.startOnQueue()
+              self.startOnQueue(generation: generation)
             } else {
               self.emit(.error, "permission-denied", "Camera access was denied", generation)
             }
@@ -336,46 +343,49 @@ final class QrCaptureController {
         return
       }
     }
-    let source = self.source ?? makeSource(analysisQueue)
-    self.source = source
     if let failure = source.start(
       deliver: { [weak self] buffer in
-        self?.preview(buffer)
-        self?.analyze(buffer)
+        self?.preview(buffer, generation: generation)
+        self?.analyze(buffer, generation: generation)
       },
       ended: { [weak self] in
-        guard let self else { return }
-        self.gate.setCapturing(false)
-        self.emit(.ended, "", "", self.gate.currentGeneration)
+        self?.sessionQueue.async { [weak self] in
+          guard let self, self.gate.currentGeneration == generation else { return }
+          self.stopOnQueue()
+          self.emit(.ended, "", "", generation)
+        }
       })
     {
       emit(.error, failure.code, failure.message, generation)
       return
     }
-    running = true
+    self.source = source
+    guard gate.currentGeneration == generation else {
+      stopOnQueue()
+      return
+    }
+    emit(.ready, "", "", generation)
     gate.setCapturing(true)
     setPreviewing(true)
-    emit(.ready, "", "", generation)
   }
 
   private func stopOnQueue() {
-    _ = gate.nextGeneration()
     gate.setCapturing(false)
     setPreviewing(false)
-    guard running else { return }
     source?.stop()
-    running = false
+    source = nil
   }
 
   /// Runs on the analysis queue.
-  private func analyze(_ buffer: CVPixelBuffer) {
+  private func analyze(_ buffer: CVPixelBuffer, generation: Int) {
+    guard gate.currentGeneration == generation else { return }
     let request = VNDetectBarcodesRequest()
     request.symbologies = [.qr]
     let handler = VNImageRequestHandler(cvPixelBuffer: buffer, options: [:])
     guard (try? handler.perform([request])) != nil else { return }
     let texts = (request.results ?? []).compactMap { $0.payloadStringValue }
     guard !texts.isEmpty else { return }
-    for report in gate.filter(texts, now: ProcessInfo.processInfo.systemUptime) {
+    for report in gate.filter(texts, now: ProcessInfo.processInfo.systemUptime, generation: generation) {
       emit(.text, report.text, "", report.generation)
     }
   }

@@ -20,6 +20,7 @@ class QrFrameTextGate(private val repeatIntervalMs: Long = 1_000) {
   /** Starts a new generation; capture stays stopped until [setCapturing]. */
   fun nextGeneration(): Int = synchronized(lock) {
     generation += 1
+    capturing = false
     lastText = null
     generation
   }
@@ -29,8 +30,8 @@ class QrFrameTextGate(private val repeatIntervalMs: Long = 1_000) {
 
   fun setCapturing(value: Boolean) = synchronized(lock) { capturing = value }
 
-  fun filter(texts: List<String>, nowMs: Long): List<Report> = synchronized(lock) {
-    if (!capturing) return emptyList()
+  fun filter(texts: List<String>, nowMs: Long, origin: Int? = null): List<Report> = synchronized(lock) {
+    if (!capturing || (origin != null && origin != generation)) return emptyList()
     val reports = ArrayList<Report>()
     for (text in texts) {
       if (text.isEmpty()) continue

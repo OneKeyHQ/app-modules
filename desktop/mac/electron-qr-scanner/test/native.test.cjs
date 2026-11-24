@@ -42,6 +42,11 @@ test("ZXing-C++ fallback decodes on its own", { skip: !nativeMac }, async () => 
   assert.equal(await api.decodeImage(fixture("no-qr.png"), { engines: ["zxing"] }), null);
 });
 
+test("preserves NUL characters in ZXing QR text", { skip: !nativeMac }, async () => {
+  const path = join(__dirname, "fixtures/embedded-nul.png");
+  assert.equal(await api.decodeImage(path, { engines: ["zxing"] }), "before\0after");
+});
+
 test("Vision alone and engine validation", { skip: !nativeMac }, async () => {
   const payload = readFileSync(fixture("lightning-payload.txt"), "utf8");
   assert.equal(
@@ -127,6 +132,33 @@ test("stop and start begin a new generation; dispose silences events", { skip: !
   assert.equal(generations.length, 2);
   assert.ok(generations[1] > generations[0]);
   assert.throws(() => capture.start(), { code: "decoder-unavailable" });
+});
+
+test("a non-looping playback can restart after EOF", { skip: !nativeMac, timeout: 15_000 }, async () => {
+  const generations = [];
+  let endGeneration;
+  let capture;
+  try {
+    await new Promise((resolve, reject) => {
+      capture = api.createCapture({
+        source: { kind: "file", path: join(__dirname, "fixtures/animated-ur.mp4") },
+        onReady: (generation) => {
+          generations.push(generation);
+          if (generations.length === 2) resolve();
+        },
+        onEnded: (generation) => {
+          endGeneration = generation;
+          capture.start();
+        },
+        onError: reject,
+      });
+      capture.start();
+    });
+    assert.equal(endGeneration, generations[0]);
+    assert.ok(generations[1] > generations[0]);
+  } finally {
+    capture?.dispose();
+  }
 });
 
 test("a missing video file reports an error", { skip: !nativeMac }, async () => {

@@ -4,7 +4,7 @@ import Foundation
 // are malloc'd and must be freed with oqs_free_string.
 
 public typealias OqsEventCallback = @convention(c) (
-  UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>, UnsafePointer<CChar>, Int64
+  UnsafeMutableRawPointer?, Int32, UnsafePointer<UInt8>?, Int, UnsafePointer<CChar>, Int64
 ) -> Void
 
 /// (context, token, IOSurfaceRef, width, height, generation)
@@ -26,7 +26,8 @@ private let imageLock = NSLock()
 @_cdecl("oqs_decode_image")
 public func oqs_decode_image(
   _ path: UnsafePointer<CChar>, _ maxPixels: Int64, _ engines: Int32,
-  _ outText: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
+  _ outText: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>,
+  _ outLength: UnsafeMutablePointer<Int>,
   _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
 ) -> Int32 {
   let url = URL(fileURLWithPath: String(cString: path))
@@ -39,7 +40,16 @@ public func oqs_decode_image(
     guard let hit = try pipeline.decode(url: url, maxPixels: Int(maxPixels)) else {
       return 0
     }
-    outText.pointee = strdup(hit.text)
+    let bytes = Array(hit.text.utf8)
+    guard let buffer = malloc(bytes.count)?.assumingMemoryBound(to: UInt8.self) else {
+      outError.pointee = strdup("resource-limit: could not allocate QR text")
+      return -1
+    }
+    bytes.withUnsafeBufferPointer {
+      if let base = $0.baseAddress { buffer.initialize(from: base, count: $0.count) }
+    }
+    outText.pointee = buffer
+    outLength.pointee = bytes.count
     return 1
   } catch let error as QrImageDecodeError {
     outError.pointee = strdup(error.codedMessage)
@@ -60,6 +70,11 @@ public func oqs_list_cameras() -> UnsafeMutablePointer<CChar>? {
     let json = String(data: data, encoding: .utf8)
   else { return strdup("[]") }
   return strdup(json)
+}
+
+@_cdecl("oqs_free_bytes")
+public func oqs_free_bytes(_ value: UnsafeMutablePointer<UInt8>?) {
+  free(value)
 }
 
 @_cdecl("oqs_free_string")
@@ -86,9 +101,9 @@ public func oqs_capture_create(
       return QrCameraSource(queue: queue, deviceId: filePath)
     },
     emit: { kind, a, b, generation in
-      a.withCString { first in
+      Array(a.utf8).withUnsafeBufferPointer { first in
         b.withCString { second in
-          callback(context, kind.rawValue, first, second, Int64(generation))
+          callback(context, kind.rawValue, first.baseAddress, first.count, second, Int64(generation))
         }
       }
     },
@@ -115,8 +130,8 @@ public func oqs_capture_lent_frames(_ handle: UnsafeMutableRawPointer) -> Int32 
 }
 
 @_cdecl("oqs_capture_start")
-public func oqs_capture_start(_ handle: UnsafeMutableRawPointer) {
-  Unmanaged<QrCaptureController>.fromOpaque(handle).takeUnretainedValue().start()
+public func oqs_capture_start(_ handle: UnsafeMutableRawPointer) -> Int64 {
+  Int64(Unmanaged<QrCaptureController>.fromOpaque(handle).takeUnretainedValue().start())
 }
 
 @_cdecl("oqs_capture_stop")

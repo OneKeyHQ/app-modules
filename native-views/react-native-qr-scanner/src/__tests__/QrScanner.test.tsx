@@ -121,6 +121,26 @@ describe('QrScanner', () => {
     expect(handlers.onProgress.mock.calls.length).toBe(before + 1);
   });
 
+  it('drops a queued callback from the session before a pause and key change', () => {
+    const { handlers, renderer } = renderScanner({ mode: 'static', sessionKey: 'first' });
+    const previous = native();
+    act(() => renderer.update(
+      <QrScanner active={false} mode="static" sessionKey="second" {...handlers} />
+    ));
+    previous.onReady.f(1);
+    previous.onFrameText.f('previous QR', 1);
+    previous.onError.f('camera-busy', 'previous error', 1);
+    expect(handlers.onReady).not.toHaveBeenCalled();
+    expect(handlers.onResult).not.toHaveBeenCalled();
+    expect(handlers.onError).not.toHaveBeenCalled();
+    act(() => renderer.update(
+      <QrScanner active mode="static" sessionKey="second" {...handlers} />
+    ));
+    previous.onFrameText.f('previous QR', 1);
+    native().onFrameText.f('current QR', 2);
+    expect(handlers.onResult.mock.calls).toEqual([[{ kind: 'text', text: 'current QR' }]]);
+  });
+
   it('starts a new session when sessionKey changes', () => {
     const { parts } = animatedParts(40);
     const { handlers, renderer } = renderScanner({ sessionKey: 'a' });

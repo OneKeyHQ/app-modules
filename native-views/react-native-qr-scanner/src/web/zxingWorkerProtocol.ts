@@ -26,14 +26,8 @@ export const ZXING_READER_OPTIONS = {
 
 export async function prepareZXingFromBinary(binary: ArrayBuffer): Promise<void> {
   await prepareZXingModule({
-    overrides: {
-      instantiateWasm(imports, receiveInstance) {
-        void WebAssembly.instantiate(binary, imports).then(({ instance }) =>
-          receiveInstance(instance)
-        );
-        return {};
-      },
-    },
+    overrides: { wasmBinary: binary },
+    equalityFn: () => false,
     fireImmediately: true,
   });
 }

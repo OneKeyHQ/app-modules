@@ -33,6 +33,7 @@ final class QrFrameTextGate {
     lock.lock()
     defer { lock.unlock() }
     generation += 1
+    capturing = false
     lastText = nil
     return generation
   }
@@ -50,10 +51,10 @@ final class QrFrameTextGate {
   }
 
   /// Texts from one detection callback, in order, filtered for reporting.
-  func filter(_ texts: [String], now: TimeInterval) -> [Report] {
+  func filter(_ texts: [String], now: TimeInterval, generation origin: Int? = nil) -> [Report] {
     lock.lock()
     defer { lock.unlock() }
-    guard capturing else { return [] }
+    guard capturing, origin == nil || origin == generation else { return [] }
     var reports: [Report] = []
     for text in texts where !text.isEmpty {
       if text == lastText, now - lastTextAt < repeatInterval { continue }

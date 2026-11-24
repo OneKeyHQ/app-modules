@@ -71,16 +71,23 @@ analysis queue, so preview rate is bounded by detection time per frame.
   `options.engines` (`["vision"]`, `["zxing"]`) limits the engines for
   diagnostics and tests; unknown or empty lists reject with
   `decoder-unavailable`. `maxPixels` default 12 MP, capped at 50 MP.
-  Errors: `invalid-image`, `resource-limit`.
+  The padded pass scales the image and border together to fit the budget.
+  Errors: `invalid-image`, `resource-limit`, `decoder-unavailable`.
 - `createCapture`: every `start`/`stop` begins a new generation; events from
-  an older generation are dropped in JS. The same text repeats at most once
+  a stopped or superseded generation are dropped in JS, including queued
+  callbacks. Each file playback run cancels independently and EOF permits
+  restarting. QR text crosses the native bridge as length-delimited UTF-8.
+  ZXing preserves embedded NULs. macOS Vision can truncate a QR payload at an
+  embedded NUL before this bridge sees it, including with the live engine. The same text repeats at most once
   per second; new text (each part of an animated code) passes at once.
   `dispose()` is idempotent and no callback runs after it returns.
 - `listCameras` lists without opening a camera or asking for permission:
   the built-in camera (`front`), then USB and Continuity cameras
   (`external`; `.external`/`.continuityCamera` on macOS 14+,
   `.externalUnknown` before). Switching cameras is a new capture with
-  `source.deviceId`; an id that is no longer connected uses the default.
+  `source.deviceId`; each start resolves the requested ID again and uses the
+  default if it is disconnected. Continuity Cameras are external regardless
+  of the reported device type.
 - Camera: the chosen (else default) video device at 720p, BGRA, late frames discarded so
   at most one frame is in analysis. Missing hardware is reported as
   `no-camera` before any permission request. Error codes: `no-camera`,
@@ -112,8 +119,12 @@ string table was not 8-byte aligned, which dyld on macOS 27 refuses to load
 `scripts/build.mjs` strips with Xcode `strip -x`, then fails the build if the
 string table offset is misaligned.
 
-The tests load `@ngraveio/bc-ur` (to assemble the animated UR) from the
-repository root `node_modules`; the package itself has no dependencies.
+The automated fixture tests load `@ngraveio/bc-ur` from the repository root
+`node_modules`. The manual camera harness uses the built React Native scanner
+`./ur` entry (`yarn prepare` in the QR scanner workspace before launching
+Electron). Its report contains detection counts and fixture comparisons.
+It records preview transfer errors and samples outstanding slots after
+stopping and waiting up to 1.5 seconds for transfers, before disposal.
 
 Pending:
 

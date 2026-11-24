@@ -53,7 +53,8 @@ export async function decodeQrImage(
   if (!Number.isFinite(maxPixels) || maxPixels < 1) {
     throw new QrScannerError('invalid-image', 'maxPixels must be at least 1');
   }
-  const pixels = await blobToPixels(image, Math.min(maxPixels, MAX_PIXELS_CEILING));
-  const hit = await decodePixels(pixels, await getEngines());
+  const budget = Math.min(maxPixels, MAX_PIXELS_CEILING);
+  const pixels = await blobToPixels(image, budget);
+  const hit = await decodePixels(pixels, await getEngines(), budget);
   return hit?.text ?? null;
 }

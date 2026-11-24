@@ -1,8 +1,7 @@
 # react-native-qr-scanner SPEC
 
-Status: **Proposed**. The `/ur` entry is the first part being implemented; every
-other section describes intended behavior that has no implementation yet. Each
-section labels its own status. Nothing here is runtime verified.
+Status: **In development**. Platform implementations and validation evidence
+are listed in sections 6 and 9.
 
 Design background, desktop texture path and rollout order live in app-monorepo
 `docs/qr-scanner-sdk-design.md` ([OK-34497](https://onekeyhq.atlassian.net/browse/OK-34497)).
@@ -43,7 +42,8 @@ when it lands:
 for bytewords and fountain decoding, so assembly matches production behavior.
 That library needs a global `Buffer`, and its `assert` dependency reads
 `process` when loaded; OneKey runtimes provide both (a plain browser page
-needs polyfills). Replacing it with a dependency-free decoder is a possible
+needs polyfills). The React Native example installs Buffer before loading its
+app. Replacing it with a dependency-free decoder is a possible
 follow-up, not a goal here.
 
 `./web` uses `zxing-wasm` `3.1.3` (the version app-monorepo ships) as its
@@ -186,10 +186,13 @@ DEFAULT_MAX_IMAGE_PIXELS = 12_000_000;
   `decoder-unavailable`.
 - The image is oriented by EXIF and downscaled to at most `maxPixels`
   (capped at 50 MP natively). Passes run in this order, stopping at the
-  first hit; within a pass the platform engine runs before ZXing-C++:
+  first hit; within a pass the platform engine runs before ZXing-C++. An
+  engine failure allows the next engine to try. If every engine attempt
+  fails, decoding rejects with `decoder-unavailable`:
   1. `original`
   2. `padded`: white border of 10% of the longer side (at least 16 px), for
-     codes drawn edge to edge with no quiet zone.
+     codes drawn edge to edge with no quiet zone. The padded pass scales the
+     image and border together to fit the pixel budget.
   3. `grayscale`: saturation 0, contrast 1.3.
   4. `inverted`: the grayscale image inverted, for light-on-dark codes.
 - Native code resolves `{ text?, engine?, pass? }`; the JS entry returns the
@@ -234,15 +237,16 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
   the camera pauses in the background. Missing hardware (`no-camera`) is
   checked before permission; permission is requested through React Native's
   `PermissionAwareActivity`. The library manifest declares `CAMERA` and
-  `android.hardware.camera.any` (not required).
+  optional camera, autofocus and camera.any features. Android readiness
+  follows the first streaming preview state and capture errors are reported
+  for the active binding. Stopping unbinds only this view’s use cases.
 - Camera choice (Implemented): `listCameras()` returns `QrCameraInfo`
   (`id`, `position: back | front | external`, `label`): one back camera
   (on iOS the virtual device), one front camera, then external cameras
   (iPadOS 17+ `.external`; Android `LENS_FACING_EXTERNAL`), deduplicated.
   `subscribeCameraChanges` reports connects and disconnects (iOS
-  `wasConnected`/`wasDisconnected`; Android a changed camera id set from
-  `CameraManager.AvailabilityCallback`, which also fires when another app
-  opens a camera). The `cameraId` prop picks the camera; unset or
+  `wasConnected`/`wasDisconnected`; Android CameraX presence events after
+  its catalog updates). Each subscription has independent cleanup. The `cameraId` prop picks the camera; unset or
   disconnected uses the back camera. Changing it while active swaps the
   input (iOS, inside one configuration, without stopping the session) or
   rebinds CameraX (Android) in a new capture generation with a new
@@ -262,7 +266,8 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
     `FocusMeteringAction` (AF + AE) with a 5 s auto-cancel.
   - Pinch to zoom from the current zoom, clamped to the device range and at
     most 8x the 1x factor (`QrCameraControl.clampZoom`,
-    `QrCameraZoom.clampRatio`).
+    `QrCameraZoom.clampRatio`). A pinch applies only to the running capture
+    where it began. Android uses two-finger scaling and independent focus taps.
   - The view consumes touches on its area, as camera-kit did.
 
 Web (`./web`):
@@ -297,21 +302,22 @@ createWebQrScanner({
   crashed worker is replaced on the next request (`decoder-unavailable` for
   the failed one). The callers create the Worker because worker URLs are
   bundler-specific.
-- `onFrameText(text)` reports raw text of every decoded frame before the
-  scan session, under the native frame gate's rule: the same text again only
-  after 1 s, new text (the next UR part) at once, reset on each `start()`.
-  Callers that assemble UR themselves use it instead of `onResult`.
-- `listWebCameras()` (labels are empty until camera access was granted;
-  those entries are named "Camera N", and `position` is guessed from the
-  label), `subscribeWebCameraChanges()` (`devicechange`), and
-  `scanner.switchCamera(deviceId?)`: opens the new camera before stopping
-  the old one so the preview does not go black; on `NotReadableError`
-  (devices that open one camera at a time) it releases the old one and
-  retries. The scan session is kept. While stopped it records the choice
-  for the next `start()`; a camera chosen while a stream is still being
-  acquired is opened as soon as that finishes. A requested device that is
-  gone (`OverconstrainedError`/`NotFoundError`) falls back to the default
-  camera, as on native, so callers can pass a remembered id before listing.
+- `onFrameText(text)` reports raw decoded text before assembly. Repeats use
+  a monotonic 1 s interval, and a different text passes immediately. If
+  `onFrameText` is supplied by itself, the caller owns assembly. Supply
+  `onResult` or `onProgress` alongside it to also run the built-in session.
+  Exceptions from the raw handler do not interrupt assembly. Session reset
+  drops any in-flight decode from the previous session.
+- `listWebCameras()` returns device IDs and labels (or “Camera N” before
+  permission) and infers position from the label. `subscribeWebCameraChanges()`
+  listens to `devicechange`. `switchCamera(deviceId?)` stages a replacement
+  until it produces a frame. It retains the running stream on failure when
+  the cameras can coexist. On a busy error, the current request may release
+  its old stream and retry once. While stopped, selection is saved for
+  `start()`. A newer selection supersedes pending acquisition, including a
+  return to the current camera. Ended streams can be reacquired. On startup,
+  a missing remembered ID falls back to the default. Cancellation prevents
+  later permission requests and disposes any stream that arrives late.
 - A camera whose track delivers no frame within `firstFrameTimeoutMs`
   (default 8000) fails `start()` with `camera-busy` and is released, instead
   of waiting forever on `video.play()`.
@@ -327,7 +333,11 @@ createWebQrScanner({
   second per generation while new text (each part of an animated code) passes
   immediately. JS drops any event older than the newest generation it has
   seen. Generations only grow for the lifetime of a view. `onDropView` stops
-  capture and removes observers.
+  capture and removes observers. Explicit `dispose()` performs the same
+  terminal cleanup. Failed iOS configuration restores the prior input,
+  output and preset. Native frames carry the generation that produced them.
+  React callbacks queued for an inactive, unmounted or replaced view state
+  are discarded.
 - Image decoding (iOS): one decode at a time on a serial queue; each decode
   holds up to a few full-size bitmaps for its passes.
 
@@ -360,9 +370,11 @@ CBOR nesting ≤ 64, distinct accepted parts ≤ 65,536, retained fragment bytes
 8 MiB. The first five are configurable per session. One fountain frame's own
 CBOR is capped at 16 KiB (fixed; a QR symbol holds under 3 KB). CBOR of the completed message must use definite lengths that fit the
 bytes present, with no trailing bytes. A part whose text header, CBOR header
-and sizes disagree is `malformed` and dropped. Exceeding a declared-size limit
-ends the session with `too-large`; exceeding a retention limit ends it with
-`resource-limit`; a completed message failing the CBOR walk ends it with
+and sizes disagree is `malformed` and dropped. Once bound, a foreign frame is ignored even if it exceeds the declared-size
+limits. Exceeding a declared-size limit on an eligible frame ends the session
+with `too-large`. The decoder also bounds mixed-frame work and retained
+fragment and index storage. Exceeding those budgets ends the session with
+`resource-limit`. A failed message checksum or CBOR walk ends it with
 `invalid-payload`.
 
 Frame text, pixels and CBOR never go to logs or metrics.
@@ -370,7 +382,12 @@ Frame text, pixels and CBOR never go to logs or metrics.
 ## 8. Performance and resource budget
 
 `./ur` per-frame cost is bounded by the part-count and retained-byte limits
-above. No camera or decoding work runs on the UI thread (Proposed).
+above, a fixed 8 MiB estimated index budget (8 bytes per slot), and a fixed
+2 million estimated operations per frame. The estimate accounts for the
+completion index comparison, mixed-part shuffle, cascading reductions and
+fragment XORs in bc-ur 1.1.13. Larger caller-configured limits remain subject
+to these fixed budgets. Camera analysis and native image decoding
+run off the UI thread.
 
 ## 9. Conformance and acceptance
 
@@ -392,10 +409,28 @@ above. No camera or decoding work runs on the UI thread (Proposed).
 | Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt` | `android/src/test/` Robolectric (SDK 34, native graphics), 11 tests (14 with `QrCameraZoomTest`): gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms. In CI `android-unit`. |
 | Android on device runtime | example app, Android 15 emulator (Pixel 7, arm64) | `decodeQrImage` through JS → Nitro → Kotlin: BTCPay lightning fixture → full invoice (12-41 ms), EXIF-rotated JPEG → invoice (13 ms), no-QR → `null`, corrupt and missing → `invalid-image`. Live view: camera permission prompt via `PermissionAwareActivity`, CameraX binds camera 1, preview surface attached, `onReady` fires; stop releases the camera. Preview content was black (headless emulated camera), so live detection is not verified. |
 | Web backend in a browser | `src/web/` | Chrome 156 (built-in browser), esbuild bundle of `./web` with Buffer/process shims, served locally. Native `BarcodeDetector`: BTCPay lightning fixtures → exact payload (14-159 ms), no-QR → `null`, corrupt → `invalid-image`; live scanner on a `<video>` of the animated `crypto-psbt` UR (2,003 bytes) assembles with matching FNV-1a in 2.8 s. Forced zxing-wasm: same image results (16-61 ms), animated UR in 3.6 s; WASM fetched only through `loadZXingWasm`, no CDN request. `getUserMedia` camera not exercised. |
-| Web worker, engines and camera start | `src/web/engines.ts`, `src/web/zxingWorkerProtocol.ts`, `src/web/scanner.ts` | jest: worker handler (no decode before init, init failure then retry), worker client (one worker, copy transferred, crashed worker replaced), camera start (no-frame timeout → `camera-busy` and release, `NotAllowedError`/`NotFoundError`/`NotReadableError` mapping, stream arriving after `stop()` is stopped), `onFrameText` repeat throttle. 54 jest tests in total. |
-| Web real camera | test harness `?camera=live` in the user's Chrome 157 (launched normally), MacBook Pro camera, codes shown on an iPhone | Camera ready in 498 ms at 1280x720 @ 30 fps; native BarcodeDetector; animated `crypto-psbt` (2,003 bytes) assembled in 2.86 s with matching FNV-1a; 211 static results (lightning invoice and `bitcoin:` URI) all matching their expected payloads (compared on the first 70 characters); track `ended` after stop. |
+| Web worker, engines and camera start | `src/web/engines.ts`, `src/web/zxingWorkerProtocol.ts`, `src/web/scanner.ts` | jest: worker handler (no decode before init, init failure then retry), worker client (one worker, copy transferred, crashed worker replaced), camera start (no-frame timeout → `camera-busy` and release, `NotAllowedError`/`NotFoundError`/`NotReadableError` mapping, stream arriving after `stop()` is stopped), `onFrameText` repeat throttle. Regression tests cover cancellation, staged switches, stale frames on reset, and Worker initialization retries. |
+| Web real camera | local test harness in Chrome 157, MacBook Pro camera, codes shown on an iPhone (reproduction below) | Camera ready in 498 ms at 1280x720 @ 30 fps; native BarcodeDetector; animated `crypto-psbt` (2,003 bytes) assembled in 2.86 s with matching FNV-1a; 211 static results (lightning invoice and `bitcoin:` URI) all matching their expected payloads (compared on the first 70 characters); track `ended` after stop. |
 | Web in other engines and the extension CSP | harness via Playwright 1.58 | Chrome 156 Worker mode: images exact (5-26 ms), animated UR 2.4 s, one worker. WebKit 26.0 (Safari's engine; no BarcodeDetector, so zxing automatically): page thread and Worker, images exact, animated UR ~2.4 s. MV3 extension with OneKey's production CSP (`script-src 'self' 'wasm-unsafe-eval'; object-src 'self'`): page thread and Worker, images exact, animated UR 2.4-2.6 s, no CSP violations. Real camera: Chrome 157 sees "MacBook Pro Camera" and getUserMedia returns a live 640x480 track, but no frames reached the `<video>` when launched from this automation (OS capture permission of the launching process); the SDK now reports `camera-busy` and releases the camera in that case. The built-in browser pane blocks capture, which verified `permission-denied`. |
 | iOS native build | `ios/`, `QrScanner.podspec` | `xcodebuild -scheme QrScanner` (iphonesimulator, Debug, Xcode 27.2) succeeds with zxing-cpp 2.2.0 and the two Podfile settings above, no warnings in package sources. Build evidence only. |
+
+To reproduce the Web camera check, bundle a local entry with esbuild for a
+browser. Install or inject `buffer` and `process` shims before importing
+`src/web/index.ts`. Serve the bundle and a page containing
+`<video autoplay playsinline muted></video>` over localhost. From a button
+click, create a scanner with the video, `mode: 'auto'` and callbacks for ready,
+result and errors, then call `start()` in a regular Chrome window with camera
+permission. Restart the result session between static and animated scans.
+
+- Present the QR from `ios/tests/fixtures/lightning-clean.png` on a separate
+  screen and compare its exact text to `lightning-payload.txt` in the same
+  directory. A second static check can use a synthetic `bitcoin:` URI.
+- Play `desktop/mac/electron-qr-scanner/test/fixtures/animated-ur.mp4` on the
+  other screen. Compare the assembled type, length and FNV-1a to the adjacent
+  `animated-ur.json`. Record time from the first UR fragment.
+- Before calling `stop()`, keep a reference to the active video track.
+  Verify its `readyState` becomes `ended` after stopping and that the scanner
+  delivers no further frames.
 
 Known image-decoding gaps (iOS 27.2 simulator; recorded as non-strict
 expected failures in `testStressFixturesAreKnownGaps`):

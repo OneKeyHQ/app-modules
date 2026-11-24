@@ -6,9 +6,10 @@ import type { ZXingWorkerRequest, ZXingWorkerResponse } from './zxingWorkerProto
 
 /** The part of `Worker` the SDK uses. */
 export interface ZXingWorkerLike {
-  postMessage(message: ZXingWorkerRequest, transfer?: Transferable[]): void;
-  onmessage: ((event: { data: ZXingWorkerResponse }) => void) | null;
-  onerror: ((event: unknown) => void) | null;
+  postMessage(message: ZXingWorkerRequest, transfer: Transferable[]): void;
+  onmessage: ((event: MessageEvent<ZXingWorkerResponse>) => void) | null;
+  onerror: ((event: ErrorEvent) => void) | null;
+  onmessageerror?: Worker['onmessageerror'];
   terminate(): void;
 }
 
@@ -105,17 +106,27 @@ class ZXingWorkerClient {
   private pending = new Map<number, (response: ZXingWorkerResponse) => void>();
   private ready: Promise<void>;
   broken = false;
+  private terminated = false;
 
   constructor(create: () => ZXingWorkerLike, loadWasm: () => Promise<ArrayBuffer>) {
     this.worker = create();
-    this.worker.onmessage = ({ data }) => {
+    this.worker.onmessage = ({ data }: MessageEvent<ZXingWorkerResponse>) => {
       this.pending.get(data.id)?.(data);
       this.pending.delete(data.id);
     };
     this.worker.onerror = () => this.fail('zxing worker crashed');
-    this.ready = loadWasm().then((wasm) =>
-      this.request({ id: 0, type: 'init', wasm }, [wasm]).then(() => undefined)
-    );
+    this.worker.onmessageerror = () => this.fail('zxing worker response could not be read');
+    this.ready = Promise.resolve()
+      .then(loadWasm)
+      .then(async (wasm) => {
+        // The loader may cache its ArrayBuffer. Transfer only our own copy.
+        const bytes = wasm.slice(0);
+        await this.request({ id: 0, type: 'init', wasm: bytes }, [bytes]);
+      })
+      .catch((error: unknown) => {
+        this.dispose();
+        throw error;
+      });
   }
 
   private fail(message: string) {
@@ -137,7 +148,12 @@ class ZXingWorkerClient {
       this.pending.set(id, (response) =>
         response.ok ? resolve(response.text) : reject(new Error(response.error))
       );
-      this.worker.postMessage({ ...message, id }, transfer);
+      try {
+        this.worker.postMessage({ ...message, id }, transfer);
+      } catch (error) {
+        this.pending.delete(id);
+        reject(error);
+      }
     });
   }
 
@@ -152,6 +168,8 @@ class ZXingWorkerClient {
   }
 
   dispose() {
+    if (this.terminated) return;
+    this.terminated = true;
     this.fail('zxing worker disposed');
     this.worker.terminate();
   }
@@ -169,11 +187,11 @@ export const zxingEngine: QrImageEngine = {
         }
         return await workerClient.decode(image);
       }
-      pageZXingReady ??= loadWasm().then(prepareZXingFromBinary);
+      const ready = (pageZXingReady ??= loadWasm().then(prepareZXingFromBinary));
       try {
-        await pageZXingReady;
+        await ready;
       } catch (error) {
-        pageZXingReady = undefined;
+        if (pageZXingReady === ready) pageZXingReady = undefined;
         throw error;
       }
       return await readQrText(image.data, image.width, image.height);
