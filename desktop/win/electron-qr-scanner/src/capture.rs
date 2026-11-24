@@ -51,6 +51,7 @@ pub struct CameraDeviceInfo {
 
 #[derive(Clone, Debug)]
 pub struct CaptureReadyInfo {
+    pub device_id: Option<String>,
     pub width: u32,
     pub height: u32,
     pub fps: f64,
@@ -812,6 +813,7 @@ struct SendReader(IMFSourceReader);
 unsafe impl Send for SendReader {}
 
 struct AsyncCameraShared {
+    device_id: Option<String>,
     generation: i64,
     active: AtomicBool,
     ready_emitted: AtomicBool,
@@ -947,6 +949,7 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
                         .frames_captured
                         .fetch_add(1, Ordering::Relaxed);
                     let make_ready_info = || CaptureReadyInfo {
+                        device_id: self.shared.device_id.clone(),
                         width: layout.width,
                         height: layout.height,
                         fps: layout.fps,
@@ -1157,6 +1160,15 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
         (0u32, activates.into_iter().next().unwrap())
     };
 
+    let device_id = selected
+        .cast::<IMFAttributes>()
+        .ok()
+        .and_then(|attributes| {
+            read_allocated_string(
+                &attributes,
+                &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
+            )
+        });
     let media_source: IMFMediaSource = match unsafe { selected.ActivateObject() } {
         Ok(src) => src,
         Err(err) => {
@@ -1183,6 +1195,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
     };
 
     let shared = Arc::new(AsyncCameraShared {
+        device_id,
         generation,
         active: AtomicBool::new(true),
         ready_emitted: AtomicBool::new(false),
@@ -1530,6 +1543,7 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
             if let Some((luma, bgra)) = extract_rgb32_frame(&sample, layout, need_bgra) {
                 stats.frames_captured.fetch_add(1, Ordering::Relaxed);
                 let ready_info = CaptureReadyInfo {
+                    device_id: None,
                     width: layout.width,
                     height: layout.height,
                     fps: layout.fps,

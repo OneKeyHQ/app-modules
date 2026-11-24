@@ -33,6 +33,7 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
   private let session = AVCaptureSession()
   private let queue: DispatchQueue
   private let deviceId: String?
+  private(set) var openedDeviceId: String?
   private var deliver: ((CVPixelBuffer) -> Void)?
   private var observers: [NSObjectProtocol] = []
 
@@ -129,6 +130,7 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
       stop()
       return ("camera-busy", "The camera could not start")
     }
+    openedDeviceId = device.uniqueID
     return nil
   }
 
@@ -420,7 +422,7 @@ final class QrCaptureController {
       stopOnQueue()
       return
     }
-    emit(.ready, "", "", generation)
+    emit(.ready, (source as? QrCameraSource)?.openedDeviceId ?? "", "", generation)
     gate.setCapturing(true)
     setPreviewing(true)
   }

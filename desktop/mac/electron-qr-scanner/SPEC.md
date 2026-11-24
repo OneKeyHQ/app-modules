@@ -47,7 +47,7 @@ stripped).
 decodeImage(path: string, options?: { maxPixels?: number }): Promise<string | null>;
 createCapture(options?: {
   source?: { kind: "camera"; deviceId?: string } | { kind: "file"; path: string; loop?: boolean };
-  onReady?(generation: number): void;
+  onReady?(generation: number, deviceId?: string): void;
   onText?(text: string, generation: number): void;
   onError?(error: Error & { code: QrScannerErrorCode }, generation: number): void;
   onEnded?(generation: number): void;
@@ -93,6 +93,7 @@ analysis queue, so preview rate is bounded by detection time per frame.
   `source.deviceId`; each start resolves the requested ID again and uses the
   default if it is disconnected. Continuity Cameras are external regardless
   of the reported device type.
+- Camera readiness reports the bound device ID, including after default fallback. File sources have no device ID.
 - Camera: the chosen (else default) video device at 720p, BGRA, late frames discarded so
   at most one frame is in analysis. Missing hardware is reported as
   `no-camera` before any permission request. Error codes: `no-camera`,

@@ -215,6 +215,7 @@ pub struct CaptureEvent {
     /// `ready`, `text`, `error`, `ended` or `frame`.
     pub kind: String,
     pub text: Option<String>,
+    pub device_id: Option<String>,
     pub code: Option<String>,
     pub message: Option<String>,
     pub generation: f64,
@@ -233,6 +234,7 @@ fn event(kind: &str, generation: i64) -> CaptureEvent {
     CaptureEvent {
         kind: kind.into(),
         text: None,
+        device_id: None,
         code: None,
         message: None,
         generation: generation as f64,
@@ -288,7 +290,10 @@ extern "C" fn on_event(
         .to_string_lossy()
         .into_owned();
     let payload = match kind {
-        0 => event("ready", generation),
+        0 => CaptureEvent {
+            device_id: (!first.is_empty()).then_some(first),
+            ..event("ready", generation)
+        },
         1 => CaptureEvent {
             text: Some(first),
             ..event("text", generation)

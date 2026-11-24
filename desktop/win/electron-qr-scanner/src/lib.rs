@@ -126,6 +126,7 @@ pub fn list_cameras() -> AsyncTask<ListCamerasTask> {
 
 #[napi(object)]
 pub struct JsCaptureReadyInfo {
+    pub device_id: Option<String>,
     pub width: u32,
     pub height: u32,
     pub fps: f64,
@@ -147,6 +148,7 @@ impl From<CaptureReadyInfo> for JsCaptureReadyInfo {
             subtype: info.subtype,
             camera_count: info.camera_count,
             camera_index: info.camera_index,
+            device_id: info.device_id,
             is_default_camera: info.is_default_camera,
             focus_supported: info.focus_supported,
             auto_focus_supported: info.auto_focus_supported,

@@ -60,7 +60,7 @@ createCapture(options?: {
         lockFocusOnDetect?: boolean;
       }
     | { kind: "file"; path: string; loop?: boolean };
-  onReady?(generation: number, info?: CaptureReadyInfo): void;
+  onReady?(generation: number, info?: CaptureReadyInfo, deviceId?: string): void;
   onText?(text: string, generation: number): void;
   onError?(error: Error & { code: QrScannerErrorCode }, generation: number): void;
   onEnded?(generation: number): void;
@@ -96,6 +96,7 @@ createCapture(options?: {
   supported cameras to Auto focus, and optionally locks focus during active QR
   detection (`lockFocusOnDetect`, auto-unlocking after 1.5 s without hits and
   restoring Auto on teardown).
+- Readiness supplies the bound camera ID to the application callback. File sources have no ID. Diagnostics still omit the camera ID.
 - **Web fallback contract**: `shouldFallbackToWeb(error)` returns `true` for
   `preview-unavailable`, `decoder-unavailable` (including native `.node` load
   failures), and unexpected GPU/runtime errors, and `false` for

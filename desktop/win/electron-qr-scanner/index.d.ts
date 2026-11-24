@@ -148,7 +148,7 @@ export type CaptureSource =
 
 export interface CaptureOptions {
   source?: CaptureSource;
-  onReady?: (generation: number, info?: CaptureReadyInfo) => void;
+  onReady?: (generation: number, info?: CaptureReadyInfo, deviceId?: string) => void;
   /** Each distinct QR text; the same text repeats at most once per second. */
   onText?: (text: string, generation: number) => void;
   onError?: (error: QrScannerError, generation: number) => void;

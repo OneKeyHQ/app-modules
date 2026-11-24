@@ -54,7 +54,7 @@ jobs:
       - name: Build and exercise native QR decoding and shared-texture preview
         run: |
           cargo fmt --check
-          cargo test --locked --target "$BUILD_TARGET"
+          cargo test --release --locked --target "$BUILD_TARGET"
           npm run build -- "$BUILD_TARGET"
           npm test
           npm run test:electron

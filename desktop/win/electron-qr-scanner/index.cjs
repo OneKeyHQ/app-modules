@@ -230,7 +230,7 @@ function createCapture(options) {
               autoFocusSupported: info?.autoFocusSupported ?? false,
               exposureSupported: info?.exposureSupported ?? false,
             });
-            onReady?.(event.generation, info);
+            onReady?.(event.generation, info, event.info?.deviceId);
             break;
           }
           case "text":

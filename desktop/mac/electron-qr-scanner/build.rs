@@ -41,7 +41,10 @@ fn main() {
         .chain(LOCAL_SWIFT)
         .map(|path| manifest.join(path))
         .collect();
-    println!("cargo:rerun-if-changed={}", manifest.join(BRIDGING_HEADER).display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest.join(BRIDGING_HEADER).display()
+    );
     for source in &sources {
         assert!(source.exists(), "missing Swift source {}", source.display());
         println!("cargo:rerun-if-changed={}", source.display());
