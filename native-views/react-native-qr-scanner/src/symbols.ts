@@ -344,16 +344,10 @@ export function createMultiSymbolCoordinator(
           );
           if (distance > minSpatialSeparation) {
             // Do not merge an earlier frame's symbol into selecting (every
-            // selection anchor must belong to the exact frozen frame). Track
-            // the newly visible symbol and restart the short window instead.
+            // selection anchor must belong to the exact frozen frame). Keep the
+            // latest visible symbol without extending the original window so
+            // alternating detections still settle cleanly.
             pendingSymbol = single;
-            clearTimer();
-            timer = setTimeout(() => {
-              timer = undefined;
-              if (phase === 'aggregating' && pendingSymbol) {
-                commitStatic(pendingSymbol.text);
-              }
-            }, aggregationWindowMs);
           }
         }
         return;

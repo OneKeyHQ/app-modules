@@ -142,14 +142,14 @@ describe('createMultiSymbolCoordinator', () => {
     expect(coordinator.phase).toBe('resolved');
     expect(onCommitText).toHaveBeenCalledWith('frame-1', 'static');
 
-    // Spatially separated single code in a later frame does NOT freeze with
-    // the older frame's marker; it tracks the newer visible code until either
-    // both appear in the same frame or the window settles on the new code.
+    // Spatially separated alternating single codes do NOT extend the original
+    // 140ms window unboundedly, and settle on the latest visible code.
     coordinator.reset();
     coordinator.receiveFrame([{ text: 'left', centerX: 0.2, centerY: 0.5 }]);
+    jest.advanceTimersByTime(80);
     coordinator.receiveFrame([{ text: 'right', centerX: 0.8, centerY: 0.5 }]);
     expect(coordinator.phase).toBe('aggregating');
-    jest.advanceTimersByTime(140);
+    jest.advanceTimersByTime(60);
     expect(coordinator.phase).toBe('resolved');
     expect(onCommitText).toHaveBeenLastCalledWith('right', 'static');
   });
