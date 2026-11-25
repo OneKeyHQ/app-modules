@@ -88,7 +88,7 @@ describe('createMultiSymbolCoordinator', () => {
     const onMultiSymbolChange = jest.fn();
     const onSelectingChange = jest.fn();
     const onCommitText = jest.fn((_text: string, mode: 'static' | 'ur') =>
-      mode === 'ur' ? ({ status: 'progress' as const }) : undefined
+      mode === 'ur' ? ({ status: 'progress' as const }) : ({ status: 'complete' as const })
     );
     const coordinator = createMultiSymbolCoordinator({
       aggregationWindowMs,
@@ -297,7 +297,9 @@ describe('createMultiSymbolCoordinator', () => {
     const onMultiSymbolChange = jest.fn();
     const onSelectingChange = jest.fn();
     const onCommitText = jest.fn((_text: string, mode: 'static' | 'ur') =>
-      mode === 'ur' ? ({ status: 'ignored' as const, reason: 'malformed' }) : undefined
+      mode === 'ur'
+        ? ({ status: 'ignored' as const, reason: 'malformed' })
+        : ({ status: 'complete' as const })
     );
     const coordinator = createMultiSymbolCoordinator({
       aggregationWindowMs: 140,

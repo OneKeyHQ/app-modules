@@ -278,7 +278,7 @@ function createCoordinator() {
           2
         );
         log(`提交静态码: [${classifyLabel(text)}] (${text.length} chars)`);
-        return;
+        return { status: 'complete' };
       }
 
       setStatus('BC-UR 高速组装中', 'ur');

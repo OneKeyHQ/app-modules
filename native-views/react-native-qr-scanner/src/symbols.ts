@@ -157,7 +157,6 @@ export type MultiSymbolPhase =
   | 'resolved';
 
 export type MultiSymbolCommitResult =
-  | void
   | boolean
   | { status: 'progress' | 'complete' | 'ignored' | 'rejected'; reason?: string };
 
@@ -170,10 +169,11 @@ export interface MultiSymbolCoordinatorOptions {
   onMultiSymbolChange: (enabled: boolean) => void;
   onSelectingChange: (symbols: QrDetectedSymbol[]) => void;
   /**
-   * Called when a static QR or UR fragment is committed. Returning a
-   * `ScanReceiveResult`-like object (or `false`) lets the coordinator keep
-   * selection open if a selected UR fails to bind, stop streaming on
-   * completion, and re-enable `multiSymbol` if a foreign UR is seen.
+   * Called when a static QR or UR fragment is committed. Must return an
+   * explicit acceptance status (e.g. directly return `session.receive(text)`
+   * for UR frames, or `true` for handled static codes) so the coordinator only
+   * enters `ur-streaming` once the session has bound, keeps single-symbol mode
+   * on `ignored/duplicate`, and recovers `multiSymbol` on `ignored/foreign`.
    */
   onCommitText: (text: string, mode: 'static' | 'ur') => MultiSymbolCommitResult;
 }

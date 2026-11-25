@@ -484,10 +484,12 @@ BC-UR codes from hardware wallets), the caller starts with `multiSymbol=true`
 and applies three rules:
 
 1. **UR fast-path latch**: if a single visible symbol matches `/^ur:/i`, bypass
-   any aggregation window (0 ms delay), enter `ur-streaming`, feed the part
-   immediately, and dynamically set `multiSymbol=false` so subsequent frames
-   run at full single-symbol throughput (crucial for Windows ZXing-C++ and Web
-   ZXing-WASM) without restarting the camera.
+   any aggregation window (0 ms delay), feed the part immediately via
+   `onCommitText` (callers return `ScanSession.receive(text)` or an explicit
+   `MultiSymbolCommitResult` — never `void`), enter `ur-streaming` only once
+   explicitly accepted, and dynamically set `multiSymbol=false` so subsequent
+   frames run at full single-symbol throughput (crucial for Windows ZXing-C++
+   and Web ZXing-WASM) without restarting the camera.
 2. **Single-frame anchor integrity**: a frame with `>= 2` distinct visible
    symbols freezes into `selecting` immediately so every selection anchor is
    backed by the exact displayed frozen frame. During a short anti-race
