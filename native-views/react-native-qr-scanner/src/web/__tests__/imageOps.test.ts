@@ -131,4 +131,20 @@ describe('decodePixels', () => {
       'inverted-qr',
     ]);
   });
+
+  it('bounds fallback work with a shared deadline after first hit in decodePixelsSymbols', async () => {
+    const fast: QrImageEngine = {
+      name: 'native',
+      decode: async () => null,
+      decodeSymbols: async () => [{ text: 'fast-qr', centerX: 0.5, centerY: 0.5 }],
+    };
+    const stalled: QrImageEngine = {
+      name: 'zxing',
+      decode: async () => new Promise(() => {}),
+      decodeSymbols: async () => new Promise(() => {}),
+    };
+    const hit = await decodePixelsSymbols(solid(32, 32, [0, 0, 0]), [fast, stalled], undefined, 25);
+    expect(hit?.symbols.map((s) => s.text)).toEqual(['fast-qr']);
+    expect(hit?.engine).toBe('native');
+  });
 });

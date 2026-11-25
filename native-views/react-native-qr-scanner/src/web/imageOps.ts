@@ -145,16 +145,51 @@ function unpadSymbol(
 }
 
 const MAX_IMAGE_SYMBOLS = 8;
+const DEFAULT_POST_HIT_DEADLINE_MS = 1500;
+
+function raceWithDeadline<T>(
+  promise: Promise<T>,
+  remainingMs: number
+): Promise<{ timedOut: true } | { timedOut: false; value: T }> {
+  if (remainingMs <= 0) {
+    return Promise.resolve({ timedOut: true });
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve({ timedOut: true });
+    }, remainingMs);
+    promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ timedOut: false, value });
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
 
 /**
  * The same pass order as `decodePixels`, accumulating unique QR symbols across
  * passes and engines (up to 8) so mixed normal/inverted or multi-engine codes
- * all reach the selection UI, mapped back to original image space.
+ * all reach the selection UI, mapped back to original image space. Once the
+ * first hit arrives, remaining optional passes share a bounded deadline so a
+ * slow or stalled fallback engine cannot block returning already-found codes.
  */
 export async function decodePixelsSymbols(
   image: RgbaImage,
   engines: readonly QrImageEngine[],
-  maxPixels?: number
+  maxPixels?: number,
+  postHitDeadlineMs = DEFAULT_POST_HIT_DEADLINE_MS
 ): Promise<QrImageSymbolsHit | null> {
   const passes: [DecodePass, () => RgbaImage][] = [
     ['original', () => image],
@@ -168,19 +203,30 @@ export async function decodePixelsSymbols(
   const seen = new Set<string>();
   let firstEngine: string | undefined;
   let firstPass: DecodePass | undefined;
+  let postHitDeadline: number | undefined;
 
   for (const [pass, make] of passes) {
     if (merged.length >= MAX_IMAGE_SYMBOLS) break;
+    if (postHitDeadline !== undefined && Date.now() >= postHitDeadline) break;
     const variant = make();
     for (const engine of engines) {
       if (merged.length >= MAX_IMAGE_SYMBOLS) break;
+      if (postHitDeadline !== undefined && Date.now() >= postHitDeadline) break;
       attempted = true;
       try {
-        const symbols = engine.decodeSymbols
-          ? await engine.decodeSymbols(variant, true)
-          : await engine.decode(variant).then((text) =>
+        const work = engine.decodeSymbols
+          ? engine.decodeSymbols(variant, true)
+          : engine.decode(variant).then((text) =>
               text ? [{ text, centerX: 0.5, centerY: 0.5 }] : []
             );
+        let symbols: QrDetectedSymbol[];
+        if (postHitDeadline !== undefined) {
+          const raced = await raceWithDeadline(work, postHitDeadline - Date.now());
+          if (raced.timedOut) break;
+          symbols = raced.value;
+        } else {
+          symbols = await work;
+        }
         decoded = true;
         if (symbols.length > 0) {
           const normalized =
@@ -194,6 +240,7 @@ export async function decodePixelsSymbols(
             if (!firstEngine) {
               firstEngine = engine.name;
               firstPass = pass;
+              postHitDeadline = Date.now() + postHitDeadlineMs;
             }
             if (merged.length >= MAX_IMAGE_SYMBOLS) break;
           }

@@ -534,7 +534,10 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       if (active) {
         lastTime = -1;
         void video.play().catch(() => {});
-        if (!analysing) schedule(generation);
+        // Always schedule current generation: `schedule` is idempotent via
+        // frameHandle/timer, and an in-flight decode from a previous camera
+        // generation will not schedule the new generation when it settles.
+        schedule(generation);
       }
     },
     stop() {

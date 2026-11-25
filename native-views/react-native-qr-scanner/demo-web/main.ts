@@ -37,6 +37,7 @@ const resultBoxEl = document.getElementById('resultBox') as HTMLPreElement;
 const logEl = document.getElementById('eventLog') as HTMLDivElement;
 
 let activeCase: DemoCase = 'b';
+let caseToken = 0;
 let scanner: WebQrScanner | null = null;
 let coordinator: MultiSymbolCoordinator | null = null;
 let urSession = createScanSession({ mode: 'auto' });
@@ -211,6 +212,7 @@ function renderAnchors(symbols: QrDetectedSymbol[]) {
 }
 
 function teardown() {
+  caseToken += 1;
   coordinator?.dispose();
   coordinator = null;
   scanner?.dispose();
@@ -314,18 +316,25 @@ function createCoordinator() {
 
 async function runImageCase(fixturePath: string, title: string) {
   teardown();
+  const token = caseToken;
   isStillImageMode = true;
   setStatus(`解码图片中…`, 'idle');
   setFooter('scanning');
   resultBoxEl.textContent = `加载 ${title}…`;
 
   const response = await fetch(fixturePath);
+  if (token !== caseToken) return;
   const blob = await response.blob();
+  if (token !== caseToken) return;
   const objectUrl = URL.createObjectURL(blob);
   imageEl.src = objectUrl;
   imageEl.classList.remove('hidden');
 
   const decoded = await decodeQrImageSymbols(blob);
+  if (token !== caseToken) {
+    URL.revokeObjectURL(objectUrl);
+    return;
+  }
   log(`decodeQrImageSymbols(${title}): 识别到 ${decoded.symbols.length} 个二维码 (${decoded.width}x${decoded.height})`);
 
   const rect = viewportEl.getBoundingClientRect();
@@ -354,6 +363,7 @@ async function runImageCase(fixturePath: string, title: string) {
 
 async function runVideoCase(fixturePath: string | null, title: string) {
   teardown();
+  const token = caseToken;
   setStatus(fixturePath ? `播放测试视频: ${title}` : '打开摄像头…', 'idle');
   setFooter('scanning');
   resultBoxEl.textContent = '等待识别结果…';
@@ -367,6 +377,7 @@ async function runVideoCase(fixturePath: string | null, title: string) {
     videoEl.loop = true;
     videoEl.muted = true;
     await videoEl.play();
+    if (token !== caseToken) return;
   }
 
   scanner = createWebQrScanner({
