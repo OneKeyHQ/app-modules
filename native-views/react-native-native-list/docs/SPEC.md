@@ -2846,6 +2846,12 @@ under the labels. Each emits its own key with the column index as the anchor
 slot. On iOS and Android, touches up to 8 logical units outside the glyph
 can activate the button within its cell. The nearest button owns overlapping
 touch regions. Glyph layout and action anchor rectangles stay unchanged.
+Native presses are canceled if a patch replaces or removes the pressed action.
+Updates that retain its key preserve the press. On iOS, the default row height
+accommodates below-text buttons, wrapped labels and padding, with a minimum
+of 56 points. Explicit heights retain precedence. Android uses the default
+subdued tint if the supplied icon tint cannot be parsed. A tap on an enabled
+icon counts as handled with the keyboard open, including in offset windows.
 A disabled row disables both buttons. Development rejects whole-cell actions
 combined with icon buttons. Production keeps the whole-cell action in that
 case and discards malformed or duplicate buttons. An invalid placement in a

@@ -1,6 +1,7 @@
 import UIKit
 
 private final class TableActionButton: NativeListIconButton {
+  var actionKey = ""
   var hitInsets = UIEdgeInsets.zero
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
     isEnabled && bounds.inset(by: hitInsets).contains(point)
@@ -13,18 +14,19 @@ private final class TableCellContent: UIView {
   let button = UIButton(type: .custom)
   var onPress: (() -> Void)?
   private var iconButtons: [TableActionButton] = []
-  private var iconActions: [[String: Any]] = []
   var onIconPress: ((String, UIView) -> Void)?
   var actionsBelow = false
   func bindActions(_ actions: [[String: Any]], disabled: Bool, color: UIColor) {
-    iconActions = Array(actions.prefix(2))
-    while iconButtons.count > iconActions.count { iconButtons.removeLast().removeFromSuperview() }
-    for (index, action) in iconActions.enumerated() {
-      if index == iconButtons.count {
+    let count = min(2, actions.count)
+    while iconButtons.count > count { removeIcon(at: iconButtons.count - 1) }
+    for (index, action) in actions.prefix(count).enumerated() {
+      let key = action.string("actionKey")
+      if index == iconButtons.count || iconButtons[index].actionKey != key {
+        if index < iconButtons.count { removeIcon(at: index) }
         let icon = TableActionButton(type: .custom)
-        icon.tag = index
+        icon.actionKey = key
         icon.addTarget(self, action: #selector(pressIcon(_:)), for: .touchUpInside)
-        iconButtons.append(icon)
+        iconButtons.insert(icon, at: index)
         addSubview(icon)
       }
       let icon = iconButtons[index]
@@ -35,9 +37,15 @@ private final class TableCellContent: UIView {
       icon.accessibilityLabel = action.string("accessibilityLabel")
     }
   }
-  @objc private func pressIcon(_ sender: UIButton) {
-    guard sender.isEnabled, iconActions.indices.contains(sender.tag) else { return }
-    onIconPress?(iconActions[sender.tag].string("actionKey"), sender)
+  private func removeIcon(at index: Int) {
+    let icon = iconButtons.remove(at: index)
+    icon.cancelTracking(with: nil)
+    icon.removeTarget(self, action: #selector(pressIcon(_:)), for: .touchUpInside)
+    icon.removeFromSuperview()
+  }
+  @objc private func pressIcon(_ sender: TableActionButton) {
+    guard sender.isEnabled, sender.superview === self else { return }
+    onIconPress?(sender.actionKey, sender)
   }
   var columnWidth: CGFloat?
   var visualSize = CGSize.zero
@@ -57,13 +65,11 @@ private final class TableCellContent: UIView {
   override func layoutSubviews() {
     super.layoutSubviews()
     let inset = image.isHidden ? 0 : visualSize.width + gap
-    let textSize = labels.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
     let hasActions = !iconButtons.isEmpty
     let actionsWidth = CGFloat(iconButtons.count * 22 - (hasActions ? 6 : 0))
     let inlineWidth = hasActions && !actionsBelow ? actionsWidth + 6 : 0
-    let width = min(max(0, bounds.width - inset - inlineWidth), textSize.width)
-    let height = labels.systemLayoutSizeFitting(CGSize(width: width, height: 0),
-      withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
+    let size = labels.tableTextSize(availableWidth: bounds.width - inset - inlineWidth)
+    let (width, height) = (size.width, size.height)
     let below = hasActions && actionsBelow
     let labelGroupHeight = below ? height + 22 : max(height, hasActions ? 16 : 0)
     let labelGroupWidth = below ? max(width, actionsWidth) : width + inlineWidth
@@ -93,15 +99,34 @@ private final class TableCellContent: UIView {
   }
 }
 
+private extension NativeListTableColumnView {
+  func bindTableText(_ column: [String: Any], style: [String: Any], theme: [String: Any]?, fonts: NativeListFontFamilies) {
+    bind(column: column, badges: [], theme: theme, fonts: fonts)
+    applyStyle(style) { label, textStyle in
+      NativeListTextStyles.applyStyledText(label, textStyle, fonts: fonts)
+    }
+    applySegments(column)
+  }
+
+  func tableTextSize(availableWidth: CGFloat) -> CGSize {
+    let width = min(max(0, availableWidth), systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width)
+    let height = systemLayoutSizeFitting(CGSize(width: width, height: 0),
+      withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
+    return CGSize(width: width, height: height)
+  }
+}
+
 private final class TableStrip: UIView {
   var cells = [TableCellContent]()
   var columnGap: CGFloat = 8
+  static func flexibleWidth(_ widths: [CGFloat?], width: CGFloat, gap: CGFloat) -> CGFloat {
+    let fixed = widths.compactMap { $0 }
+    let gaps = CGFloat(max(0, widths.count - 1)) * gap
+    return max(0, width - fixed.reduce(0, +) - gaps) / CGFloat(max(1, widths.count - fixed.count))
+  }
   override func layoutSubviews() {
     super.layoutSubviews()
-    let fixed = cells.compactMap { $0.columnWidth }.reduce(0, +)
-    let auto = cells.filter { $0.columnWidth == nil }.count
-    let gaps = CGFloat(max(0, cells.count - 1)) * columnGap
-    let flexible = max(0, bounds.width - fixed - gaps) / CGFloat(max(1, auto))
+    let flexible = Self.flexibleWidth(cells.map(\.columnWidth), width: bounds.width, gap: columnGap)
     var start: CGFloat = 0
     for cell in cells {
       let width = cell.columnWidth ?? flexible
@@ -114,8 +139,39 @@ private final class TableStrip: UIView {
 
 final class NativeListBoundedTableCell: NativeListRendererCell {
   private let strip = TableStrip()
+  private static func tableStyle(_ item: NativeListItem) -> [String: Any] {
+    var style = item.data.dictionary("style") ?? [:]
+    if item.type == "market" {
+      style["columns"] = style["price"]
+      style["columnSecondary"] = style["subtitle"]
+    }
+    style["lineGap"] = style["lineGap"] ?? 0
+    return style
+  }
   override class func measure(_ item: NativeListItem, width: CGFloat, theme: [String: Any]?,
-    layout: String, fonts: NativeListFontFamilies) -> CGFloat? { 56 }
+    layout: String, fonts: NativeListFontFamilies) -> CGFloat? {
+    let columns = item.data.dictionaries("tableColumns")
+    guard columns.contains(where: { $0.string("actionPlacement") == "below" && !$0.dictionaries("actions").isEmpty })
+      else { return 56 }
+    let style = tableStyle(item)
+    let widths = columns.map { ($0["width"] as? NSNumber).map { CGFloat($0.doubleValue) } }
+    let flexible = TableStrip.flexibleWidth(widths, width: width - 2 * CGFloat(style.double("horizontalPadding")),
+      gap: CGFloat(style.double("columnGap", default: 8)))
+    let image = style.dictionary("image") ?? [:]
+    let labels = NativeListTableColumnView()
+    var height: CGFloat = 0
+    for (index, column) in columns.enumerated() {
+      labels.bindTableText(column, style: style, theme: theme, fonts: fonts)
+      let hasImage = column.dictionary("leading") != nil
+      let inset = hasImage ? CGFloat(image.double("width", default: 24) + style.double("leadingGap", default: 4)) : 0
+      let count = min(2, column.dictionaries("actions").count)
+      let below = count > 0 && column.string("actionPlacement") == "below"
+      let inline = below ? 0 : CGFloat(count * 22)
+      let text = labels.tableTextSize(availableWidth: (widths[index] ?? flexible) - inset - inline)
+      height = max(height, text.height + (below ? 22 : 0), hasImage ? CGFloat(image.double("height", default: 24)) : 0)
+    }
+    return max(56, ceil(height + 2 * CGFloat(style.double("verticalPadding"))))
+  }
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -127,12 +183,7 @@ final class NativeListBoundedTableCell: NativeListRendererCell {
 
   override func bindContent(_ item: NativeListItem, theme: [String: Any]?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String) {
-    var style = item.data.dictionary("style") ?? [:]
-    if item.type == "market" {
-      style["columns"] = style["price"]
-      style["columnSecondary"] = style["subtitle"]
-    }
-    style["lineGap"] = style["lineGap"] ?? 0
+    let style = Self.tableStyle(item)
     strip.columnGap = CGFloat(style.double("columnGap", default: 8))
     let hp = CGFloat(style.double("horizontalPadding"))
     let vp = CGFloat(style.double("verticalPadding"))
@@ -154,11 +205,7 @@ final class NativeListBoundedTableCell: NativeListRendererCell {
       cell.columnWidth = (column["width"] as? NSNumber).map { CGFloat($0.doubleValue) }
       cell.verticalAlignment = style.dictionary("container")?.string("contentVerticalAlignment") ?? "center"
       cell.alignment = column.string("alignment", default: "start")
-      cell.labels.bind(column: column, badges: [], theme: theme, fonts: fonts)
-      cell.labels.applyStyle(style) { label, textStyle in
-        NativeListTextStyles.applyStyledText(label, textStyle, fonts: fonts)
-      }
-      cell.labels.applySegments(column)
+      cell.labels.bindTableText(column, style: style, theme: theme, fonts: fonts)
       if let leading = column.dictionary("leading") {
         cell.visualSize = CGSize(width: imageStyle.double("width", default: 24),
           height: imageStyle.double("height", default: 24))
@@ -207,6 +254,7 @@ final class NativeListBoundedTableCell: NativeListRendererCell {
 
   override func recycleContent() {
     for cell in strip.cells {
+      cell.bindActions([], disabled: true, color: .clear)
       cell.onIconPress = nil
       cell.onPress = nil
       cell.image.recycle()

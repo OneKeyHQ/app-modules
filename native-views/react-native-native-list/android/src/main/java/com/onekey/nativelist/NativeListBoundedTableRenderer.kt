@@ -22,6 +22,17 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
       addView(labels, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
     }
     private val actions = LinearLayout(context)
+    private class IconDelegate(bounds: Rect, val icon: View) : TouchDelegate(bounds, icon)
+    private fun removeIcon(index: Int) {
+      val icon = actions.getChildAt(index)
+      if ((touchDelegate as? IconDelegate)?.icon === icon) touchDelegate = null
+      icon.cancelPendingInputEvents()
+      icon.setOnClickListener(null)
+      actions.removeViewAt(index)
+    }
+    fun clearActions() {
+      while (actions.childCount > 0) removeIcon(actions.childCount - 1)
+    }
     private var inlineWidth = 0
     fun bindActions(column: JSONObject, disabled: Boolean, color: Int, onAction: (String, View) -> Unit) {
       val descriptors = column.optJSONArray("actions")
@@ -30,7 +41,7 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
       val size = NativeListScale.dp(resources, 16)
       val gap = NativeListScale.dp(resources, 6)
       inlineWidth = if (below) 0 else count * (size + gap)
-      while (actions.childCount > count) actions.removeViewAt(actions.childCount - 1)
+      while (actions.childCount > count) removeIcon(actions.childCount - 1)
       val parent = if (below) labels else content
       if (actions.parent !== parent || count == 0) {
         (actions.parent as? LinearLayout)?.removeView(actions)
@@ -40,8 +51,12 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
       }
       for (i in 0 until count) {
         val descriptor = descriptors!!.getJSONObject(i)
-        val icon = actions.getChildAt(i) as? OneKeyIconView ?: OneKeyIconView(context).also {
-          actions.addView(it, LayoutParams(size, size).apply { if (i > 0) marginStart = gap })
+        val key = descriptor.getString("actionKey")
+        val previous = actions.getChildAt(i)
+        if (previous != null && previous.tag != key) removeIcon(i)
+        val icon = previous?.takeIf { it.tag == key } as? OneKeyIconView ?: OneKeyIconView(context).also {
+          it.tag = key
+          actions.addView(it, i, LayoutParams(size, size).apply { if (i > 0) marginStart = gap })
         }
         icon.iconName = descriptor.getString("name")
         icon.glyphSizeDp = 16
@@ -49,7 +64,7 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
         icon.contentDescription = descriptor.getString("accessibilityLabel")
         icon.isEnabled = !disabled
         icon.isFocusable = true
-        icon.setOnClickListener { if (!disabled) onAction(descriptor.getString("actionKey"), icon) }
+        icon.setOnClickListener { if (!disabled) onAction(key, icon) }
       }
     }
     // Coordinates are local to the column, so the hit area can extend past the icon dock.
@@ -77,7 +92,7 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
     override fun onTouchEvent(event: MotionEvent): Boolean {
       if (event.actionMasked == MotionEvent.ACTION_DOWN && actions.childCount > 0) {
         val bounds = Rect()
-        touchDelegate = actionAt(event.x.toInt(), event.y.toInt(), bounds)?.let { TouchDelegate(bounds, it) }
+        touchDelegate = actionAt(event.x.toInt(), event.y.toInt(), bounds)?.let { IconDelegate(bounds, it) }
       }
       val handled = super.onTouchEvent(event)
       if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL)
@@ -156,8 +171,10 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
         columnColor(column.optString("secondaryTone", "secondary"), theme),
         parseNativeListColor(theme?.optString("info", "#006DCBF2") ?: "#006DCBF2"),
         14f, style)
-      cell.bindActions(column, item.json.optBoolean("disabled"),
-        parseNativeListColor(theme?.optString("iconSubdued", "#00000072") ?: "#00000072")) { key, view ->
+      val defaultIconTint = 0x72000000
+      val iconTint = if ((column.optJSONArray("actions")?.length() ?: 0) > 0 && theme?.has("iconSubdued") == true)
+        color(theme.optString("iconSubdued"), defaultIconTint) else defaultIconTint
+      cell.bindActions(column, item.json.optBoolean("disabled"), iconTint) { key, view ->
         emitAction(key, view, "leadingAction", index)
       }
       val action = column.optString("actionKey")
@@ -205,7 +222,7 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
       val cell = getChildAt(index) as Cell
       cell.visual.recycle()
       cell.labels.reset()
-      cell.touchDelegate = null
+      cell.clearActions()
       cell.setOnClickListener(null)
       cell.isClickable = false
     }

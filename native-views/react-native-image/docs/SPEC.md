@@ -1186,7 +1186,7 @@ All App resource URLs remain reachable in the generated registry and emit as
 external files; unused artwork remains packaged, while browsers request only
 referenced files. Extension background stubs do not import the provider.
 
-SDK examples and native tests share 63 checked-in samples under
+SDK examples and native tests share 64 checked-in samples under
 `example/react-native/icon-fixtures`, with independent native and Web packaging.
 Only example targets, explicitly named XCTest target phases and opt-in Android test runners include
 these fixtures; the production Image pod and AAR have no fixture resource input.

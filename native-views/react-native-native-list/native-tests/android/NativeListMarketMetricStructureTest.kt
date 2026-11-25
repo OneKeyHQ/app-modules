@@ -206,7 +206,7 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     for ((key, icon) in listOf("copy" to "Copy3Outline", "open" to "OpenOutline"))
       icons.put(JSONObject().put("name", icon).put("actionKey", key).put("accessibilityLabel", key))
     column.put("actions", icons)
-    fun bind() = row.bind(NativeListItem.parse(data), null, "linear", "vertical", null, false, { _, _, fallback -> fallback })
+    fun bind() = row.bind(NativeListItem.parse(data), JSONObject().put("iconSubdued", "#123"), "linear", "vertical", null, false, { _, _, fallback -> fallback })
     fun find(key: String) = ArrayList<View>().also {
       row.findViewsWithText(it, key, View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
     }
@@ -214,11 +214,12 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
       val icon = find(key).single()
       return Rect(0, 0, icon.width, icon.height).also { row.offsetDescendantRectToMyCoords(icon, it) }
     }
-    fun tap(x: Float, y: Float) {
+    fun tap(x: Float, y: Float, afterDown: () -> Unit = {}) {
       val now = SystemClock.uptimeMillis()
       for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
         val event = MotionEvent.obtain(now, now, action, x, y, 0)
         try { row.dispatchTouchEvent(event) } finally { event.recycle() }
+        if (action == MotionEvent.ACTION_DOWN) afterDown()
       }
     }
     instrumentation.runOnMainSync {
@@ -243,11 +244,113 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
       assertEquals(listOf("copy", "open", "copy"), received)
       received.clear()
     }
+    for (expanded in listOf(false, true)) {
+      for (replace in listOf(false, true)) {
+        instrumentation.runOnMainSync {
+          icons.getJSONObject(0).put("actionKey", "copy")
+          bind()
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {
+          assertEquals(0x72000000, (find("copy").single() as OneKeyIconView).tintColor)
+          val copy = bounds("copy")
+          tap(if (expanded) copy.right + 1f else copy.exactCenterX(), copy.exactCenterY()) {
+            if (replace) icons.getJSONObject(0).put("actionKey", "explorer")
+            data.put("price", if (expanded) "$43" else "$44")
+            bind()
+          }
+        }
+        instrumentation.waitForIdleSync()
+        assertEquals(if (replace) emptyList<String>() else listOf("copy"), received)
+        received.clear()
+      }
+    }
     instrumentation.runOnMainSync {
       column.remove("actions")
       bind()
       assertTrue(find("copy").isEmpty())
       row.dispose()
+    }
+  }
+
+  fun testHandledTapFindsTableIconInOffsetWindow() = withMarketActivity { activity, context ->
+    lateinit var dialog: android.app.Dialog
+    lateinit var list: NativeListView
+    lateinit var editor: android.widget.EditText
+    val actions = mutableListOf<String>()
+    val density = context.resources.displayMetrics.density
+    instrumentation.runOnMainSync {
+      val action = JSONObject().put("name", "Copy3Outline").put("actionKey", "copy").put("accessibilityLabel", "Copy")
+      val columns = JSONArray().put(JSONObject().put("key", "address").put("text", "Address")
+        .put("actions", JSONArray().put(action))).put(JSONObject().put("key", "price").put("text", "42"))
+      list = NativeListView(context)
+      list.keyboardShouldPersistTaps = NativeListKeyboardShouldPersistTaps.HANDLED
+      list.onRowAction = { actions.add(JSONObject(it).getString("actionKey")) }
+      editor = android.widget.EditText(activity)
+      dialog = android.app.Dialog(activity)
+      dialog.setContentView(android.widget.LinearLayout(activity).apply {
+        orientation = android.widget.LinearLayout.VERTICAL
+        addView(editor)
+        addView(list, -1, (72 * density).toInt())
+      })
+      dialog.show()
+      dialog.window!!.setLayout((280 * density).toInt(), -2)
+      list.applySnapshot(JSONObject().put("schemaVersion", 1).put("generation", 1)
+        .put("layout", JSONObject().put("kind", "linear")).put("rows", JSONArray().put(
+          item().json.put("pressDisabled", true).put("tableColumns", columns))).toString())
+    }
+    fun waitForKeyboard(visible: Boolean) {
+      val deadline = SystemClock.uptimeMillis() + 5000
+      do {
+        var matched = false
+        instrumentation.runOnMainSync {
+          matched = androidx.core.view.ViewCompat.getRootWindowInsets(editor)
+            ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == visible
+        }
+        if (matched) return
+        SystemClock.sleep(50)
+      } while (SystemClock.uptimeMillis() < deadline)
+      fail("Expected keyboard visibility: $visible")
+    }
+    fun tap(x: Int, y: Int) {
+      val down = SystemClock.uptimeMillis()
+      for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+        val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x.toFloat(), y.toFloat(), 0)
+        try { instrumentation.sendPointerSync(event) } finally { event.recycle() }
+      }
+      instrumentation.waitForIdleSync()
+    }
+    try {
+      instrumentation.waitForIdleSync()
+      val origin = IntArray(2)
+      instrumentation.runOnMainSync {
+        editor.getLocationOnScreen(origin)
+        origin[0] += editor.width / 2
+        origin[1] += editor.height / 2
+      }
+      tap(origin[0], origin[1])
+      waitForKeyboard(true)
+      var copyX = 0
+      var blankX = 0
+      var y = 0
+      instrumentation.runOnMainSync {
+        val icon = ArrayList<View>().also { list.findViewsWithText(it, "Copy", View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION) }.single()
+        list.rootView.getLocationOnScreen(origin)
+        assertTrue("Dialog must exercise a window offset", origin[1] > 0)
+        icon.getLocationOnScreen(origin)
+        copyX = origin[0] + icon.width + 1
+        y = origin[1] + icon.height / 2
+        list.getLocationOnScreen(origin)
+        blankX = origin[0] + list.width * 3 / 4
+      }
+      tap(copyX, y)
+      assertEquals(listOf("copy"), actions)
+      waitForKeyboard(true)
+      tap(blankX, y)
+      waitForKeyboard(false)
+      assertEquals(listOf("copy"), actions)
+    } finally {
+      instrumentation.runOnMainSync { dialog.dismiss(); list.dispose() }
     }
   }
 

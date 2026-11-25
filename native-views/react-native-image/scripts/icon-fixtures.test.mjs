@@ -23,7 +23,7 @@ const manifest = JSON.parse(
 const names = Object.keys(manifest).sort();
 
 test('SDK fixtures have paired raw and external symbol resources with verified identities', () => {
-  assert.equal(names.length, 63);
+  assert.equal(names.length, 64);
   for (const root of [nativeRoot, webRoot])
     assert.deepEqual(
       fs
@@ -90,6 +90,7 @@ test('SDK fixtures have paired raw and external symbol resources with verified i
     manifest.BadgeRecognizedSolid.digest
   );
   assert.ok(manifest.EditOutline);
+  assert.ok(manifest.OpenOutline);
 });
 
 test('production resource inputs contain no named SVG or example fixture dependency', () => {

@@ -461,6 +461,17 @@
     ],
     "recolorMode": "raster"
   },
+  "OpenOutline": {
+    "source": "outline/open.svg",
+    "digest": "50111a4c76e95f4411ca6bc872c45ffe787650989cb42638355f76c6d13ff22e",
+    "viewBox": [
+      0,
+      0,
+      24,
+      24
+    ],
+    "recolorMode": "single"
+  },
   "PassKeySolid": {
     "source": "solid/pass-key.svg",
     "digest": "29221731a42c08888f29cd90842574397e7a37f9fd2f938ec503c9db188b5bf1",

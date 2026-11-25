@@ -108,8 +108,55 @@ final class NativeListMarketMetricsTests: XCTestCase {
       }
     }
     XCTAssertEqual(received, ["copy","open","copy","open"])
+    let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
+    let pressed = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListIconButton }.first)
+    let target = try XCTUnwrap(pressed.allTargets.first as? NSObject)
+    let name = try XCTUnwrap(pressed.actions(forTarget: target, forControlEvent: .touchUpInside)?.first)
+    let release = NSSelectorFromString(name)
+    received.removeAll()
+    data["price"] = "$43"
+    try bind("below", actions)
+    XCTAssertTrue(pressed.superview === column)
+    _ = target.perform(release, with: pressed)
+    XCTAssertEqual(received, ["copy"])
+    var replaced = actions
+    replaced[0]["actionKey"] = "explorer"
+    try bind("below", replaced)
+    XCTAssertNil(pressed.superview)
+    _ = target.perform(release, with: pressed)
+    XCTAssertEqual(received, ["copy"])
     try bind("inline", [])
     XCTAssertFalse(cell.root.arrangedSubviews.first!.subviews[0].subviews.contains { $0 is NativeListIconButton })
+  }
+
+  func testDefaultTableHeightContainsBelowActionsAndWrappedLabels() throws {
+    var data = try item().data
+    data.removeValue(forKey: "height")
+    data["style"] = ["verticalPadding": 12, "price": ["lines": 2],
+                     "container": ["contentVerticalAlignment": "top"]]
+    var address: [String: Any] = ["key": "address", "width": 80, "text": "One two three four five",
+      "secondaryText": "Holder", "actions": [["name": "Copy3Outline", "actionKey": "copy", "accessibilityLabel": "Copy"]]]
+    for placement in ["inline", "below"] {
+      address["actionPlacement"] = placement
+      data["tableColumns"] = [address, ["key": "value", "text": "42"]]
+      let model = try NativeListItem(data: data)
+      let fonts = NativeListFontFamilies()
+      let height = try XCTUnwrap(NativeListRendererRegistry.measure(model, width: 320, theme: nil, layout: "linear", fonts: fonts))
+      if placement == "inline" {
+        XCTAssertEqual(height, 56)
+        continue
+      }
+      let cell = NativeListBoundedTableCell(frame: CGRect(x: 0, y: 0, width: 320, height: height))
+      cell.bind(item: model, theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: fonts)
+      cell.layoutIfNeeded()
+      let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
+      let icon = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListIconButton }.first)
+      XCTAssertGreaterThan(height, 56)
+      XCTAssertEqual(column.bounds.height, height - 24, accuracy: 1)
+      XCTAssertTrue(column.bounds.contains(icon.frame))
+      XCTAssertTrue(column.hitTest(icon.center, with: nil) === icon)
+    }
   }
 
   func testBoundedTableAnnouncesCompleteSubscriptAmountsAndExplicitLabel() throws {
