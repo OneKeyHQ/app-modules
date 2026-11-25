@@ -226,7 +226,7 @@ DEFAULT_MAX_IMAGE_PIXELS = 12_000_000;
 `QrScanner` (React component) props: `active`, `mode`, `allowPlainText`,
 `limits`, `sessionKey`, `style`, and callbacks `onReady`, `onProgress`,
 `onResult`, `onError`. `QrScannerView` is the raw native view with `active`
-and `onReady(generation)`, `onFrameText(text, generation)`,
+and `onReady(generation, cameraId)`, `onFrameText(text, generation)`,
 `onError(code, message, generation)`.
 
 - Native code reports raw text only. `QrScanner` feeds it into a
@@ -235,9 +235,17 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
 - `onResult` fires once per session. `onProgress(1)` precedes a UR result.
 - `onError` receives camera errors as `QrScannerError` and terminal UR errors
   (`too-large`, `invalid-payload`, `resource-limit`) as `ScanError`.
-- `onReady` (iOS) fires when the capture session reports running, which can be
-  slightly before the first frame is on screen. The built-in camera preview
-  follows its window scene's interface orientation on attachment, after a
+- Native readiness reports the ID of the camera bound to that generation,
+  including when the requested ID was unavailable and a default opened. The ID
+  uses the same format as `listCameras()`. `QrScanner.onReady(cameraId)`
+  forwards that ID after its generation check. A queued readiness callback
+  remains valid across scan session resets while `active` and `cameraId`
+  stay the same. On iOS readiness fires when the session reports running,
+  which can precede the first frame on screen. The native ID is not part of the
+  Web readiness callback. Hardware verification of the reported IDs for
+  startup, switching and disconnect fallback is pending.
+- The iOS built-in camera preview follows its window scene's interface
+  orientation on attachment, after a
   camera input change or a rollback that restores the previous input, and
   whenever the scene changes orientation. Unknown scene orientations leave
   built-in previews as they are.
@@ -261,12 +269,20 @@ and `onReady(generation)`, `onFrameText(text, generation)`,
   `QrFrameTextGate.kt` (same rules as iOS). The view owns a `LifecycleOwner`
   that is RESUMED only while `active` and the host activity is resumed, so
   the camera pauses in the background. Missing hardware (`no-camera`) is
-  checked before permission; permission is requested through React Native's
-  `PermissionAwareActivity`. Overlapping views share one permission request
-  per activity. The request expires after 60 s if React Native loses its
-  callback. Expiry checks the current grant and releases the shared request
-  so a later activation can start a new one. A deactivated or disposed view
-  releases its registration.
+  checked before permission. Overlapping scanner views share a request per
+  activity. Activity Result Registry hosts use a dedicated result callback
+  that is independent of React Native's permission listener and modal focus.
+  An empty Android permission result means the prompt was cancelled, for
+  example when a different permission prompt was already in flight. The
+  scanner keeps one shared retry pending while views are waiting and retries
+  when the host is resumed and its activity or scanner window has focus.
+  After five minutes of repeated or blocked
+  retries it reports `camera-busy` without recording a denial.
+  Legacy `PermissionAwareActivity` hosts retain a lost-callback deadline
+  after 60 s with window focus on Activity hosts and RESUMED state where
+  available, with a five-minute backstop. At expiry the
+  scanner rechecks the grant and releases the shared request. Deactivation
+  releases the view's registration, and host destruction clears the request.
   Live decoder failures report `decoder-unavailable` at most once per
   second per binding; a failed frame is closed and analysis can continue.
   The library manifest declares `CAMERA` and
@@ -349,14 +365,22 @@ createWebQrScanner({
   permission) and infers position from the label. `subscribeWebCameraChanges()`
   listens to `devicechange`. `switchCamera(deviceId?)` stages a replacement
   until it produces a frame. It retains the running stream on failure when
-  the cameras can coexist. On a busy error, the current request may release
-  its old stream and retry once. While stopped, selection is saved for
+  the cameras can coexist. On a busy error, the current request can release
+  the stream it was replacing and retry once, including when that stream
+  already ended. Recovery retains the last committed camera when releasing
+  an ended stream for this retry. While stopped, selection is saved for
   `start()`. A newer selection supersedes pending acquisition, including a
   return to the current camera. If a stale request ends the working track,
-  the scanner releases the stale stream and keeps recovery pending until the
-  newest switch settles. If that switch did not replace the ended track,
-  the scanner attempts to restore the last committed camera once. Stop and
-  disposal clear pending recovery. Each camera-change subscription
+  the scanner releases the stale stream. If the newest switch settles
+  without replacing the ended track, the scanner attempts to restore the
+  last committed camera. The target survives an interrupted restoration so
+  it can be used if a newer switch fails. If opening the camera during
+  restoration reports `camera-busy` while superseded acquisitions could
+  still be holding the hardware, each stale acquisition that settles and
+  releases its stream can trigger a retry. A restoration first-frame
+  timeout releases the candidate and reports `camera-busy` through
+  `onError` immediately. A successful handoff, terminal restoration error,
+  stop, or disposal clears pending recovery. Each camera-change subscription
   has independent cleanup. On startup, a missing remembered ID falls back
   to the default. Cancellation prevents later permission requests and
   disposes streams that arrive late.
@@ -378,8 +402,9 @@ createWebQrScanner({
   capture and removes observers. Explicit `dispose()` performs the same
   terminal cleanup. Failed iOS configuration restores the prior input,
   output and preset. Native frames carry the generation that produced them.
-  React callbacks queued for an inactive, unmounted or replaced view state
-  are discarded.
+  React callbacks queued before a capture selection change, deactivation,
+  or unmount are discarded. Frames and errors also expire when the React
+  scan session is replaced.
 - Image decoding (iOS): one decode at a time on a serial queue; each decode
   holds up to a few full-size bitmaps for its passes.
 
@@ -451,7 +476,7 @@ camera sees one original frame followed by mixed frames.
 | iOS preview orientation | `ios/QrScanner.swift` | `ios/tests/QrCameraControlTests.swift` covers the four interface orientations and rejects an unknown orientation. On iPadOS 18.6 and 27.2 simulators a fixed-size preview view read the updated scene orientation on entry to landscape left, a 180° flip to landscape right, and a return to portrait. Live camera pixels require device testing. |
 | Camera list and switching | `src/cameras.ts`, `ios/HybridQrCameraList.swift`, `android/.../HybridQrCameraList.kt`, `QrCameraCatalog.kt`, `src/web/cameras.ts`, `src/web/scanner.ts` | jest: one native listener shared and cleared after the last unsubscribe; web label positions, unlabeled entries, `devicechange`; web switching opens the new camera before stopping the old, retries after release on `NotReadableError`, records the choice while stopped. XCTest: list dedupe. Robolectric `QrCameraCatalogTest` (3). Android emulator (API 35, emulated back and front cameras), example app: `listCameras` returns `[{id:"0",position:"back"},{id:"1",position:"front"}]`; switching while active closes camera 0 and opens camera 1 (`Opened CameraId-1 in 11 ms`), and back again (12.6 ms), one active client each time, `onReady` per switch. iOS switching needs a device. |
 | Live frame gate (animated UR) | `ios/QrFrameTextGate.swift` | `ios/tests/QrFrameTextGateTests.swift`, 6 XCTests on the iOS 27.2 simulator: nothing while stopped, repeat throttling with new text passing at once, new generation on stop/restart, a 12-part animated UR at 10 fps / 30 fps camera loses no part, concurrent start/stop stays consistent. |
-| Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
+| Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets assembly and drops queued frames while preserving current capture readiness; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
 | JS → Nitro → native on device runtime | example app `pages/QrScannerTestPage.tsx` | iOS 27.2 simulator (iPad Air 13-inch M4), example app Debug build: the native `QrScanner` view mounts; "Pick from album and decode" (image-crop-picker → `decodeQrImage`) returns the full BTCPay `lightning:LNBC…` invoice in 137 ms; "Start camera" reports `no-camera` with no permission prompt. |
 | Web pixel passes and engine selection | `src/web/imageOps.ts`, `src/web/engines.ts` | `src/web/__tests__/` (jest, 9 tests): budget fit, padding, grayscale/invert, pass order and stop-at-first-hit, no zxing without a loader, loader used once, native preferred only with `qr_code`, `disableNativeDetector`. |
 | Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt` | `android/src/test/` Robolectric (SDK 34, native graphics), 11 tests (14 with `QrCameraZoomTest`): gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms. In CI `android-unit`. |

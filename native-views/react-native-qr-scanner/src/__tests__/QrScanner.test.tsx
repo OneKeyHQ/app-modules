@@ -8,7 +8,7 @@ import type { QrScannerComponentProps } from '../QrScanner';
 type Wrapped<T> = { f: T };
 interface NativeProps {
   active: boolean;
-  onReady: Wrapped<(generation: number) => void>;
+  onReady: Wrapped<(generation: number, cameraId: string) => void>;
   onFrameText: Wrapped<(text: string, generation: number) => void>;
   onError: Wrapped<(code: string, message: string, generation: number) => void>;
 }
@@ -69,10 +69,50 @@ beforeEach(() => {
 });
 
 describe('QrScanner', () => {
+  it('reports the bound camera for the current capture generation', () => {
+    const { handlers } = renderScanner({ cameraId: 'disconnected-usb' });
+    native().onReady.f(2, 'built-in-back');
+    native().onReady.f(1, 'disconnected-usb');
+
+    expect(handlers.onReady.mock.calls).toEqual([['built-in-back']]);
+  });
+
+  it('delivers queued camera readiness across a scan session reset', () => {
+    const { handlers, renderer } = renderScanner({
+      cameraId: 'disconnected-usb', mode: 'static', sessionKey: 'first',
+    });
+    const previous = native();
+    act(() => renderer.update(
+      <QrScanner active cameraId="disconnected-usb" mode="static" sessionKey="second" {...handlers} />
+    ));
+
+    previous.onReady.f(2, 'built-in-back');
+    previous.onFrameText.f('previous QR', 2);
+    previous.onError.f('camera-busy', 'previous error', 2);
+    native().onFrameText.f('obsolete capture QR', 1);
+    native().onFrameText.f('current QR', 2);
+
+    expect(handlers.onReady.mock.calls).toEqual([['built-in-back']]);
+    expect(native().onReady).toBe(previous.onReady);
+    expect(handlers.onResult.mock.calls).toEqual([[{ kind: 'text', text: 'current QR' }]]);
+    expect(handlers.onError).not.toHaveBeenCalled();
+  });
+
+  it('drops queued readiness for a superseded camera selection', () => {
+    const { handlers, renderer } = renderScanner({ cameraId: 'back' });
+    const previousReady = native().onReady;
+    act(() => renderer.update(<QrScanner active cameraId="front" mode="ur" {...handlers} />));
+
+    previousReady.f(1, 'back');
+    native().onReady.f(2, 'front');
+
+    expect(handlers.onReady.mock.calls).toEqual([['front']]);
+  });
+
   it('assembles an animated UR from a looping frame stream', () => {
     const { cbor, parts } = animatedParts(40);
     const { handlers } = renderScanner();
-    native().onReady.f(1);
+    native().onReady.f(1, 'back');
 
     // Each part seen on several consecutive frames, as a camera would.
     for (const part of parts) {
@@ -108,7 +148,7 @@ describe('QrScanner', () => {
     // Pause and resume: native starts generation 3.
     act(() => renderer.update(<QrScanner active={false} mode="ur" {...handlers} />));
     act(() => renderer.update(<QrScanner active mode="ur" {...handlers} />));
-    native().onReady.f(3);
+    native().onReady.f(3, 'back');
 
     // A late frame from generation 1 is dropped.
     native().onFrameText.f(parts[2]!, 1);
@@ -127,7 +167,7 @@ describe('QrScanner', () => {
     act(() => renderer.update(
       <QrScanner active={false} mode="static" sessionKey="second" {...handlers} />
     ));
-    previous.onReady.f(1);
+    previous.onReady.f(1, 'back');
     previous.onFrameText.f('previous QR', 1);
     previous.onError.f('camera-busy', 'previous error', 1);
     expect(handlers.onReady).not.toHaveBeenCalled();
@@ -136,8 +176,10 @@ describe('QrScanner', () => {
     act(() => renderer.update(
       <QrScanner active mode="static" sessionKey="second" {...handlers} />
     ));
+    previous.onReady.f(1, 'back');
     previous.onFrameText.f('previous QR', 1);
     native().onFrameText.f('current QR', 2);
+    expect(handlers.onReady).not.toHaveBeenCalled();
     expect(handlers.onResult.mock.calls).toEqual([[{ kind: 'text', text: 'current QR' }]]);
   });
 

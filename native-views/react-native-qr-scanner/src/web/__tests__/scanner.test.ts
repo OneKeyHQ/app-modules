@@ -153,7 +153,12 @@ describe('createWebQrScanner camera start', () => {
     }
   });
 
-  it.each([false, true])('keeps recovery pending through the newest switch (success=%s)', async (success) => {
+  it.each([
+    { label: 'unavailable camera', busy: false, success: false },
+    { label: 'successful switch', busy: false, success: true },
+    { label: 'successful busy retry', busy: true, success: true },
+    { label: 'failed busy retry', busy: true, success: false },
+  ])('keeps recovery pending through the newest switch ($label)', async ({ busy, success }) => {
     const original = fakeStream();
     const stale = fakeStream();
     const newest = fakeStream();
@@ -161,12 +166,16 @@ describe('createWebQrScanner camera start', () => {
     const openingStale = deferred<unknown>();
     const openingNewest = deferred<unknown>();
     const calls: (string | undefined)[] = [];
+    const busyError = () => Object.assign(new Error('camera busy'), { name: 'NotReadableError' });
     const open = jest.fn((constraints: MediaStreamConstraints) => {
       const { deviceId } = constraints.video as MediaTrackConstraints;
       calls.push((deviceId as { exact?: string }).exact);
       if (calls.length === 1) return Promise.resolve(original.stream);
       if (calls.length === 2) return openingStale.promise;
       if (calls.length === 3) return openingNewest.promise;
+      if (busy && calls.length === 4) {
+        return success ? Promise.resolve(newest.stream) : Promise.reject(busyError());
+      }
       return Promise.resolve(recovered.stream);
     });
     Object.defineProperty(navigator, 'mediaDevices', {
@@ -191,15 +200,235 @@ describe('createWebQrScanner camera start', () => {
       expect(stale.track.stop).toHaveBeenCalledTimes(1);
       expect(calls).toEqual(['camera-a', 'camera-b', 'camera-c']);
 
-      if (success) openingNewest.resolve(newest.stream);
+      if (busy) openingNewest.reject(busyError());
+      else if (success) openingNewest.resolve(newest.stream);
       else openingNewest.reject(Object.assign(new Error('disconnected'), { name: 'NotFoundError' }));
       await switchC;
 
       expect(video.srcObject).toBe(success ? newest.stream : recovered.stream);
       expect(onError).toHaveBeenCalledTimes(success ? 0 : 1);
-      expect(calls).toEqual(success
-        ? ['camera-a', 'camera-b', 'camera-c']
-        : ['camera-a', 'camera-b', 'camera-c', 'camera-a']);
+      const expected = ['camera-a', 'camera-b', 'camera-c'];
+      if (busy) expected.push('camera-c');
+      if (!success) expected.push('camera-a');
+      expect(calls).toEqual(expected);
+    } finally {
+      scanner.dispose();
+    }
+  });
+
+  it.each([
+    { label: 'cleanup after the busy result', stopped: false, cleanupFirst: false },
+    { label: 'cleanup before the busy result', stopped: false, cleanupFirst: true },
+    { label: 'scanner stopped before cleanup', stopped: true, cleanupFirst: false },
+  ])('handles a busy restore with $label', async ({ stopped, cleanupFirst }) => {
+    const original = fakeStream();
+    const unrelated = fakeStream();
+    const stale = fakeStream();
+    const recovered = fakeStream();
+    const waitingForPermission = deferred<unknown>();
+    const openingStale = deferred<unknown>();
+    const restoring = deferred<unknown>();
+    const calls: string[] = [];
+    const busy = Object.assign(new Error('camera busy'), { name: 'NotReadableError' });
+    const open = jest.fn((constraints: MediaStreamConstraints) => {
+      const { deviceId } = constraints.video as MediaTrackConstraints;
+      calls.push((deviceId as { exact: string }).exact);
+      if (calls.length === 1) return Promise.resolve(original.stream);
+      if (calls.length === 2) return waitingForPermission.promise;
+      if (calls.length === 3) return openingStale.promise;
+      if (calls.length === 6) return restoring.promise;
+      if (stale.track.stop.mock.calls.length === 0) return Promise.reject(busy);
+      return Promise.resolve(recovered.stream);
+    });
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true, value: { getUserMedia: open },
+    });
+    const video = fakeVideo(async () => {});
+    const onError = jest.fn();
+    const scanner = createWebQrScanner({
+      video, mode: 'auto', source: { kind: 'camera', deviceId: 'camera-a' }, onError,
+    });
+    try {
+      await scanner.start();
+      const switchB = scanner.switchCamera('camera-b');
+      while (calls.length < 2) await new Promise((resolve) => setImmediate(resolve));
+      const switchC = scanner.switchCamera('camera-c');
+      while (calls.length < 3) await new Promise((resolve) => setImmediate(resolve));
+      original.track.readyState = 'ended';
+      const switchD = scanner.switchCamera('camera-d');
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(calls).toEqual(['camera-a', 'camera-b', 'camera-c', 'camera-d', 'camera-d', 'camera-a']);
+      expect(onError).toHaveBeenCalledTimes(1);
+
+      if (cleanupFirst) {
+        openingStale.resolve(stale.stream);
+        await switchC;
+      }
+      restoring.reject(busy);
+      await switchD;
+      if (stopped) scanner.stop();
+      if (!cleanupFirst) {
+        openingStale.resolve(stale.stream);
+        await switchC;
+      }
+      expect(stale.track.stop).toHaveBeenCalledTimes(1);
+      expect(calls.slice(6)).toEqual(stopped ? [] : ['camera-a']);
+      expect(video.srcObject).toBe(stopped ? null : recovered.stream);
+      waitingForPermission.resolve(unrelated.stream);
+      await switchB;
+      expect(unrelated.track.stop).toHaveBeenCalledTimes(1);
+      expect(calls.slice(6)).toEqual(stopped ? [] : ['camera-a']);
+    } finally {
+      scanner.dispose();
+    }
+  });
+
+  it('restores an available camera while an unrelated permission request remains pending', async () => {
+    const original = fakeStream();
+    const unrelated = fakeStream();
+    const stale = fakeStream();
+    const recovered = fakeStream();
+    const waitingForPermission = deferred<unknown>();
+    const openingStale = deferred<unknown>();
+    const open = jest.fn()
+      .mockResolvedValueOnce(original.stream)
+      .mockReturnValueOnce(waitingForPermission.promise)
+      .mockReturnValueOnce(openingStale.promise)
+      .mockResolvedValueOnce(recovered.stream);
+    setGetUserMedia(open);
+    const video = fakeVideo(async () => {});
+    const onError = jest.fn();
+    const scanner = createWebQrScanner({
+      video, mode: 'auto', source: { kind: 'camera', deviceId: 'camera-a' }, onError,
+    });
+    try {
+      await scanner.start();
+      const switchB = scanner.switchCamera('camera-b');
+      while (open.mock.calls.length < 2) await new Promise((resolve) => setImmediate(resolve));
+      const switchC = scanner.switchCamera('camera-c');
+      while (open.mock.calls.length < 3) await new Promise((resolve) => setImmediate(resolve));
+      await scanner.switchCamera('camera-a');
+
+      original.track.readyState = 'ended';
+      openingStale.resolve(stale.stream);
+      await switchC;
+      expect(stale.track.stop).toHaveBeenCalledTimes(1);
+      expect(open).toHaveBeenLastCalledWith(expect.objectContaining({
+        video: expect.objectContaining({ deviceId: { exact: 'camera-a' } }),
+      }));
+      expect(video.srcObject).toBe(recovered.stream);
+      expect(onError).not.toHaveBeenCalled();
+
+      waitingForPermission.resolve(unrelated.stream);
+      await switchB;
+      expect(unrelated.track.stop).toHaveBeenCalledTimes(1);
+    } finally {
+      scanner.dispose();
+    }
+  });
+
+  it.each([false, true])('preserves camera recovery through a newer switch (success=%s)', async (succeeds) => {
+    const original = fakeStream();
+    const stale = fakeStream();
+    const interrupted = fakeStream();
+    const recovered = fakeStream();
+    const replacement = fakeStream();
+    const openingStale = deferred<unknown>();
+    const restoring = deferred<unknown>();
+    const open = jest.fn()
+      .mockResolvedValueOnce(original.stream)
+      .mockReturnValueOnce(openingStale.promise)
+      .mockReturnValueOnce(restoring.promise);
+    if (succeeds) {
+      open.mockResolvedValueOnce(replacement.stream);
+    } else {
+      open
+        .mockRejectedValueOnce(Object.assign(new Error('permission denied'), { name: 'NotAllowedError' }))
+        .mockRejectedValueOnce(Object.assign(new Error('camera busy'), { name: 'NotReadableError' }))
+        .mockResolvedValueOnce(recovered.stream);
+    }
+    setGetUserMedia(open);
+    const video = fakeVideo(async () => {});
+    const onError = jest.fn();
+    const onReady = jest.fn();
+    const scanner = createWebQrScanner({
+      video, mode: 'auto', source: { kind: 'camera', deviceId: 'camera-a' }, onError, onReady,
+    });
+    try {
+      await scanner.start();
+      const switchB = scanner.switchCamera('camera-b');
+      await new Promise((resolve) => setImmediate(resolve));
+      await scanner.switchCamera('camera-a');
+      original.track.readyState = 'ended';
+      openingStale.resolve(stale.stream);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(open).toHaveBeenCalledTimes(3);
+      expect(original.track.stop).toHaveBeenCalledTimes(1);
+      expect(video.srcObject).toBeNull();
+
+      await scanner.switchCamera('camera-d');
+      restoring.resolve(interrupted.stream);
+      await switchB;
+
+      expect(interrupted.track.stop).toHaveBeenCalledTimes(1);
+      expect(video.srcObject).toBe(succeeds ? replacement.stream : recovered.stream);
+      expect(open).toHaveBeenCalledTimes(succeeds ? 4 : 6);
+      expect(onReady).toHaveBeenCalledTimes(2);
+      expect(onError).toHaveBeenCalledTimes(succeeds ? 0 : 1);
+      if (!succeeds) {
+        expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'permission-denied' }));
+      }
+    } finally {
+      scanner.dispose();
+    }
+  });
+
+  it('reports a restoration first-frame timeout while an unrelated permission prompt is pending', async () => {
+    jest.useFakeTimers();
+    const original = fakeStream();
+    const stale = fakeStream();
+    const stalled = fakeStream();
+    const waitingForPermission = deferred<unknown>();
+    const openingStale = deferred<unknown>();
+    const waitingForFrame = deferred<void>();
+    const open = jest.fn()
+      .mockResolvedValueOnce(original.stream)
+      .mockReturnValueOnce(waitingForPermission.promise)
+      .mockReturnValueOnce(openingStale.promise)
+      .mockResolvedValueOnce(stalled.stream);
+    setGetUserMedia(open);
+    const video = fakeVideo(jest.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockReturnValueOnce(waitingForFrame.promise));
+    const onError = jest.fn();
+    const scanner = createWebQrScanner({
+      video, mode: 'auto', source: { kind: 'camera', deviceId: 'camera-a' }, onError, firstFrameTimeoutMs: 1000,
+    });
+    try {
+      await scanner.start();
+      const switchB = scanner.switchCamera('camera-b');
+      await jest.advanceTimersByTimeAsync(0);
+      const switchC = scanner.switchCamera('camera-c');
+      await jest.advanceTimersByTimeAsync(0);
+      await scanner.switchCamera('camera-a');
+
+      original.track.readyState = 'ended';
+      openingStale.resolve(stale.stream);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(open).toHaveBeenCalledTimes(4);
+      expect(video.srcObject).toBe(stalled.stream);
+      await jest.advanceTimersByTimeAsync(1000);
+      await switchC;
+
+      expect(stalled.track.stop).toHaveBeenCalledTimes(1);
+      expect(video.srcObject).toBeNull();
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'camera-busy', message: 'The camera produced no frames',
+      }));
+      waitingForPermission.reject(Object.assign(new Error('permission denied'), { name: 'NotAllowedError' }));
+      await switchB;
+      expect(open).toHaveBeenCalledTimes(4);
+      expect(onError).toHaveBeenCalledTimes(1);
     } finally {
       scanner.dispose();
     }

@@ -82,9 +82,12 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let disposed = false;
   let active = false;
   let acquisition: { deviceId?: string; cancelPreview?: () => void } | undefined;
+  let mediaAcquisitions = 0;
+  let staleMediaSettlements = 0;
   const usesBuiltInSession = !handlers.onFrameText || !!handlers.onResult || !!handlers.onProgress;
   let stream: MediaStream | undefined;
-  let interruptedStream: MediaStream | undefined;
+  type RecoveryTarget = { stream: MediaStream; deviceId?: string; blockedAt?: number };
+  let interruptedCamera: RecoveryTarget | undefined;
   let frameHandle: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let analysing = false;
@@ -238,7 +241,14 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   const hasLiveCamera = () =>
     stream?.getVideoTracks().some((track) => track.readyState === 'live') ?? false;
 
-  async function acquireCamera(requestedId: string | undefined, allowDefault: boolean) {
+  async function acquireCamera(
+    requestedId: string | undefined,
+    allowDefault: boolean,
+    recovery?: RecoveryTarget
+  ) {
+    const settlementsAtRecoveryStart = recovery && mediaAcquisitions > 0
+      ? staleMediaSettlements
+      : undefined;
     invalidateAcquisition();
     const attempt: NonNullable<typeof acquisition> = { deviceId: requestedId };
     acquisition = attempt;
@@ -261,7 +271,10 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
         throw new QrScannerError('no-camera', 'getUserMedia is not available');
       }
       const open = (id?: string) => {
-        requestedMedia = true;
+        if (!requestedMedia) {
+          requestedMedia = true;
+          mediaAcquisitions += 1;
+        }
         return navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
@@ -272,6 +285,11 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
           },
         });
       };
+      if (recovery && stream === recovery.stream) {
+        generation += 1;
+        cancelSchedule();
+        releaseCamera();
+      }
       const previous = stream;
       try {
         candidate = await open(requestedId);
@@ -281,7 +299,10 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
           return;
         }
         const code = cameraErrorCode(error);
-        if (previous && stream === previous && hasLiveCamera() && code === 'camera-busy') {
+        if (previous && stream === previous && code === 'camera-busy') {
+          if (!recovery && !hasLiveCamera()) {
+            interruptedCamera = { stream: previous, deviceId: streamDeviceId };
+          }
           generation += 1;
           cancelSchedule();
           releaseCamera();
@@ -334,6 +355,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       streamDeviceId = attempt.deviceId;
       candidate = undefined;
       acquisition = undefined;
+      interruptedCamera = undefined;
       superseded?.getTracks().forEach((track) => track.stop());
       if (preview !== video) {
         preview.srcObject = null;
@@ -350,21 +372,35 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
         return;
       }
       acquisition = undefined;
+      const failedToOpen = requestedMedia && !candidate;
       releaseCandidate();
-      fail(error instanceof QrScannerError ? error.code : cameraErrorCode(error),
-        error instanceof Error ? error.message : String(error));
+      const code = error instanceof QrScannerError ? error.code : cameraErrorCode(error);
+      if (
+        recovery && failedToOpen && code === 'camera-busy' && settlementsAtRecoveryStart !== undefined
+      ) {
+        interruptedCamera = { ...recovery, blockedAt: settlementsAtRecoveryStart };
+        return;
+      }
+      if (recovery && interruptedCamera === recovery) interruptedCamera = undefined;
+      fail(code, error instanceof Error ? error.message : String(error));
     } finally {
       releaseCandidate();
-      // A stale request can preempt the working camera while the newest
-      // request is still opening. Keep that recovery pending until it settles.
-      if (reconcileAfterRelease && active && stream && !hasLiveCamera()) {
-        interruptedStream = stream;
+      if (reconcileAfterRelease) {
+        staleMediaSettlements += 1;
+        if (active && stream && !hasLiveCamera() && interruptedCamera?.stream !== stream) {
+          interruptedCamera = { stream, deviceId: streamDeviceId };
+        }
       }
-      if (active && !acquisition && interruptedStream) {
-        const interrupted = interruptedStream;
-        interruptedStream = undefined;
-        if (stream === interrupted && !hasLiveCamera()) {
-          await acquireCamera(streamDeviceId, true);
+      if (requestedMedia) mediaAcquisitions -= 1;
+      const interrupted = interruptedCamera;
+      // An unanswered permission prompt may never settle. Only park a
+      // restore after a busy result, and let each stale settlement wake it.
+      if (active && !acquisition && interrupted && interrupted.blockedAt !== staleMediaSettlements) {
+        if ((!stream || stream === interrupted.stream) && !hasLiveCamera()) {
+          // A newer switch can supersede this restore and still need its target.
+          await acquireCamera(interrupted.deviceId, true, interrupted);
+        } else {
+          interruptedCamera = undefined;
         }
       }
     }
@@ -401,7 +437,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     },
     stop() {
       active = false;
-      interruptedStream = undefined;
+      interruptedCamera = undefined;
       generation += 1;
       invalidateAcquisition();
       cancelSchedule();

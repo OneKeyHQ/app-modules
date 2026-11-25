@@ -21,8 +21,8 @@ export interface QrScannerProps extends HybridViewProps {
    * switches cameras in a new capture generation.
    */
   cameraId?: string;
-  /** The first frame of a capture generation reached the preview. */
-  onReady?: (generation: number) => void;
+  /** The capture is ready. The ID identifies the device actually opened. */
+  onReady?: (generation: number, cameraId: string) => void;
   /**
    * Text of each QR symbol seen. Repeats of the same text within one
    * generation may be suppressed natively; JS dedupes anyway.
