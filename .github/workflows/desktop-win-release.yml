@@ -2,6 +2,11 @@ name: desktop-win-release
 
 on:
   workflow_dispatch:
+    inputs:
+      qr_scanner_preview:
+        description: Publish the macOS and Windows QR scanner preview
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -11,7 +16,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  qr-scanner-preview:
+    if: inputs.qr_scanner_preview
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/desktop-qr-scanner-preview.yml
+    secrets: inherit
+
   baseline:
+    if: ${{ !inputs.qr_scanner_preview }}
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.baseline.outputs.version }}

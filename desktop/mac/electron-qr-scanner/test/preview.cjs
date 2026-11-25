@@ -11,6 +11,12 @@ const api = require("../index.cjs");
 
 const animated = JSON.parse(readFileSync(join(__dirname, "fixtures/animated-ur.json"), "utf8"));
 
+let phase = "starting Electron";
+const deadline = setTimeout(() => {
+  console.error(`Timed out while ${phase}`);
+  app.exit(1);
+}, 90_000);
+
 app.whenReady().then(async () => {
   try {
     const win = new BrowserWindow({
@@ -20,15 +26,27 @@ app.whenReady().then(async () => {
       webPreferences: {
         preload: join(__dirname, "preview-preload.cjs"),
         sandbox: true,
+        backgroundThrottling: false,
         contextIsolation: true,
         nodeIntegration: false,
       },
     });
+    phase = "loading the preview document";
     await win.loadFile(join(__dirname, "preview.html"));
+    phase = "sending native preview frames";
+    console.log(`Preview renderer ready (GPU compositing: ${app.getGPUFeatureStatus().gpu_compositing})`);
 
     let drawn = 0;
-    ipcMain.on("preview-drawn", (_event, count) => {
-      drawn = count;
+    let dark = 0;
+    let light = 0;
+    let urDone = false;
+    const previewReady = Promise.withResolvers();
+    const finishIfReady = () => {
+      if (drawn >= 10 && dark > 50 && light > 50 && urDone) previewReady.resolve();
+    };
+    ipcMain.on("preview-drawn", (_event, report) => {
+      ({ drawn, dark, light } = report);
+      finishIfReady();
     });
 
     let inFlight = false;
@@ -36,60 +54,58 @@ app.whenReady().then(async () => {
     let sent = 0;
     let skipped = 0;
     const decoder = new URDecoder();
-    let urDone = false;
-    let capture;
-    const done = new Promise((resolve, reject) => {
-      capture = api.createCapture({
-        source: { kind: "file", path: join(__dirname, "fixtures/animated-ur.mp4"), loop: true },
-        onText: (text) => {
-          if (urDone) return;
-          decoder.receivePart(text.toLowerCase());
-          urDone = decoder.isComplete();
-        },
-        onError: reject,
-        onFrame: (frame) => {
-          maxLent = Math.max(maxLent, capture.lentFrames());
-          if (inFlight || win.isDestroyed()) {
-            skipped += 1;
-            frame.release();
-            return;
-          }
-          inFlight = true;
-          const imported = sharedTexture.importSharedTexture({
-            textureInfo: {
-              pixelFormat: "bgra",
-              codedSize: { width: frame.width, height: frame.height },
-              handle: { ioSurface: frame.ioSurface },
-            },
-            allReferencesReleased: () => frame.release(),
+    const capture = api.createCapture({
+      source: { kind: "file", path: join(__dirname, "fixtures/animated-ur.mp4"), loop: true },
+      onText: (text) => {
+        if (urDone) return;
+        decoder.receivePart(text.toLowerCase());
+        urDone = decoder.isComplete();
+        finishIfReady();
+      },
+      onError: previewReady.reject,
+      onFrame: (frame) => {
+        maxLent = Math.max(maxLent, capture.lentFrames());
+        if (inFlight || win.isDestroyed()) {
+          skipped += 1;
+          frame.release();
+          return;
+        }
+        inFlight = true;
+        const imported = sharedTexture.importSharedTexture({
+          textureInfo: {
+            pixelFormat: "bgra",
+            codedSize: { width: frame.width, height: frame.height },
+            handle: { ioSurface: frame.ioSurface },
+          },
+          allReferencesReleased: () => frame.release(),
+        });
+        sharedTexture
+          .sendSharedTexture({ frame: win.webContents.mainFrame, importedSharedTexture: imported })
+          .then(() => {
+            sent += 1;
+          })
+          .catch(previewReady.reject)
+          .finally(() => {
+            imported.release();
+            inFlight = false;
           });
-          sharedTexture
-            .sendSharedTexture({ frame: win.webContents.mainFrame, importedSharedTexture: imported })
-            .then(() => {
-              sent += 1;
-            })
-            .catch(reject)
-            .finally(() => {
-              imported.release();
-              inFlight = false;
-            });
-        },
-      });
-      setTimeout(resolve, 4_000);
+      },
     });
+    const timeout = setTimeout(() => previewReady.reject(new Error(
+      `Preview timed out after drawing ${drawn} frames (dark: ${dark}, light: ${light}, UR complete: ${urDone})`,
+    )), 30_000);
     capture.start();
-    await done;
+    try {
+      await previewReady.promise;
+    } finally {
+      clearTimeout(timeout);
+    }
 
-    const image = await win.webContents.capturePage();
+    phase = "stopping capture";
     const saveIndex = process.argv.indexOf("--save");
-    if (saveIndex > 0) require("node:fs").writeFileSync(process.argv[saveIndex + 1], image.toPNG());
-    const bitmap = image.toBitmap();
-    let dark = 0;
-    let light = 0;
-    for (let i = 0; i < bitmap.length; i += 4 * 97) {
-      const luma = (bitmap[i] + bitmap[i + 1] + bitmap[i + 2]) / 3;
-      if (luma < 60) dark += 1;
-      else if (luma > 200) light += 1;
+    if (saveIndex > 0) {
+      const image = await win.webContents.capturePage();
+      require("node:fs").writeFileSync(process.argv[saveIndex + 1], image.toPNG());
     }
     capture.stop();
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -103,6 +119,7 @@ app.whenReady().then(async () => {
     assert.equal(lentAfterStop, 0);
     assert.ok(dark > 50 && light > 50, "canvas does not show a QR code");
     assert.ok(urDone, `animated UR did not complete (${animated.fragments} fragments)`);
+    clearTimeout(deadline);
     app.exit(0);
   } catch (error) {
     console.error(error);

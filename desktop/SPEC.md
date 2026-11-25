@@ -7,8 +7,9 @@ These modules are not root Yarn workspaces and never participate in mobile
 version bumps, mobile npm publishing, or mobile dependency synchronization.
 The first Windows module is `electron-windows-hello`, published as
 `@onekeyfe/electron-windows-hello`; macOS and Linux have
-no release jobs or released modules yet. `mac/electron-qr-scanner` is in
-development and not listed in `release.json` (see its SPEC).
+no release jobs or released modules yet. `mac/electron-qr-scanner` and
+`win/electron-qr-scanner` are in development and not listed in `release.json`
+(see their SPECs).
 
 ## Version and validation baseline
 
@@ -79,6 +80,30 @@ exact approved archive, repository identity and npm provenance metadata.
 Actions use full commit pins. Native and packaging jobs have no npm publishing
 credential. The token is exposed only to the isolated publication step. The
 workflow does not access or modify consumer repositories.
+
+## QR scanner preview
+
+The cross-platform `@onekeyfe/electron-qr-scanner` preview contains macOS
+and Windows loaders and native binaries for x64 and arm64. Its npm version
+tracks the validated Electron major. The CommonJS and named ESM exports at the package root select the host
+platform and report readiness as `onReady(generation, deviceId?, info?)`.
+The third argument provides Windows capture metadata when available. The
+`/mac` and `/win` entries expose the platform types and readiness signatures.
+
+A manual preview run compiles each architecture on a GitHub-hosted runner.
+Every native runner exercises the Electron main-process decoder before
+attestation. macOS also tests video decoding, and its arm64 runner checks
+shared-texture preview pixels. Windows video, camera and GPU preview
+acceptance runs on physical machines.
+
+The workflow verifies and attests the native binaries, the runtime inventory
+and the archive before publishing the immutable alpha version to `next`.
+The QR scanner release script supplies the version to the registry lookup,
+inventory, archive path and publication steps. The runtime inventory includes
+the bundled ZXing-C++ Apache-2.0 license.
+Consumers verify the packaged proof against the source commit, branch and
+workflow when adding the npm pin. Desktop packaging then checks the pinned
+inventory digest and all installed runtime files.
 
 ## Consumer integration contract
 

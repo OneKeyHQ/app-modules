@@ -94,7 +94,7 @@ function createCapture(options) {
       if (disposed || event.generation !== activeGeneration) return;
       switch (event.kind) {
         case "ready":
-          onReady?.(event.generation);
+          onReady?.(event.generation, event.deviceId);
           break;
         case "text":
           onText?.(event.text, event.generation);

@@ -1,0 +1,162 @@
+name: desktop-qr-scanner-preview
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-qr-scanner-preview
+  cancel-in-progress: false
+
+jobs:
+  native:
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-26, platform: mac, arch: arm64, target: aarch64-apple-darwin }
+          - { runner: macos-26-intel, platform: mac, arch: x64, target: x86_64-apple-darwin }
+          - { runner: windows-2025, platform: win, arch: x64, target: x86_64-pc-windows-msvc }
+          - { runner: windows-11-arm, platform: win, arch: arm64, target: aarch64-pc-windows-msvc }
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop/${{ matrix.platform }}/electron-qr-scanner
+    env:
+      BUILD_ARCH: ${{ matrix.arch }}
+      BUILD_TARGET: ${{ matrix.target }}
+      RUST_TOOLCHAIN: 1.99.0
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+          architecture: ${{ matrix.arch }}
+      - name: Check preview version and runner architecture
+        run: |
+          node ../../scripts/release-qr-scanner.mjs check-version
+          node -e 'if (process.arch !== process.env.BUILD_ARCH) throw new Error("Runner architecture mismatch")'
+      - name: Install the locked build toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --target "$BUILD_TARGET"
+          rustup override set "$RUST_TOOLCHAIN"
+      - name: Compile the native binary
+        run: npm run build -- "$BUILD_TARGET"
+      - name: Test native QR decoding on macOS
+        if: matrix.platform == 'mac'
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node node_modules/electron/install.js
+          npm test
+          npm run test:electron
+      - name: Smoke-test the Windows decoder in Electron
+        if: matrix.platform == 'win'
+        timeout-minutes: 5
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node node_modules/electron/install.js
+          npm run test:electron -- --smoke
+      - name: Check shared-texture frames on a sandboxed macOS canvas
+        if: matrix.platform == 'mac' && matrix.arch == 'arm64'
+        timeout-minutes: 3
+        run: npm run test:preview
+      - name: Attest the native binary
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: desktop/${{ matrix.platform }}/electron-qr-scanner/*.node
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: qr-native-${{ matrix.platform }}-${{ matrix.arch }}
+          if-no-files-found: error
+          path: desktop/${{ matrix.platform }}/electron-qr-scanner/*.node
+
+  package:
+    needs: native
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: qr-native-*
+          path: desktop/dist/qr-scanner
+      - name: Verify native attestations and stage the package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node desktop/scripts/release-qr-scanner.mjs prepare
+      - name: Check the staged package entry and declarations
+        run: |
+          node --test desktop/qr-scanner-preview/test/entry.test.cjs
+          npm exec --yes --package=typescript@5.9.3 -- tsc --noEmit --strict --skipLibCheck --module node16 --moduleResolution node16 desktop/qr-scanner-preview/test/types.ts
+      - name: Attest the runtime inventory
+        id: inventory
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: desktop/dist/qr-scanner/staging/package/desktop-qr-scanner.json
+      - name: Pack the preview and its portable verification bundle
+        env:
+          BUNDLE_PATH: ${{ steps.inventory.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE_PATH" desktop/dist/qr-scanner/desktop-qr-scanner.sigstore.json
+          node desktop/scripts/release-qr-scanner.mjs pack
+      - name: Attest the npm archive
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: desktop/dist/qr-scanner/*.tgz
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: desktop-qr-scanner-preview
+          if-no-files-found: error
+          path: desktop/dist/qr-scanner/*.tgz
+
+  publish:
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      attestations: read
+      id-token: write
+    environment: runtime-npm-publish
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: desktop-qr-scanner-preview
+          path: desktop/dist/qr-scanner
+      - name: Verify the approved archive and runtime proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node desktop/scripts/release-qr-scanner.mjs verify
+      - name: Publish the immutable preview
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          test -n "$NODE_AUTH_TOKEN"
+          node desktop/scripts/release-qr-scanner.mjs check-version
+          archive_path="$(node desktop/scripts/release-qr-scanner.mjs archive-path)"
+          npm publish "$archive_path" --access public --tag next --provenance --ignore-scripts
+      - name: Verify npm version, integrity and provenance
+        run: node desktop/scripts/release-qr-scanner.mjs verify-npm
