@@ -193,6 +193,32 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     row.dispose()
   }
 
+  fun testBoundedStyledTextFitsFixedAndFlexibleCells() = withMarketRow { host ->
+    val row = NativeListBoundedTableView(host.context as ThemedReactContext, NativeListFonts())
+    val width = (240 * row.resources.displayMetrics.density).toInt()
+    val height = (64 * row.resources.displayMetrics.density).toInt()
+    for (type in listOf("market", "dataRow")) {
+      val columns = JSONArray().put(JSONObject().put("key", "fixed").put("width", 96)
+        .put("text", "ETH").put("secondaryText", "Token"))
+        .put(JSONObject().put("key", "flex").put("text", "$42").put("secondaryText", "USD"))
+      val style = JSONObject().put(if (type == "market") "price" else "columns", JSONObject().put("alignment", "end"))
+        .put(if (type == "market") "subtitle" else "columnSecondary", JSONObject().put("alignment", "center"))
+      val data = JSONObject().put("type", type).put("key", type).put("columns", columns)
+        .put("tableColumns", columns).put("style", style)
+      row.bind(NativeListItem.parse(data), null, "linear", "vertical", null, false, { _, _, fallback -> fallback })
+      row.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+      row.layout(0, 0, width, height)
+      for (text in listOf("ETH", "Token", "$42", "USD")) {
+        val matches = ArrayList<View>()
+        row.findViewsWithText(matches, text, View.FIND_VIEWS_WITH_TEXT)
+        val label = matches.filterIsInstance<android.widget.TextView>().single { it.text.toString() == text }
+        assertTrue("$type $text should fit", label.width >= kotlin.math.floor(label.paint.measureText(text)).toInt())
+      }
+    }
+    row.dispose()
+  }
+
   private fun bind(row: NativeListMarketRowView, item: NativeListItem) {
     row.bind(item, null, "linear", "vertical", null, false, { _, _, fallback -> fallback }, true)
   }

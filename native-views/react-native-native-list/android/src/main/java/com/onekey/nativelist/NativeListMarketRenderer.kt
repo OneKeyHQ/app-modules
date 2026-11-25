@@ -985,7 +985,7 @@ internal abstract class NativeListMarketGestureRowView(context: ThemedReactConte
 
   protected fun bindMarketGesture(item: NativeListItem) {
     // The release still belongs to a hold that fired before a same-row content bind.
-    if (item.type == "market" && (tag as? NativeListItem)?.type == "market") cancelMarketHold()
+    if (item.type == "market" && (tag as? NativeListItem)?.key == item.key) cancelMarketHold()
     else resetMarketGesture()
   }
 

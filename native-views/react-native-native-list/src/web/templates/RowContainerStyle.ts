@@ -114,7 +114,10 @@ export function applyRowContainerStyle(body: HTMLElement, row: RowModel): void {
       row.type === 'metricCard' ||
       (row.type === 'identity' && row.presentation === 'walletSidebar') ||
       (row.type === 'system' && row.variant === 'warning');
-    if (vertical) {
+    if (body.dataset.nlRenderer === 'boundedTable') {
+      for (const cell of Array.from(body.children))
+        set(cell as HTMLElement, 'align-items', alignment);
+    } else if (vertical) {
       set(body, 'display', 'flex');
       set(body, 'flex-direction', 'column');
       if (row.type === 'mediaTile') set(body, 'gap', '0px');

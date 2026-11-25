@@ -11,6 +11,7 @@ import { type RowPrimitives, RowVisualStyle } from './RowVisual';
 type Row = DataRow | MarketRow;
 type Cell = {
   element: HTMLElement;
+  content: HTMLElement;
   labels: HTMLElement;
   visual?: HTMLElement;
   visualKey?: string;
@@ -80,8 +81,12 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
       const labels = body.ownerDocument.createElement('span');
       labels.style.cssText =
         'display:flex;flex-direction:column;min-width:0;overflow:hidden';
-      element.appendChild(labels);
-      cell = { element, labels };
+      const content = body.ownerDocument.createElement('span');
+      content.style.cssText =
+        'display:flex;align-items:center;min-width:0;max-width:100%';
+      content.appendChild(labels);
+      element.appendChild(content);
+      cell = { element, content, labels };
       state.cells[index] = cell;
     }
     const { element, labels } = cell;
@@ -116,7 +121,7 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
       }
       cell.visual = primitives.visual(column.leading);
       if (cell.visual) {
-        element.prepend(cell.visual);
+        cell.content.prepend(cell.visual);
         const { width = 24, height = 24 } = row.style?.image ?? {};
         new RowVisualStyle(cell.visual).apply(
           { ...row.style?.image, width, height },

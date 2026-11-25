@@ -1024,5 +1024,9 @@ columns, rotation, and text scaling remains required.
 In the optional bounded table presentation, column order, alignment and widths
 come from `tableColumns`. The row style supplies horizontal and vertical padding,
 columnGap (default 8, range 0–64), image size (default 24), leading gap (default 4), line gap (default 0) and
-container height (base 56). Primary/secondary text uses `columns/columnSecondary`
+container height. Without an explicit height, the base is 56 logical units,
+48 for `size: 'small'` and 68 for `size: 'large'`. On Android these are minimum
+heights. Production clamps finite column gaps to 0–64. Missing or nonnumeric gaps
+use the default, as do nonfinite values. Vertical alignment positions the image and text together
+inside the cell while its action target spans the available height. Primary/secondary text uses `columns/columnSecondary`
 on dataRow and `price/subtitle` on market. All widths include the leading image.

@@ -119,6 +119,8 @@ final class NativeListBoundedTableCell: NativeListRendererCell {
       }
       let action = column["actionKey"] as? String
       cell.button.isHidden = action == nil
+      cell.button.isEnabled = !item.data.bool("disabled")
+      cell.button.accessibilityTraits = cell.button.isEnabled ? .button : [.button, .notEnabled]
       cell.button.accessibilityLabel = column["accessibilityLabel"] as? String
       cell.onPress = { [weak self, weak cell] in
         guard let cell, let action else { return }

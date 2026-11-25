@@ -2831,10 +2831,17 @@ together. Unless an explicit row accessibility label is supplied, the row announ
 the primary and secondary lines in column order. Ordinary segments announce their
 concatenated text. Empty subscript runs do not affect the spoken line. For a line
 with a nonempty subscript run, the row announces the corresponding plain text
-(`text` or `secondaryText`). Snapshot validation and row-patch validation after
-merging require nonblank plain text for each such line unless the row supplies a
-nonblank explicit accessibility label. Activating an actionable cell delivers
-the existing row action event with its slot.
+(`text` or `secondaryText`). Development validation requires nonblank plain text for each such line after
+merging unless the row supplies a nonblank accessibility label. In production
+the formatted line still renders when its spoken text is missing. A blank row
+label clears the override and restores the generated label. Activating a cell
+delivers the existing row action event with `anchor.source = "leadingAction"`
+and `anchor.slot` equal to its zero-based column index, including right-hand cells.
+
+In production, snapshots and patches discard unknown column and visual fields,
+drop incomplete cell actions, and truncate each text line to 4096 characters
+and each formatted line to 64 segments and 4096 characters in total.
+Column geometry and identity still require a valid structural snapshot.
 
 Replacing cell values can use a row patch. Entering or leaving table mode or
 changing cell keys, order, widths or alignment requires a structural snapshot.

@@ -225,7 +225,7 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
 }
 
 internal class NativeListTableColumnView(
-  context: android.content.Context, private val fonts: NativeListFonts, wrapSecondary: Boolean = false,
+  context: android.content.Context, private val fonts: NativeListFonts, private val wrapSecondary: Boolean = false,
 ) : LinearLayout(context) {
   private val primaryLine = LinearLayout(context)
   private val primary = NativeListTextView(context)
@@ -553,13 +553,13 @@ internal class NativeListTableColumnView(
 
   private fun applyStyle(style: JSONObject) {
     style.optJSONObject("columns")?.let {
-      if (it.has("alignment")) {
+      if (!wrapSecondary && it.has("alignment")) {
         primaryLine.layoutParams.width = LayoutParams.MATCH_PARENT
         primary.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
       }
     }
     style.optJSONObject("columnSecondary")?.let {
-      if (it.has("alignment"))
+      if (!wrapSecondary && it.has("alignment"))
         secondary.layoutParams =
           LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4) }
     }

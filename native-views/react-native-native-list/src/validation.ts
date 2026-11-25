@@ -46,6 +46,21 @@ const MARKET_METRIC_FIELDS = [
   'secondaryTone',
 ] as const;
 
+const TABLE_COLUMN_FIELDS = [
+  'key',
+  'text',
+  'secondaryText',
+  'textSegments',
+  'secondaryTextSegments',
+  'tone',
+  'secondaryTone',
+  'alignment',
+  'width',
+  'actionKey',
+  'accessibilityLabel',
+  'leading',
+] as const;
+
 function isDevelopment(): boolean {
   return typeof __DEV__ !== 'undefined' && __DEV__;
 }
@@ -1023,25 +1038,13 @@ function assertTableColumns(
   for (const [index, column] of columns.entries()) {
     const field = `${path}[${index}]`;
     const value = protocolObject(column, field);
-    assertUnknownKeys(
-      value,
-      [
-        'key',
-        'text',
-        'secondaryText',
-        'textSegments',
-        'secondaryTextSegments',
-        'tone',
-        'secondaryTone',
-        'alignment',
-        'width',
-        'actionKey',
-        'accessibilityLabel',
-        'leading',
-      ],
-      field,
-      'table column field'
-    );
+    if (isDevelopment())
+      assertUnknownKeys(
+        value,
+        TABLE_COLUMN_FIELDS,
+        field,
+        'table column field'
+      );
     protocolKey(column.key, field + '.key');
     if (keys.has(column.key)) fail(field, 'duplicate column key');
     keys.add(column.key);
@@ -1063,12 +1066,13 @@ function assertTableColumns(
     }
     if (column.leading !== undefined) {
       const leading = protocolObject(column.leading, field + '.leading');
-      assertUnknownKeys(
-        leading,
-        VISUAL_FIELDS,
-        field + '.leading',
-        'visual field'
-      );
+      if (isDevelopment())
+        assertUnknownKeys(
+          leading,
+          VISUAL_FIELDS,
+          field + '.leading',
+          'visual field'
+        );
       if (
         ![
           'token',
@@ -3342,15 +3346,8 @@ function assertRowProtocol(row: RowModel, path: string): void {
       row.tableColumns,
       row.type,
       path + '.tableColumns',
-      !hasExplicitLabel
+      isDevelopment() && !hasExplicitLabel
     );
-    if (row.tableColumns)
-      assertBoundedStyleNumber(
-        row.style?.columnGap,
-        path + '.style.columnGap',
-        0,
-        64
-      );
   }
   if (row.type === 'dataRow') {
     if (!Array.isArray(row.columns))
@@ -3912,6 +3909,8 @@ const NESTED_DECORATION_FIELDS: Readonly<Record<string, readonly string[]>> = {
 
 function sanitizeDecoration(value: unknown, field: string): unknown {
   if (value === undefined || value === null) return undefined;
+  if (field === 'tableColumns' && Array.isArray(value))
+    return sanitizeTableColumns(value);
   if (field === 'titleSegments')
     return passesTitleRunRules(() => assertTitleSegments(value, field))
       ? value
@@ -4183,6 +4182,11 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
     if (key === 'hoverActionKey' && (typeof item !== 'string' || !item.trim()))
       continue;
     if (key === 'accessibilityLabel' && typeof item !== 'string') continue;
+    if (field === 'style' && key === 'columnGap') {
+      if (typeof item === 'number' && Number.isFinite(item))
+        next[key] = Math.min(64, Math.max(0, item));
+      continue;
+    }
     if (
       (field === 'style' || PROTOCOL_NUMBER_FIELDS.has(key)) &&
       typeof item !== 'object' &&
@@ -4301,6 +4305,65 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
   return next;
 }
 
+/** Keep UTF-16 surrogate pairs intact when the native wire limit splits one. */
+function truncateTableText(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const last = text.charCodeAt(limit - 1);
+  const next = text.charCodeAt(limit);
+  const splitsPair =
+    last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
+  return text.slice(0, splitsPair ? limit - 1 : limit);
+}
+
+function sanitizeTableColumns(columns: unknown[]) {
+  return columns.map((column) => {
+    if (!isRecord(column)) return column;
+    const next = pickFields(column, TABLE_COLUMN_FIELDS);
+    for (const key of Object.keys(next))
+      if (next[key] == null) delete next[key];
+    if (next.leading !== undefined)
+      next.leading = sanitizeDecoration(next.leading, 'leading');
+    if (
+      typeof next.actionKey !== 'string' ||
+      !next.actionKey.trim() ||
+      typeof next.accessibilityLabel !== 'string' ||
+      !next.accessibilityLabel.trim()
+    ) {
+      delete next.actionKey;
+      delete next.accessibilityLabel;
+    }
+    for (const field of ['text', 'secondaryText'] as const) {
+      const text = next[field];
+      if (typeof text === 'string')
+        next[field] = truncateTableText(text, MAX_TEXT_LENGTH);
+      const key = `${field}Segments` as const;
+      if (!(key in next)) continue;
+      const segments = next[key];
+      if (!Array.isArray(segments)) {
+        delete next[key];
+        continue;
+      }
+      const bounded: ValueTextSegment[] = [];
+      let remaining = MAX_TEXT_LENGTH;
+      for (const run of segments.slice(0, 64)) {
+        if (!isRecord(run) || typeof run.text !== 'string') continue;
+        const part = truncateTableText(run.text, remaining);
+        bounded.push(
+          run.style === 'subscript'
+            ? { text: part, style: 'subscript' }
+            : { text: part }
+        );
+        remaining -= part.length;
+        if (remaining === 0 || part.length < run.text.length) break;
+      }
+      next[key] = bounded;
+      if (field === 'text' && next.text === undefined && bounded.length)
+        next.text = '';
+    }
+    return next;
+  });
+}
+
 function sanitizeMarketMetrics(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
   return value.map((metric) => {
@@ -4390,6 +4453,11 @@ function normalizeEmptyImages(value: unknown, field = ''): unknown {
       ].includes(key);
     if (
       item === undefined ||
+      (key === 'accessibilityLabel' &&
+        (object.type === 'dataRow' || object.type === 'market') &&
+        Array.isArray(object.tableColumns) &&
+        typeof item === 'string' &&
+        !item.trim()) ||
       (item === null &&
         optional &&
         !(object.type === 'market' && key === 'metrics')) ||
@@ -5320,6 +5388,13 @@ function mergeAndValidateSingleRow(
       `patches[${index}].changes.tableColumns`,
       'use a snapshot to change table geometry'
     );
+  if (
+    (previous.type === 'market' || previous.type === 'dataRow') &&
+    previous.tableColumns &&
+    typeof changes.accessibilityLabel === 'string' &&
+    !changes.accessibilityLabel.trim()
+  )
+    changes.accessibilityLabel = null;
   if (previous.type === 'market') {
     if (
       typeof changes.price === 'string' &&

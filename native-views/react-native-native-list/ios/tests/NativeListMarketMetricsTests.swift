@@ -56,6 +56,13 @@ final class NativeListMarketMetricsTests: XCTestCase {
     XCTAssertTrue(button.hitTest(CGPoint(x: button.bounds.midX, y: button.bounds.midY), with: nil) === button)
     _ = target.perform(selector)
     XCTAssertEqual(actions, ["favorite"])
+    for disabled in [true, false] {
+      data["disabled"] = disabled
+      cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      XCTAssertEqual(button.isEnabled, !disabled)
+      XCTAssertEqual(button.accessibilityTraits.contains(.notEnabled), disabled)
+    }
     data["tableColumns"] = Array(columns.suffix(2))
     cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
       checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())

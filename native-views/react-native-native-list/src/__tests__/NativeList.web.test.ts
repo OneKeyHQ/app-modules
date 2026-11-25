@@ -6114,6 +6114,14 @@ describe('Web migration layout and table regressions', () => {
           ?.textContent
       ).toContain('$0.051');
       expect(label('custom')).toBe('My quote');
+      engine.applyPatches([
+        {
+          type: 'dataRow',
+          key: 'custom',
+          changes: { accessibilityLabel: '  ' },
+        },
+      ]);
+      expect(label('custom')).toBe(label('detail'));
     } finally {
       engine.destroy();
     }
@@ -6131,6 +6139,7 @@ describe('Web migration layout and table regressions', () => {
     const row = {
       type: 'dataRow',
       key: 'pool',
+      style: { container: { contentVerticalAlignment: 'top' } },
       columns: [
         { key: 'pool', text: 'Pool' },
         { key: 'fee', text: '1%' },
@@ -6155,6 +6164,8 @@ describe('Web migration layout and table regressions', () => {
       const button = host.querySelector(
         'button[data-native-list-action="copy"]'
       ) as HTMLButtonElement;
+      expect(button.style.alignSelf).toBe('stretch');
+      expect(button.style.alignItems).toBe('flex-start');
       button.click();
       expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
         'copy',
@@ -6167,6 +6178,7 @@ describe('Web migration layout and table regressions', () => {
           type: 'dataRow',
           key: row.key,
           changes: {
+            style: { container: { contentVerticalAlignment: 'bottom' } },
             tableColumns: [
               row.tableColumns[0],
               {
@@ -6183,6 +6195,8 @@ describe('Web migration layout and table regressions', () => {
         'button[data-native-list-action="explore"]'
       ) as HTMLButtonElement;
       expect(updated).toBe(button);
+      expect(updated.style.alignSelf).toBe('stretch');
+      expect(updated.style.alignItems).toBe('flex-end');
       expect(updated.textContent).toContain('0x456');
       updated.click();
       expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
