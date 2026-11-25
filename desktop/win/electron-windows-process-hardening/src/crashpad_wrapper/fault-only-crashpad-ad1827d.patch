@@ -1,0 +1,225 @@
+--- a/snapshot/win/process_reader_win.h
++++ b/snapshot/win/process_reader_win.h
+@@ -61,6 +61,8 @@
+     bool InitializeXState(HANDLE thread_handle, ULONG64 XStateCompactionMask);
+ #endif  // ARCH_CPU_X86_64
+     void InitializeFromCurrentThread();
++    // Local fault-only capture: copy the CONTEXT saved by the exception callback.
++    void InitializeFromSavedContext(const CONTEXT& saved);
+     bool InitializeNative(HANDLE thread_handle);
+ 
+    private:
+@@ -140,6 +142,11 @@
+   //!     `0`) corresponds to the main thread.
+   const std::vector<Thread>& Threads();
+ 
++  // Set before Threads() is first queried. This local mode never suspends a
++  // target thread; the crash callback remains runnable through capture.
++  void SetFaultThread(uint32_t id, WinVMAddress exception_pointers);
++  bool FaultOnly() const { return fault_thread_id_ != 0; }
++
+   //! \return The modules loaded in the process. The first element (at index
+   //!     `0`) corresponds to the main executable.
+   const std::vector<ProcessInfo::Module>& Modules();
+@@ -164,6 +171,8 @@
+   std::vector<Thread> threads_;
+   std::vector<ProcessInfo::Module> modules_;
+   ProcessSuspensionState suspension_state_;
++  uint32_t fault_thread_id_;
++  WinVMAddress fault_exception_pointers_;
+   bool initialized_threads_;
+   InitializationStateDcheck initialized_;
+ };
+--- a/snapshot/win/process_reader_win.cc
++++ b/snapshot/win/process_reader_win.cc
+@@ -116,10 +116,13 @@
+ 
+ template <class Traits>
+ HANDLE OpenThread(
+-    const process_types::SYSTEM_THREAD_INFORMATION<Traits>& thread_info) {
++    const process_types::SYSTEM_THREAD_INFORMATION<Traits>& thread_info,
++    bool fault_only) {
+   HANDLE handle;
+   ACCESS_MASK query_access =
+-      THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_INFORMATION;
++      fault_only ? THREAD_QUERY_INFORMATION
++                 : THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME |
++                       THREAD_QUERY_INFORMATION;
+   OBJECT_ATTRIBUTES object_attributes;
+   InitializeObjectAttributes(&object_attributes, nullptr, 0, nullptr, nullptr);
+   NTSTATUS status = crashpad::NtOpenThread(
+@@ -208,6 +211,16 @@
+   CaptureContext(context<CONTEXT>());
+ }
+ 
++void ProcessReaderWin::ThreadContext::InitializeFromSavedContext(
++    const CONTEXT& saved) {
++  data_.resize(sizeof(CONTEXT));
++  offset_ = 0;
++  initialized_ = true;
++  memcpy(data_.data(), &saved, sizeof(saved));
++  // The callback's base CONTEXT does not include extended XSTATE bytes.
++  context<CONTEXT>()->ContextFlags &= ~(CONTEXT_XSTATE & ~CONTEXT_AMD64);
++}
++
+ bool ProcessReaderWin::ThreadContext::InitializeNative(HANDLE thread_handle) {
+   data_.resize(sizeof(CONTEXT));
+   initialized_ = true;
+@@ -294,6 +307,8 @@
+       threads_(),
+       modules_(),
+       suspension_state_(),
++      fault_thread_id_(0),
++      fault_exception_pointers_(0),
+       initialized_threads_(false),
+       initialized_() {
+ }
+@@ -353,6 +368,13 @@
+ #endif
+ 
+   return threads_;
++}
++
++void ProcessReaderWin::SetFaultThread(
++    uint32_t id, WinVMAddress exception_pointers) {
++  DCHECK(!initialized_threads_);
++  fault_thread_id_ = id;
++  fault_exception_pointers_ = exception_pointers;
+ }
+ 
+ const std::vector<ProcessInfo::Module>& ProcessReaderWin::Modules() {
+@@ -396,14 +418,38 @@
+     ProcessReaderWin::Thread thread;
+     thread.id = thread_info.ClientId.UniqueThread;
+ 
+-    ScopedKernelHANDLE thread_handle(OpenThread(thread_info));
++    if (fault_thread_id_ != 0 && thread.id != fault_thread_id_)
++      continue;
++
++    ScopedKernelHANDLE thread_handle(
++        OpenThread(thread_info, fault_thread_id_ != 0));
+     if (!thread_handle.is_valid())
+       continue;
+ 
+-    if (!FillThreadContextAndSuspendCount<Traits>(thread_handle.get(),
+-                                                  &thread,
+-                                                  suspension_state_,
+-                                                  is_64_reading_32)) {
++    if (fault_thread_id_ != 0) {
++#if defined(ARCH_CPU_X86_64)
++      if (is_64_reading_32)
++        continue;
++      process_types::EXCEPTION_POINTERS64 pointers = {};
++      CONTEXT saved = {};
++      if (!process_memory_.Read(fault_exception_pointers_,
++                                sizeof(pointers), &pointers) ||
++          !pointers.ContextRecord ||
++          !process_memory_.Read(pointers.ContextRecord,
++                                sizeof(saved), &saved) ||
++          (saved.ContextFlags & (CONTEXT_CONTROL | CONTEXT_INTEGER)) !=
++              (CONTEXT_CONTROL | CONTEXT_INTEGER)) {
++        continue;
++      }
++      thread.context.InitializeFromSavedContext(saved);
++      thread.suspend_count = 0;
++#else
++      continue;
++#endif
++    } else if (!FillThreadContextAndSuspendCount<Traits>(thread_handle.get(),
++                                                         &thread,
++                                                         suspension_state_,
++                                                         is_64_reading_32)) {
+       continue;
+     }
+ 
+--- a/snapshot/win/process_snapshot_win.cc
++++ b/snapshot/win/process_snapshot_win.cc
+@@ -63,6 +63,20 @@
+   if (!process_reader_.Initialize(process, suspension_state))
+     return false;
+ 
++  // This build serves only a live exception callback. Reject an absent or
++  // invalid exception before any code can request the process thread list.
++  ExceptionInformation exception_information = {};
++  if (!exception_information_address ||
++      !process_reader_.Memory()->Read(exception_information_address,
++                                      sizeof(exception_information),
++                                      &exception_information) ||
++      !exception_information.thread_id ||
++      !exception_information.exception_pointers) {
++    return false;
++  }
++  process_reader_.SetFaultThread(exception_information.thread_id,
++                                 exception_information.exception_pointers);
++
+   client_id_.InitializeToZero();
+   system_.Initialize(&process_reader_);
+ 
+@@ -83,23 +97,13 @@
+           ? &options_.indirectly_referenced_memory_cap
+           : nullptr;
+ 
+-  if (exception_information_address != 0) {
+-    ExceptionInformation exception_information = {};
+-    if (!process_reader_.Memory()->Read(exception_information_address,
+-                                        sizeof(exception_information),
+-                                        &exception_information)) {
+-      LOG(WARNING) << "ReadMemory ExceptionInformation failed";
+-      return false;
+-    }
+-
+-    exception_.reset(new internal::ExceptionSnapshotWin());
+-    if (!exception_->Initialize(&process_reader_,
+-                                exception_information.thread_id,
+-                                exception_information.exception_pointers,
+-                                budget_remaining_pointer)) {
+-      exception_.reset();
+-      return false;
+-    }
++  exception_.reset(new internal::ExceptionSnapshotWin());
++  if (!exception_->Initialize(&process_reader_,
++                              exception_information.thread_id,
++                              exception_information.exception_pointers,
++                              budget_remaining_pointer)) {
++    exception_.reset();
++    return false;
+   }
+ 
+   InitializeThreads(budget_remaining_pointer);
+@@ -211,21 +215,9 @@
+ }
+ 
+ std::vector<HandleSnapshot> ProcessSnapshotWin::Handles() const {
+-  std::vector<HandleSnapshot> result;
+-  for (const auto& handle : process_reader_.GetProcessInfo().Handles()) {
+-    HandleSnapshot snapshot;
+-    // This is probably not strictly correct, but these are not localized so we
+-    // expect them all to be in ASCII range anyway. This will need to be more
+-    // carefully done if the object name is added.
+-    snapshot.type_name = base::WideToUTF8(handle.type_name);
+-    snapshot.handle = handle.handle;
+-    snapshot.attributes = handle.attributes;
+-    snapshot.granted_access = handle.granted_access;
+-    snapshot.pointer_count = handle.pointer_count;
+-    snapshot.handle_count = handle.handle_count;
+-    result.push_back(snapshot);
+-  }
+-  return result;
++  // The local diagnostic does not emit a handle stream. In particular it must
++  // not require PROCESS_DUP_HANDLE on the protected target.
++  return {};
+ }
+ 
+ std::vector<const MemorySnapshot*> ProcessSnapshotWin::ExtraMemory() const {
+--- a/snapshot/win/thread_snapshot_win.cc
++++ b/snapshot/win/thread_snapshot_win.cc
+@@ -99,7 +99,8 @@
+     InitializeX64Context(context, context_.x86_64);
+     // Capturing process must have CET enabled. If captured process does not,
+     // then this will not set any state in the context snapshot.
+-    if (IsXStateFeatureEnabled(XSTATE_MASK_CET_U)) {
++    // The fault-only reader has a base CONTEXT without extended XSTATE bytes.
++    if (!process_reader->FaultOnly() && IsXStateFeatureEnabled(XSTATE_MASK_CET_U)) {
+       XSAVE_CET_U_FORMAT* cet_u = LocateXStateCetU(context);
+       if (cet_u && cet_u->Ia32CetUMsr && cet_u->Ia32Pl3SspMsr) {
+         InitializeX64XStateCet(context, cet_u, context_.x86_64);
