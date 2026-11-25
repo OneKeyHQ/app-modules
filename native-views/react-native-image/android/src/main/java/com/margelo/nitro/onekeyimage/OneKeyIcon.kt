@@ -6,7 +6,6 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.widget.ImageView
 import com.facebook.react.uimanager.ThemedReactContext
-import com.margelo.nitro.views.RecyclableView
 import java.lang.ref.WeakReference
 
 private class OneKeyIconHost(context: Context) : ImageView(context) {
@@ -23,13 +22,16 @@ private class OneKeyIconHost(context: Context) : ImageView(context) {
   override fun onConfigurationChanged(newConfig: Configuration) { super.onConfigurationChanged(newConfig); changed?.invoke() }
 }
 
-class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec(), RecyclableView {
+// Not a RecyclableView: Fabric's recycle pool zeroes the bounds of a dropped view
+// while ScreenStack can still draw it in the outgoing screen transition.
+class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec() {
   private val host = OneKeyIconHost(context)
   private val owner = Any()
   private var generation = 0L
   private var identity: String? = null
   private var displayedGeometry: String? = null
   private var displayed: OneKeyNamedSVG.RenderResult? = null
+  private var dropped = false
   override val view: ImageView get() = host
   override var iconName: String? = null
   override var resolvedColor: String? = null
@@ -47,6 +49,13 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec(), Re
   }
 
   private fun refresh() {
+    if (dropped) {
+      // Keep the last frame while a transition still draws the dropped host.
+      if (host.attached) return
+      dropped = false
+      prepareForRecycle()
+      return
+    }
     val scale = host.resources.displayMetrics.density
     val next = "$iconName|$resolvedColor|${host.width}|${host.height}|$scale|${host.attached}"
     if (identity == next) return
@@ -87,11 +96,24 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec(), Re
     }
   }
 
-  override fun prepareForRecycle() {
+  /** Clears immediately, for native owners that reuse the view themselves. */
+  fun prepareForRecycle() {
     iconName = null
     resolvedColor = null
     refresh()
   }
-  override fun onDropView() { prepareForRecycle(); super.onDropView() }
-  override fun dispose() { prepareForRecycle(); host.changed = null; super.dispose() }
+
+  private fun drop() {
+    if (dropped) return
+    if (host.attached && host.drawable != null) {
+      dropped = true
+      generation++
+      OneKeyNamedSVG.cancel(owner)
+    } else {
+      prepareForRecycle()
+    }
+  }
+
+  override fun onDropView() { drop(); super.onDropView() }
+  override fun dispose() { drop(); super.dispose() }
 }
