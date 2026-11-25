@@ -4356,7 +4356,8 @@ function sanitizeTableColumns(columns: unknown[]) {
         remaining -= part.length;
         if (remaining === 0 || part.length < run.text.length) break;
       }
-      next[key] = bounded;
+      if (bounded.some((run) => run.text.length > 0)) next[key] = bounded;
+      else delete next[key];
       if (field === 'text' && next.text === undefined && bounded.length)
         next.text = '';
     }
@@ -4435,6 +4436,7 @@ function normalizeEmptyImages(value: unknown, field = ''): unknown {
   }
   const object = value as Record<string, unknown>;
   if (
+    field !== 'tableColumns' &&
     typeof object.uri === 'string' &&
     !object.uri.trim() &&
     'width' in object &&

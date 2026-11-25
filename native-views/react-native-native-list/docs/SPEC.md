@@ -2841,6 +2841,9 @@ and `anchor.slot` equal to its zero-based column index, including right-hand cel
 In production, snapshots and patches discard unknown column and visual fields,
 drop incomplete cell actions, and truncate each text line to 4096 characters
 and each formatted line to 64 segments and 4096 characters in total.
+Image-like extra fields on a column are discarded while its nested leading
+image is normalized. If the retained segments contain no text, display and
+generated announcements use the corresponding plain text for that line.
 Column geometry and identity still require a valid structural snapshot.
 
 Replacing cell values can use a row patch. Entering or leaving table mode or

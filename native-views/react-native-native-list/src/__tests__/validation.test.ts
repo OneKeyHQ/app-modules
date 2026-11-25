@@ -4545,6 +4545,72 @@ describe.each([true, false])(
       else expect(apply().rows).toEqual(before.rows);
     });
 
+    it.each([
+      {
+        scenario: 'image-like column metadata',
+        extra: {
+          uri: '',
+          height: 24,
+          leading: {
+            kind: 'token' as const,
+            image: { uri: '', width: 24, height: 24 },
+          },
+        },
+        retained: { leading: { kind: 'token' } },
+        devError: /table column field/,
+      },
+      {
+        scenario: 'empty runs at the segment limit',
+        extra: {
+          textSegments: [
+            ...Array.from({ length: 64 }, () => ({ text: '' })),
+            { text: '$42' },
+          ],
+          secondaryTextSegments: [{ text: '', style: 'subscript' as const }],
+        },
+        retained: {},
+        devError: /64 segments/,
+      },
+    ])(
+      'preserves table values for $scenario in snapshots and wire patches',
+      ({ extra, retained, devError }) => {
+        const initial = { ...columns[0], width: 80 };
+        const updated = { ...initial, text: '$42', secondaryText: 'USD' };
+        const tableColumns = [{ ...updated, ...extra }, columns[1]];
+        const before = snapshot([
+          { ...compact, tableColumns: [initial, columns[1]] },
+        ]);
+        const validate = () =>
+          validateSnapshot(snapshot([{ ...compact, tableColumns }]));
+        const apply = () =>
+          applyOwnedNativePatches(before, [
+            { type: 'dataRow', key: compact.key, changes: { tableColumns } },
+          ]);
+        if (development) {
+          expect(validate).toThrow(devError);
+          expect(apply).toThrow(devError);
+        } else {
+          const expected = [{ ...updated, ...retained }, columns[1]];
+          expect(validate().rows[0]).toEqual({
+            ...compact,
+            tableColumns: expected,
+          });
+          const result = apply();
+          expect(result.snapshot.rows[0]).toEqual({
+            ...compact,
+            tableColumns: expected,
+          });
+          expect(JSON.parse(result.json)).toEqual([
+            {
+              type: 'dataRow',
+              key: compact.key,
+              changes: { tableColumns: expected },
+            },
+          ]);
+        }
+      }
+    );
+
     it('normalizes unavailable cell images identically in snapshots and patches', () => {
       const before = validateSnapshot(
         snapshot([{ ...compact, tableColumns: columns.slice(0, 2) }])
