@@ -316,9 +316,9 @@ test('top toasts rest under a top obstruction', () => {
   const list = document.querySelector<HTMLElement>(
     '[data-onekey-toast-toaster]'
   );
-  expect(list?.style.top).toBe('128px');
+  expect(list?.style.getPropertyValue('--toast-obstruction-top')).toBe('128px');
   store.configure({ topObstruction: 0 });
-  expect(list?.style.top).toBe('');
+  expect(list?.style.getPropertyValue('--toast-obstruction-top')).toBe('');
 });
 
 test('with no renderer a dismiss removes the toast at once', () => {

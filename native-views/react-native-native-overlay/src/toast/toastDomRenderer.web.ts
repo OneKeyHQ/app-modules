@@ -143,6 +143,10 @@ export function createToastDomRenderer(
   let keyboardExpanded = false;
   let touchExpandedGroup: IToastGroup | undefined;
   let destroyed = false;
+  const groupResizeObserver =
+    typeof ResizeObserver === 'function'
+      ? new ResizeObserver(onResize)
+      : undefined;
 
   const isExpanded = (): boolean =>
     nodes.size > 1 &&
@@ -220,6 +224,7 @@ export function createToastDomRenderer(
       });
       group = nextGroup;
       groups.set(position, group);
+      groupResizeObserver?.observe(ol);
     }
     if (group.ol.parentElement !== ensureSection()) {
       ensureSection().append(group.ol);
@@ -818,7 +823,7 @@ export function createToastDomRenderer(
     ol.style.transition = reduceMotion()
       ? ''
       : `top ${OBSTRUCTION_SHIFT_MS}ms ease`;
-    ol.style.top = top > 0 ? `${top}px` : '';
+    ol.style.setProperty('--toast-obstruction-top', top > 0 ? `${top}px` : '');
 
     const expanded = isExpanded();
     let activeIndex = 0;
@@ -878,6 +883,7 @@ export function createToastDomRenderer(
         if (touchExpandedGroup === group) {
           touchExpandedGroup = undefined;
         }
+        groupResizeObserver?.unobserve(group.ol);
         group.ol.remove();
         groups.delete(position);
       }
@@ -960,7 +966,11 @@ export function createToastDomRenderer(
   }
 
   function onResize() {
-    nodes.forEach(measure);
+    nodes.forEach((node) => {
+      if (!node.removed) {
+        measure(node);
+      }
+    });
     update();
   }
 
@@ -1011,6 +1021,13 @@ export function createToastDomRenderer(
   document.addEventListener('pointermove', onGlobalPointerMove, true);
   document.addEventListener('pointerup', onGlobalPointerEnd, true);
   document.addEventListener('pointercancel', onGlobalPointerEnd, true);
+  const segmentQueries = [
+    globalThis.matchMedia?.('(horizontal-viewport-segments: 2)'),
+    globalThis.matchMedia?.('(vertical-viewport-segments: 2)'),
+  ];
+  segmentQueries.forEach((query) =>
+    query?.addEventListener?.('change', onResize)
+  );
   globalThis.addEventListener('resize', onResize);
   globalThis.addEventListener('blur', onWindowBlur);
 
@@ -1099,6 +1116,7 @@ export function createToastDomRenderer(
     },
     destroy() {
       destroyed = true;
+      groupResizeObserver?.disconnect();
       motionPreference?.removeEventListener?.(
         'change',
         onMotionPreferenceChange
@@ -1108,6 +1126,9 @@ export function createToastDomRenderer(
       document.removeEventListener('pointermove', onGlobalPointerMove, true);
       document.removeEventListener('pointerup', onGlobalPointerEnd, true);
       document.removeEventListener('pointercancel', onGlobalPointerEnd, true);
+      segmentQueries.forEach((query) =>
+        query?.removeEventListener?.('change', onResize)
+      );
       globalThis.removeEventListener('resize', onResize);
       globalThis.removeEventListener('blur', onWindowBlur);
       presses.forEach((press, pointerId) => clearPress(pointerId, press));

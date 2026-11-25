@@ -7,6 +7,7 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.database.ContentObserver
+import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -18,8 +19,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
+import androidx.core.content.ContextCompat
+import androidx.core.util.Consumer
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.window.java.layout.WindowInfoTrackerCallbackAdapter
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
+import androidx.window.layout.WindowLayoutInfo
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.uimanager.ThemedReactContext
@@ -63,6 +70,7 @@ private object ToasterMetrics {
   const val LANE_MAX_WIDTH = 360f
   const val LANE_MARGIN = 32.0
   const val CARD_PADDING_HORIZONTAL = 10f
+  const val MIN_SIDE_INSET = 16f
 }
 
 /** Rounds half up, the way the replaced layout placed a node in its parent. */
@@ -81,6 +89,47 @@ private val toastExitInterpolator = PathInterpolator(0.32f, 0.72f, 0f, 1f)
 
 /** Gentle ease-out curve for non-interactive timeout / programmatic exit. */
 private val toastAutoExitInterpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
+
+/** Chooses a region in stage coordinates from separating, window-relative folds. */
+internal fun toastAvailableBounds(
+  safeBounds: Rect,
+  features: List<FoldingFeature>,
+  windowX: Int,
+  windowY: Int,
+  isRtl: Boolean,
+): Rect {
+  val region = Rect(safeBounds)
+  for (feature in features) {
+    if (!feature.isSeparating) continue
+    val fold = Rect(feature.bounds).apply { offset(-windowX, -windowY) }
+    if (feature.orientation == FoldingFeature.Orientation.VERTICAL &&
+      fold.left > region.left && fold.right < region.right &&
+      fold.top < region.bottom && fold.bottom > region.top
+    ) {
+      val leftWidth = fold.left - region.left
+      val rightWidth = region.right - fold.right
+      if (rightWidth > leftWidth || (rightWidth == leftWidth && isRtl)) {
+        region.left = fold.right
+      } else {
+        region.right = fold.left
+      }
+    } else if (feature.orientation == FoldingFeature.Orientation.HORIZONTAL &&
+      fold.top > region.top && fold.bottom < region.bottom &&
+      fold.left < region.right && fold.right > region.left
+    ) {
+      region.bottom = fold.top
+    }
+  }
+  return region
+}
+
+internal fun toastContentWidth(availableDp: Float, requestedDp: Float?): Float {
+  val maxContent = ToasterMetrics.FALLBACK_MAX_PAGE_WIDTH - ToasterMetrics.FALLBACK_MARGIN
+  val availableContent = availableDp -
+    2 * (ToasterMetrics.MIN_SIDE_INSET + ToasterMetrics.CARD_PADDING_HORIZONTAL)
+  return (requestedDp?.takeIf { it.isFinite() } ?: (availableDp - ToasterMetrics.FALLBACK_MARGIN))
+    .coerceIn(0f, min(maxContent, availableContent).coerceAtLeast(0f))
+}
 
 internal class NativeOverlayToastEvent(
   surfaceId: Int,
@@ -290,6 +339,9 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
   private val density: Float get() = context.resources.displayMetrics.density
   /** Rides under whatever hangs from the top of the window. */
   private var stage: ToastStageLayout? = null
+  private var stopTrackingFolds: (() -> Unit)? = null
+  private var foldingFeatures: List<FoldingFeature> = emptyList()
+  private val windowLocation = IntArray(2)
   private var entries = mutableListOf<ToastEntry>() // newest first
   private var config = ToasterConfig()
   private var expanded = false
@@ -404,6 +456,7 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
     }
     stage = layer
     NativeOverlayHost.of(activity).attachToastLayer(layer)
+    trackFolds(activity, layer)
     ViewCompat.setOnApplyWindowInsetsListener(layer) { _, insets ->
       handler.post { layout(animated = true) }
       insets
@@ -411,9 +464,30 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
     return layer
   }
 
+  @Suppress("DEPRECATION") // Window 1.5 provides a callback adapter for this view-owned listener.
+  private fun trackFolds(activity: Activity, layer: ToastStageLayout) {
+    stopTrackingFolds?.invoke()
+    foldingFeatures = emptyList()
+    val adapter = WindowInfoTrackerCallbackAdapter(WindowInfoTracker.getOrCreate(activity))
+    val consumer = Consumer<WindowLayoutInfo> { info ->
+      if (stage === layer) {
+        val next = info.displayFeatures.filterIsInstance<FoldingFeature>()
+        if (next != foldingFeatures) {
+          foldingFeatures = next
+          layout(animated = false)
+        }
+      }
+    }
+    adapter.addWindowLayoutInfoListener(activity, ContextCompat.getMainExecutor(activity), consumer)
+    stopTrackingFolds = { adapter.removeWindowLayoutInfoListener(consumer) }
+  }
+
   private fun releaseStage() {
     val layer = stage ?: return
     stage = null
+    stopTrackingFolds?.invoke()
+    stopTrackingFolds = null
+    foldingFeatures = emptyList()
     context.contentResolver.unregisterContentObserver(motionObserver)
     layer.cards.removeAllViews()
     activity?.let { NativeOverlayHost.of(it).detachToastLayer(layer) }
@@ -561,10 +635,9 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
 
   // region Layout
 
-  private fun computeObstructionShift(layer: View, topInset: Int, bottomInset: Int): Float {
+  private fun computeObstructionShift(topInset: Int, usableBottom: Int): Float {
     if (config.topObstruction <= 0f) return 0f
     val toastTop = topInset + dp(ToasterMetrics.TOP_OFFSET)
-    val usableBottom = layer.height - bottomInset
     val top = min(
       dp(config.topObstruction + config.topObstructionGap),
       usableBottom - dp(config.topObstructionRoom),
@@ -581,12 +654,21 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
       WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
     )
     val ime = insets?.getInsets(WindowInsetsCompat.Type.ime())
-    val topInset = bars?.top ?: 0
-    // The keyboard's top edge while it is up, the system bar's otherwise.
-    val bottomInset = max(bars?.bottom ?: 0, ime?.bottom ?: 0)
+    layer.getLocationInWindow(windowLocation)
+    val region = toastAvailableBounds(
+      Rect(
+        bars?.left ?: 0,
+        bars?.top ?: 0,
+        layer.width - (bars?.right ?: 0),
+        layer.height - (bars?.bottom ?: 0),
+      ),
+      foldingFeatures, windowLocation[0], windowLocation[1],
+      layer.layoutDirection == View.LAYOUT_DIRECTION_RTL,
+    )
+    val usableBottom = min(region.bottom, layer.height - (ime?.bottom ?: 0))
     val animate = animated && !reduceMotion
 
-    val shift = computeObstructionShift(layer, topInset, bottomInset)
+    val shift = computeObstructionShift(region.top, usableBottom)
     if (shift != obstructionShift) {
       obstructionShift = shift
       if (animate) {
@@ -598,21 +680,17 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
       }
     }
 
-    val contentWidth = config.contentWidth
-      ?: (min(layer.width / density, ToasterMetrics.FALLBACK_MAX_PAGE_WIDTH) - ToasterMetrics.FALLBACK_MARGIN)
+    val available = region.width().toDouble()
+    val contentWidth = toastContentWidth(region.width() / density, config.contentWidth)
     val contentMaxHeight = config.contentMaxHeight ?: 0f
-    val top = topInset + dp(ToasterMetrics.TOP_OFFSET)
-    val left = bars?.left ?: 0
-    val right = bars?.right ?: 0
-    // The replaced toaster centred a lane of at most 360dp and centred the
-    // card in it; both offsets were rounded on their own.
-    val available = (layer.width - left - right).toDouble()
+    val top = region.top + dp(ToasterMetrics.TOP_OFFSET)
+    // Keep the existing half-up rounding of the lane and card offsets.
     val lane = min(available / density - ToasterMetrics.LANE_MARGIN, ToasterMetrics.LANE_MAX_WIDTH.toDouble())
     val laneLeft = (available - lane * density) / 2
     val cardOffset = (lane - (contentWidth + 2 * ToasterMetrics.CARD_PADDING_HORIZONTAL)) * density / 2
-    val originX = left + laneLeft + cardOffset
-    val drawnX = left + snapHalfUp(laneLeft) + snapHalfUp(cardOffset)
-    val originY = topInset + (ToasterMetrics.TOP_OFFSET * density).toDouble()
+    val originX = region.left + laneLeft + cardOffset
+    val drawnX = region.left + snapHalfUp(laneLeft) + snapHalfUp(cardOffset)
+    val originY = region.top + (ToasterMetrics.TOP_OFFSET * density).toDouble()
     val active = activeEntries
     if (active.size <= 1) {
       expanded = false
@@ -739,7 +817,7 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
       if (!wasEntered) {
         entry.entered = true
         val hidden = -(if (displayHeight > 0) displayHeight else dp(ToasterMetrics.FALLBACK_HEIGHT)) -
-          topInset - dp(ToasterMetrics.ENTER_OVERSHOOT)
+          region.top - dp(ToasterMetrics.ENTER_OVERSHOOT)
         card.setDisplayHeight(displayHeight, animated = false, durationMs = 0L, interpolator = toastSpringInterpolator)
         card.setBodyHidden(hideBody, animated = false)
         slot.translationY = (top + hidden).toFloat()

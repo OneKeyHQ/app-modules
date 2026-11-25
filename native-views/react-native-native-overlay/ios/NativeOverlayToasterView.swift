@@ -30,6 +30,7 @@ private enum ToasterMetrics {
   static let swipeMinOpacity: CGFloat = 0.35
   static let fallbackMargin: CGFloat = 64
   static let fallbackMaxPageWidth: CGFloat = 640
+  static let minSideInset: CGFloat = 16
 }
 
 /// Spring timing shared with Web and Android: mass 1, stiffness 460, damping 36.
@@ -63,6 +64,26 @@ private func toastAutoExitAnimator() -> UIViewPropertyAnimator {
 /// Lets touches that miss every card fall through to the windows below.
 private final class ToastPassthroughView: UIView {
   var onOutsideTouch: (() -> Void)?
+  var onGeometryChanged: (() -> Void)?
+  private var lastLayoutSize: CGSize = .zero
+
+  override func didMoveToSuperview() {
+    super.didMoveToSuperview()
+    lastLayoutSize = bounds.size
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    if lastLayoutSize != bounds.size {
+      lastLayoutSize = bounds.size
+      onGeometryChanged?()
+    }
+  }
+
+  override func safeAreaInsetsDidChange() {
+    super.safeAreaInsetsDidChange()
+    onGeometryChanged?()
+  }
 
   override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
     let hit = super.hitTest(point, with: event)
@@ -129,6 +150,10 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     self.hostView = hostView
     super.init()
     stage.addSubview(cards)
+    stage.onGeometryChanged = { [weak self] in
+      guard let self, self.entries.contains(where: { $0.slot.superview != nil }) else { return }
+      self.layout(animated: false)
+    }
     NotificationCenter.default.addObserver(
       self, selector: #selector(layoutChanged), name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil
     )
@@ -378,9 +403,12 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     layout(animated: true)
   }
 
-  private func contentWidth(in root: UIView) -> CGFloat {
-    config.contentWidth
-      ?? min(root.bounds.width, ToasterMetrics.fallbackMaxPageWidth) - ToasterMetrics.fallbackMargin
+  private func contentWidth(availableWidth: CGFloat) -> CGFloat {
+    let requested = config.contentWidth.flatMap { $0.isFinite ? $0 : nil }
+      ?? availableWidth - ToasterMetrics.fallbackMargin
+    let maximum = ToasterMetrics.fallbackMaxPageWidth - ToasterMetrics.fallbackMargin
+    let available = availableWidth - 2 * (ToasterMetrics.minSideInset + NativeOverlayToastCardView.horizontalPadding)
+    return max(0, min(requested, maximum, available))
   }
 
   /// How far the whole stack rides down to rest under the top obstruction.
@@ -398,8 +426,9 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
 
   private func layout(animated: Bool) {
     guard let root = window?.rootViewController?.view, !entries.isEmpty else { return }
-    let width = contentWidth(in: root)
     let safe = root.safeAreaInsets
+    let availableWidth = root.bounds.width - safe.left - safe.right
+    let width = contentWidth(availableWidth: availableWidth)
     let top = safe.top + ToasterMetrics.topOffset
     let animate = animated && !reduceMotion
 
@@ -439,7 +468,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     var expandedOffset: CGFloat = 0
     for entry in entries {
       let naturalSize = entry.card.naturalSize
-      let x = safe.left + (root.bounds.width - safe.left - safe.right - naturalSize.width) / 2
+      let x = safe.left + (availableWidth - naturalSize.width) / 2
       let displayHeight: CGFloat
       let targetY: CGFloat
       let targetScale: CGFloat

@@ -103,7 +103,9 @@ async function statusPage(t, reducedMotion = 'no-preference') {
   const context = await browser.newContext({ reducedMotion });
   t.after(() => context.close());
   const page = await context.newPage();
-  await page.setContent('<!doctype html><main>Page content</main>');
+  await page.setContent(
+    '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><main>Page content</main>'
+  );
   await page.addScriptTag({ content: bundle });
   return page;
 }
@@ -885,7 +887,7 @@ test('collapse focus handoff preserves layout when a focus listener shows anothe
 
 test('narrow toast lanes and all three cards share the viewport center', async (t) => {
   const page = await statusPage(t, 'reduce');
-  for (const width of [390, 600]) {
+  for (const width of [320, 390, 600]) {
     await page.setViewportSize({ width, height: 800 });
     for (const direction of ['ltr', 'rtl']) {
       await page.evaluate((dir) => {
@@ -901,8 +903,9 @@ test('narrow toast lanes and all three cards share the viewport center', async (
         const lane = page.locator('[data-onekey-toast-toaster]');
         const laneBox = await lane.boundingBox();
         const label = `${width}px ${direction} ${position}`;
-        assert.equal(laneBox.x, 16, label);
-        assert.equal(laneBox.width, width - 32, label);
+        const expectedWidth = Math.min(356, width - 32);
+        assert.equal(laneBox.x, (width - expectedWidth) / 2, label);
+        assert.equal(laneBox.width, expectedWidth, label);
 
         const cards = lane.locator('[data-onekey-toast]');
         const assertCardCenters = async () => {
@@ -936,4 +939,73 @@ test('narrow toast lanes and all three cards share the viewport center', async (
     .boundingBox();
   assert.equal(desktopLane.width, 356);
   assert.equal(601 - desktopLane.x - desktopLane.width, 32);
+});
+
+test('a separating fold keeps a toast stack centered inside its selected pane', async (t) => {
+  const page = await statusPage(t, 'reduce');
+  await page.setViewportSize({ width: 740, height: 800 });
+  const client = await page.context().newCDPSession(page);
+  const emulateFold = (displayFeature) =>
+    client.send('Emulation.setDeviceMetricsOverride', {
+      width: 740,
+      height: 800,
+      screenWidth: 740,
+      screenHeight: 800,
+      deviceScaleFactor: 1,
+      mobile: true,
+      displayFeature,
+    });
+  await emulateFold({ orientation: 'vertical', offset: 340, maskLength: 30 });
+
+  const lane = page.locator('[data-onekey-toast-toaster]');
+  const showStack = (position, dir = 'ltr') =>
+    page.evaluate(
+      ({ position, dir }) => {
+        document.documentElement.dir = dir;
+        for (const id of ['back', 'middle', 'front']) {
+          window.showStatus('success', { id, position });
+        }
+      },
+      { position, dir }
+    );
+
+  await page.waitForFunction(
+    () => matchMedia('(horizontal-viewport-segments: 2)').matches
+  );
+  for (const [position, dir, left, width] of [
+    ['top-center', 'ltr', 16, 308],
+    ['top-center', 'rtl', 386, 338],
+    ['top-left', 'rtl', 16, 308],
+    ['bottom-right', 'ltr', 386, 338],
+  ]) {
+    await showStack(position, dir);
+    const bounds = await lane.boundingBox();
+    assert.equal(bounds.x, left);
+    assert.equal(bounds.width, width);
+    await page.keyboard.press('Alt+t');
+    const boundsByCard = await lane
+      .locator('[data-onekey-toast]')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const bounds = node.getBoundingClientRect();
+          return [bounds.x, bounds.width];
+        })
+      );
+    assert.deepEqual(boundsByCard, Array(3).fill([left, width]));
+  }
+
+  await emulateFold({ orientation: 'horizontal', offset: 370, maskLength: 30 });
+  await page.waitForFunction(
+    () => matchMedia('(vertical-viewport-segments: 2)').matches
+  );
+  await showStack('bottom-center');
+  assert.equal((await lane.boundingBox()).y, 768);
+
+  await emulateFold();
+  await page.waitForFunction(
+    () => !matchMedia('(vertical-viewport-segments: 2)').matches
+  );
+  assert.equal((await lane.boundingBox()).x, 192);
+  assert.equal((await lane.boundingBox()).width, 356);
+  assert.deepEqual(await callbacks(page), []);
 });

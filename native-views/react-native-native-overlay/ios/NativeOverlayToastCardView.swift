@@ -390,6 +390,7 @@ private final class ToastStackExpansionElement: UIAccessibilityElement {
 
 /// One toast card, drawn with UIKit from a spec.
 final class NativeOverlayToastCardView: UIView {
+  static let horizontalPadding = ToastMetrics.cardPaddingHorizontal
   private(set) var spec: NativeOverlayToastSpec
   var onAction: ((String) -> Void)?
   var onLink: ((String) -> Void)?
