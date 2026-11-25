@@ -455,7 +455,15 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     async switchCamera(nextDeviceId?: string) {
       deviceId = nextDeviceId;
       if (disposed || source.kind !== 'camera' || !active) return;
-      if (nextDeviceId === streamDeviceId && hasLiveCamera()) {
+      const activeTrackId = stream
+        ?.getVideoTracks?.()[0]
+        ?.getSettings?.().deviceId;
+      if (
+        (nextDeviceId === streamDeviceId ||
+          (nextDeviceId !== undefined && nextDeviceId === activeTrackId)) &&
+        hasLiveCamera()
+      ) {
+        streamDeviceId = nextDeviceId;
         invalidateAcquisition();
         return;
       }
@@ -475,7 +483,11 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       if (!track || typeof track.applyConstraints !== 'function') return false;
       const capabilities = track.getCapabilities?.() as FocusTrackCapabilities | undefined;
       const focusModes = capabilities?.focusMode;
-      if (!Array.isArray(focusModes)) return false;
+      if (!Array.isArray(focusModes)) {
+        // Desktop browsers (e.g. Chromium/Safari on macOS) often omit focusMode
+        // from MediaStreamTrack.getCapabilities() even on autofocus/Continuity cameras.
+        return true;
+      }
       const supportsSingleShot = focusModes.includes('single-shot');
       const supportsContinuous = focusModes.includes('continuous');
       if (!supportsSingleShot && !supportsContinuous) return false;

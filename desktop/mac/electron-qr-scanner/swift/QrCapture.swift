@@ -160,23 +160,26 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
   }
 
   func focus(x: Double, y: Double) -> Bool {
-    guard session.isRunning, let device,
-      device.isFocusPointOfInterestSupported,
-      device.isFocusModeSupported(.autoFocus) || device.isFocusModeSupported(.continuousAutoFocus),
-      (try? device.lockForConfiguration()) != nil
-    else { return false }
-    defer { device.unlockForConfiguration() }
+    guard session.isRunning, let device else { return false }
     let point = CGPoint(
       x: min(1, max(0, x.isFinite ? x : 0.5)),
       y: min(1, max(0, y.isFinite ? y : 0.5)))
-    device.focusPointOfInterest = point
-    device.focusMode = device.isFocusModeSupported(.autoFocus) ? .autoFocus : .continuousAutoFocus
-    if device.isExposurePointOfInterestSupported {
-      if device.isExposureModeSupported(.autoExpose) {
+    if (try? device.lockForConfiguration()) != nil {
+      defer { device.unlockForConfiguration() }
+      if device.isFocusPointOfInterestSupported {
+        device.focusPointOfInterest = point
+      }
+      if device.isFocusModeSupported(.autoFocus) {
+        device.focusMode = .autoFocus
+      } else if device.isFocusModeSupported(.continuousAutoFocus) {
+        device.focusMode = .continuousAutoFocus
+      }
+      if device.isExposurePointOfInterestSupported {
         device.exposurePointOfInterest = point
+      }
+      if device.isExposureModeSupported(.autoExpose) {
         device.exposureMode = .autoExpose
       } else if device.isExposureModeSupported(.continuousAutoExposure) {
-        device.exposurePointOfInterest = point
         device.exposureMode = .continuousAutoExposure
       }
     }
