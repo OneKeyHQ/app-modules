@@ -194,12 +194,15 @@ function buildOverlayToastCss(): string {
 }
 
 @media (max-width:600px){
-  [data-onekey-toast-toaster]{position:fixed;--mobile-offset:16px;right:var(--mobile-offset);left:var(--mobile-offset);width:100%}
-  [data-onekey-toast-toaster] [data-onekey-toast]{left:0;right:0;width:calc(100% - var(--mobile-offset) * 2)}
-  [data-onekey-toast-toaster][data-x-position="left"]{left:var(--mobile-offset)}
+  [data-onekey-toast-toaster]{
+    --mobile-inset:max(16px,env(safe-area-inset-left),env(safe-area-inset-right));
+    inset-inline:var(--mobile-inset);
+    width:auto;
+    transform:none;
+  }
+  [data-onekey-toast-toaster] [data-onekey-toast]{inset-inline:0;width:100%}
   [data-onekey-toast-toaster][data-y-position="bottom"]{bottom:20px}
   [data-onekey-toast-toaster][data-y-position="top"]{top:20px}
-  [data-onekey-toast-toaster][data-x-position="center"]{left:var(--mobile-offset);right:var(--mobile-offset);transform:none}
 }
 
 [data-onekey-toast-section]{pointer-events:bounding-box}

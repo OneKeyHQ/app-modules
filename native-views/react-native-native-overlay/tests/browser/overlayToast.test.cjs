@@ -882,3 +882,58 @@ test('collapse focus handoff preserves layout when a focus listener shows anothe
     'outside-focus'
   );
 });
+
+test('narrow toast lanes and all three cards share the viewport center', async (t) => {
+  const page = await statusPage(t, 'reduce');
+  for (const width of [390, 600]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const direction of ['ltr', 'rtl']) {
+      await page.evaluate((dir) => {
+        document.documentElement.dir = dir;
+      }, direction);
+      for (const position of ['top-left', 'top-center', 'bottom-right']) {
+        await page.evaluate((anchor) => {
+          for (const id of ['back', 'middle', 'front']) {
+            window.showStatus('success', { id, position: anchor });
+          }
+        }, position);
+
+        const lane = page.locator('[data-onekey-toast-toaster]');
+        const laneBox = await lane.boundingBox();
+        const label = `${width}px ${direction} ${position}`;
+        assert.equal(laneBox.x, 16, label);
+        assert.equal(laneBox.width, width - 32, label);
+
+        const cards = lane.locator('[data-onekey-toast]');
+        const assertCardCenters = async () => {
+          const centers = await cards.evaluateAll((nodes) =>
+            nodes.map((node) => {
+              const { left, right } = node.getBoundingClientRect();
+              return (left + right) / 2;
+            })
+          );
+          assert.equal(centers.length, 3, label);
+          for (const center of centers) {
+            assert.ok(Math.abs(center - width / 2) < 0.1, label);
+          }
+        };
+        await assertCardCenters();
+        await page.keyboard.press('Alt+t');
+        assert.equal(await cards.first().getAttribute('data-expanded'), 'true');
+        await assertCardCenters();
+        await page.keyboard.press('Escape');
+        assert.equal(
+          await cards.first().getAttribute('data-expanded'),
+          'false'
+        );
+      }
+    }
+  }
+
+  await page.setViewportSize({ width: 601, height: 800 });
+  const desktopLane = await page
+    .locator('[data-onekey-toast-toaster]')
+    .boundingBox();
+  assert.equal(desktopLane.width, 356);
+  assert.equal(601 - desktopLane.x - desktopLane.width, 32);
+});
