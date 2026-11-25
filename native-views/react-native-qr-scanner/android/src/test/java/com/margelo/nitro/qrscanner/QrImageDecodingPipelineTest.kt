@@ -94,4 +94,69 @@ class QrImageDecodingPipelineTest {
     assertEquals("/data/x.png", HybridQrImageDecoder.localFile("file:///data/x.png")?.path)
     assertNull(HybridQrImageDecoder.localFile("content://media/1"))
   }
+
+  @Test
+  fun decodeBitmapSymbolsReturnsAllSymbolsAndUnpadsPaddedPass() {
+    var call = 0
+    val engine = object : QrImageEngine {
+      override val name = "mlkit"
+      override fun decode(bitmap: Bitmap): String? = null
+      override fun decodeSymbols(bitmap: Bitmap): List<QrPipelineSymbol> {
+        call += 1
+        // Miss on original (400x300), hit on padded (480x380; margin = 40px each side).
+        if (call != 2) return emptyList()
+        return listOf(
+          QrPipelineSymbol(
+            text = "top-left-quarter",
+            centerX = (40.0 + 100.0) / 480.0,
+            centerY = (40.0 + 75.0) / 380.0,
+          ),
+          QrPipelineSymbol(
+            text = "bottom-right-quarter",
+            centerX = (40.0 + 300.0) / 480.0,
+            centerY = (40.0 + 225.0) / 380.0,
+          ),
+        )
+      }
+    }
+    val hit = QrImageDecodingPipeline(listOf(engine)).decodeBitmapSymbols(solid(400, 300, Color.WHITE))
+    assertEquals("padded", hit.pass)
+    assertEquals(400, hit.width)
+    assertEquals(300, hit.height)
+    assertEquals(2, hit.symbols.size)
+    assertEquals(0.25, hit.symbols[0].centerX, 0.01)
+    assertEquals(0.25, hit.symbols[0].centerY, 0.01)
+    assertEquals(0.75, hit.symbols[1].centerX, 0.01)
+    assertEquals(0.75, hit.symbols[1].centerY, 0.01)
+  }
+
+  @Test
+  fun mapFillCenterRectMapsCoverCropAndFrontMirror() {
+    // 1280x720 landscape frame in a 400x400 square PreviewView (scale = 400/720, offsetX = 155.56)
+    val (center, _) = HybridQrScanner.mapFillCenterRect(
+      left = 540.0, top = 260.0, right = 740.0, bottom = 460.0,
+      imageWidth = 1280.0, imageHeight = 720.0,
+      viewWidth = 400.0, viewHeight = 400.0,
+      mirrored = false,
+    )
+    assertEquals(0.5, center.first, 0.001)
+    assertEquals(0.5, center.second, 0.001)
+
+    // Front camera mirrors X around 0.5
+    val (normalPt, _) = HybridQrScanner.mapFillCenterRect(
+      left = 700.0, top = 100.0, right = 900.0, bottom = 300.0,
+      imageWidth = 1280.0, imageHeight = 720.0,
+      viewWidth = 400.0, viewHeight = 400.0,
+      mirrored = false,
+    )
+    val (mirrorPt, mirrorBounds) = HybridQrScanner.mapFillCenterRect(
+      left = 700.0, top = 100.0, right = 900.0, bottom = 300.0,
+      imageWidth = 1280.0, imageHeight = 720.0,
+      viewWidth = 400.0, viewHeight = 400.0,
+      mirrored = true,
+    )
+    assertEquals(1.0 - normalPt.first, mirrorPt.first, 0.001)
+    assertEquals(normalPt.second, mirrorPt.second, 0.001)
+    assertTrue(mirrorBounds.width > 0.0)
+  }
 }

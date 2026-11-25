@@ -32,7 +32,8 @@ use windows::Win32::System::Com::{
 
 use crate::d3d11_preview::PreviewPool;
 use crate::frame_gate::FrameTextGate;
-use crate::image_decode::decode_qr_luma;
+use crate::image_decode::{decode_qr_luma, decode_qr_luma_symbols};
+use crate::zxing_text::DecodedSymbol;
 
 /// Duration without QR hits before a locked manual focus is released back to Auto.
 const FOCUS_UNLOCK_TIMEOUT: Duration = Duration::from_millis(1500);
@@ -142,6 +143,12 @@ pub enum CaptureEvent {
     },
     Text {
         text: String,
+        generation: i64,
+    },
+    Symbols {
+        symbols: Vec<DecodedSymbol>,
+        frame_width: u32,
+        frame_height: u32,
         generation: i64,
     },
     Error {
@@ -1858,6 +1865,8 @@ pub struct CaptureController {
     source: Mutex<SourceConfig>,
     generation: Arc<AtomicI64>,
     disposed: AtomicBool,
+    multi_symbol: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     preview: Option<Arc<PreviewPool>>,
     mailbox: Arc<DecodeMailbox>,
     emitter: Arc<Mutex<Option<EventEmitter>>>,
@@ -1868,8 +1877,15 @@ pub struct CaptureController {
 }
 
 impl CaptureController {
-    pub fn new(source: SourceConfig, with_preview: bool, emitter: EventEmitter) -> Self {
+    pub fn new(
+        source: SourceConfig,
+        with_preview: bool,
+        multi_symbol: bool,
+        emitter: EventEmitter,
+    ) -> Self {
         let generation = Arc::new(AtomicI64::new(0));
+        let multi_symbol_flag = Arc::new(AtomicBool::new(multi_symbol));
+        let paused_flag = Arc::new(AtomicBool::new(false));
         let preview = if with_preview {
             Some(Arc::new(PreviewPool::new()))
         } else {
@@ -1885,6 +1901,8 @@ impl CaptureController {
         let decode_focus = Arc::clone(&focus_control);
         let decode_stats = Arc::clone(&stats);
         let decode_gen = Arc::clone(&generation);
+        let decode_multi = Arc::clone(&multi_symbol_flag);
+        let decode_paused = Arc::clone(&paused_flag);
         let decode_thread = thread::Builder::new()
             .name("qr-decode".to_owned())
             .spawn(move || {
@@ -1904,15 +1922,56 @@ impl CaptureController {
                             continue;
                         }
                     };
-                    if decode_gen.load(Ordering::Acquire) != frame.generation {
+                    if decode_gen.load(Ordering::Acquire) != frame.generation
+                        || decode_paused.load(Ordering::Acquire)
+                    {
                         continue;
                     }
                     decode_stats.decode_attempts.fetch_add(1, Ordering::Relaxed);
                     let now = Instant::now();
+                    if decode_multi.load(Ordering::Acquire) {
+                        let symbols = decode_qr_luma_symbols(
+                            &frame.luma,
+                            frame.width as i32,
+                            frame.height as i32,
+                            true,
+                            8,
+                        );
+                        if decode_gen.load(Ordering::Acquire) != frame.generation
+                            || decode_paused.load(Ordering::Acquire)
+                        {
+                            continue;
+                        }
+                        if !symbols.is_empty() {
+                            if let Ok(mut fc) = decode_focus.lock() {
+                                if let Some(handle) = fc.as_mut() {
+                                    handle.on_qr_detected(frame.generation, now);
+                                }
+                            }
+                            decode_stats.decode_hits.fetch_add(1, Ordering::Relaxed);
+                            let cb = decode_emitter.lock().ok().and_then(|g| g.clone());
+                            if let Some(cb) = cb {
+                                cb(CaptureEvent::Symbols {
+                                    symbols,
+                                    frame_width: frame.width,
+                                    frame_height: frame.height,
+                                    generation: frame.generation,
+                                });
+                            }
+                        } else if let Ok(mut fc) = decode_focus.lock() {
+                            if let Some(handle) = fc.as_mut() {
+                                handle.on_frame_without_qr(frame.generation, now);
+                            }
+                        }
+                        continue;
+                    }
+
                     if let Some(text) =
                         decode_qr_luma(&frame.luma, frame.width as i32, frame.height as i32, true)
                     {
-                        if decode_gen.load(Ordering::Acquire) != frame.generation {
+                        if decode_gen.load(Ordering::Acquire) != frame.generation
+                            || decode_paused.load(Ordering::Acquire)
+                        {
                             continue;
                         }
                         if let Ok(mut fc) = decode_focus.lock() {
@@ -1943,6 +2002,8 @@ impl CaptureController {
             source: Mutex::new(source),
             generation,
             disposed: AtomicBool::new(false),
+            multi_symbol: multi_symbol_flag,
+            paused: paused_flag,
             preview,
             mailbox,
             emitter: emitter_arc,
@@ -1951,6 +2012,14 @@ impl CaptureController {
             session: Mutex::new(None),
             decode_thread: Mutex::new(Some(decode_thread)),
         }
+    }
+
+    pub fn set_multi_symbol(&self, enabled: bool) {
+        self.multi_symbol.store(enabled, Ordering::Release);
+    }
+
+    pub fn set_paused(&self, paused: bool) {
+        self.paused.store(paused, Ordering::Release);
     }
 
     pub fn start(&self) -> Result<i64, String> {

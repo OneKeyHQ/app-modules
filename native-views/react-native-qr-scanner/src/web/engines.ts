@@ -1,6 +1,7 @@
 import { QrScannerError } from '../errors';
-import { prepareZXingFromBinary, readQrText } from './zxingWorkerProtocol';
+import { prepareZXingFromBinary, readQrSymbols, readQrText } from './zxingWorkerProtocol';
 
+import type { QrDetectedSymbol } from '../symbols';
 import type { QrImageEngine, RgbaImage } from './imageOps';
 import type { ZXingWorkerRequest, ZXingWorkerResponse } from './zxingWorkerProtocol';
 
@@ -45,6 +46,7 @@ export function configureWebQrScanner(next: WebQrScannerConfig): void {
 
 interface DetectedBarcodeLike {
   rawValue: string;
+  boundingBox?: { x: number; y: number; width: number; height: number };
 }
 interface BarcodeDetectorLike {
   detect(source: ImageData): Promise<DetectedBarcodeLike[]>;
@@ -52,6 +54,28 @@ interface BarcodeDetectorLike {
 interface BarcodeDetectorClassLike {
   new (options: { formats: string[] }): BarcodeDetectorLike;
   getSupportedFormats?: () => Promise<string[]>;
+}
+
+function detectedBarcodeToSymbol(
+  result: DetectedBarcodeLike,
+  width: number,
+  height: number
+): QrDetectedSymbol {
+  const box = result.boundingBox;
+  if (!box || width <= 0 || height <= 0) {
+    return { text: result.rawValue, centerX: 0.5, centerY: 0.5 };
+  }
+  return {
+    text: result.rawValue,
+    centerX: (box.x + box.width / 2) / width,
+    centerY: (box.y + box.height / 2) / height,
+    bounds: {
+      x: box.x / width,
+      y: box.y / height,
+      width: box.width / width,
+      height: box.height / height,
+    },
+  };
 }
 
 async function createNativeEngine(): Promise<QrImageEngine | null> {
@@ -70,6 +94,15 @@ async function createNativeEngine(): Promise<QrImageEngine | null> {
           new ImageData(image.data, image.width, image.height)
         );
         return results.find((result) => result.rawValue)?.rawValue ?? null;
+      },
+      async decodeSymbols(image, multiSymbol) {
+        const results = await detector.detect(
+          new ImageData(image.data, image.width, image.height)
+        );
+        const symbols = results
+          .filter((result) => Boolean(result.rawValue))
+          .map((result) => detectedBarcodeToSymbol(result, image.width, image.height));
+        return multiSymbol ? symbols : symbols.slice(0, 1);
       },
     };
   } catch {
@@ -161,7 +194,7 @@ class ZXingWorkerClient {
   private request(
     message: ZXingWorkerRequest,
     transfer: Transferable[]
-  ): Promise<string | null> {
+  ): Promise<{ text: string | null; symbols: QrDetectedSymbol[] }> {
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       if (this.broken) {
@@ -169,7 +202,16 @@ class ZXingWorkerClient {
         return;
       }
       this.pending.set(id, (response) =>
-        response.ok ? resolve(response.text) : reject(new Error(response.error))
+        response.ok
+          ? resolve({
+              text: response.text,
+              symbols:
+                response.symbols ??
+                (response.text
+                  ? [{ text: response.text, centerX: 0.5, centerY: 0.5 }]
+                  : []),
+            })
+          : reject(new Error(response.error))
       );
       try {
         this.worker.postMessage({ ...message, id }, transfer);
@@ -181,16 +223,33 @@ class ZXingWorkerClient {
   }
 
   async decode(image: RgbaImage): Promise<string | null> {
+    const result = await this.decodeSymbols(image, false);
+    return result[0]?.text ?? null;
+  }
+
+  async decodeSymbols(
+    image: RgbaImage,
+    multiSymbol: boolean
+  ): Promise<QrDetectedSymbol[]> {
     await this.ready;
     // The same image feeds several passes and engines; send a copy.
     const data = image.data.slice();
-    return this.withDeadline(
+    const response = await this.withDeadline(
       this.request(
-        { id: 0, type: 'decode', data, width: image.width, height: image.height },
+        {
+          id: 0,
+          type: 'decode',
+          data,
+          width: image.width,
+          height: image.height,
+          multiSymbol,
+          includeSymbols: true,
+        },
         [data.buffer]
       ),
       'zxing worker decode timed out'
     );
+    return response.symbols;
   }
 
   dispose() {
@@ -218,6 +277,28 @@ export const zxingEngine: QrImageEngine = {
         throw error;
       }
       return await readQrText(image.data, image.width, image.height);
+    } catch (error) {
+      throw zxingUnavailable(error);
+    }
+  },
+  async decodeSymbols(image, multiSymbol) {
+    try {
+      const loadWasm = requireLoader();
+      if (config.createZXingWorker) {
+        if (!workerClient || workerClient.broken) {
+          workerClient?.dispose();
+          workerClient = new ZXingWorkerClient(config.createZXingWorker, loadWasm);
+        }
+        return await workerClient.decodeSymbols(image, multiSymbol);
+      }
+      const ready = (pageZXingReady ??= loadWasm().then(prepareZXingFromBinary));
+      try {
+        await ready;
+      } catch (error) {
+        if (pageZXingReady === ready) pageZXingReady = undefined;
+        throw error;
+      }
+      return await readQrSymbols(image.data, image.width, image.height, multiSymbol);
     } catch (error) {
       throw zxingUnavailable(error);
     }

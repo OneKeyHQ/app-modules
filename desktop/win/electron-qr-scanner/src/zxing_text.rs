@@ -1,6 +1,17 @@
 use std::ffi::{c_char, c_void};
 use std::slice;
 
+#[derive(Clone, Debug)]
+pub struct DecodedSymbol {
+    pub text: String,
+    pub center_x: f64,
+    pub center_y: f64,
+    pub bounds_x: f64,
+    pub bounds_y: f64,
+    pub bounds_width: f64,
+    pub bounds_height: f64,
+}
+
 unsafe extern "C" {
     fn qr_decode_text(
         pixels: *const u8,
@@ -11,6 +22,26 @@ unsafe extern "C" {
         context: *mut c_void,
         emit_text: unsafe extern "C" fn(*mut c_void, *const c_char, usize),
     );
+    fn qr_decode_symbols(
+        pixels: *const u8,
+        width: i32,
+        height: i32,
+        rgba: bool,
+        try_invert: bool,
+        max_symbols: i32,
+        context: *mut c_void,
+        emit_symbol: unsafe extern "C" fn(
+            *mut c_void,
+            *const c_char,
+            usize,
+            f64,
+            f64,
+            f64,
+            f64,
+            f64,
+            f64,
+        ),
+    );
 }
 
 unsafe extern "C" fn receive_text(context: *mut c_void, data: *const c_char, len: usize) {
@@ -18,6 +49,64 @@ unsafe extern "C" fn receive_text(context: *mut c_void, data: *const c_char, len
     let bytes = unsafe { slice::from_raw_parts(data.cast::<u8>(), len) };
     let output = unsafe { &mut *context.cast::<Option<String>>() };
     *output = Some(String::from_utf8_lossy(bytes).into_owned());
+}
+
+unsafe extern "C" fn receive_symbol(
+    context: *mut c_void,
+    data: *const c_char,
+    len: usize,
+    center_x: f64,
+    center_y: f64,
+    bounds_x: f64,
+    bounds_y: f64,
+    bounds_width: f64,
+    bounds_height: f64,
+) {
+    let bytes = unsafe { slice::from_raw_parts(data.cast::<u8>(), len) };
+    let output = unsafe { &mut *context.cast::<Vec<DecodedSymbol>>() };
+    output.push(DecodedSymbol {
+        text: String::from_utf8_lossy(bytes).into_owned(),
+        center_x,
+        center_y,
+        bounds_x,
+        bounds_y,
+        bounds_width,
+        bounds_height,
+    });
+}
+
+pub fn decode_qr_symbols(
+    pixels: &[u8],
+    width: i32,
+    height: i32,
+    rgba: bool,
+    try_invert: bool,
+    max_symbols: i32,
+) -> Vec<DecodedSymbol> {
+    let Some(row_bytes) = width.checked_mul(if rgba { 4 } else { 1 }) else {
+        return Vec::new();
+    };
+    let Some(image_bytes) = row_bytes.checked_mul(height) else {
+        return Vec::new();
+    };
+    if width <= 0 || height <= 0 || max_symbols <= 0 || pixels.len() < image_bytes as usize {
+        return Vec::new();
+    }
+
+    let mut output = Vec::new();
+    unsafe {
+        qr_decode_symbols(
+            pixels.as_ptr(),
+            width,
+            height,
+            rgba,
+            try_invert,
+            max_symbols,
+            (&mut output as *mut Vec<DecodedSymbol>).cast(),
+            receive_symbol,
+        );
+    }
+    output
 }
 
 pub fn decode_qr_text(

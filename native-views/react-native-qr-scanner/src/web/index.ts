@@ -2,7 +2,7 @@
 // imports: this entry must load without the native runtime.
 export { configureWebQrScanner } from './engines';
 export type { WebQrScannerConfig } from './engines';
-export { decodeQrImage } from './decodeQrImage';
+export { decodeQrImage, decodeQrImageSymbols } from './decodeQrImage';
 export { createWebQrScanner } from './scanner';
 export {
   cameraPositionFromLabel,
@@ -10,7 +10,32 @@ export {
   subscribeWebCameraChanges,
 } from './cameras';
 export type { QrCameraInfo, QrCameraPosition } from './cameras';
-export type { WebQrScanner, WebQrScannerOptions, WebScanSource } from './scanner';
+export type {
+  WebQrFrameSymbolsEvent,
+  WebQrScanner,
+  WebQrScannerOptions,
+  WebScanSource,
+} from './scanner';
+export type { RgbaImage } from './imageOps';
+export {
+  createMultiSymbolCoordinator,
+  dedupeSymbolsByText,
+  isUrFrameText,
+  mapFramePointToCoverView,
+  mapImagePointToContainView,
+} from '../symbols';
+export type {
+  Dimensions2D,
+  MultiSymbolCoordinator,
+  MultiSymbolCoordinatorOptions,
+  MultiSymbolPhase,
+  NormalizedPoint,
+  QrDetectedSymbol,
+  QrFrameSymbolsEvent,
+  QrImageSymbolsResult,
+  QrSymbolBounds,
+  QrSymbolCoordinateSpace,
+} from '../symbols';
 export { DEFAULT_MAX_IMAGE_PIXELS } from '../decodeQrImage.constants';
 export { QrScannerError, toQrScannerError } from '../errors';
 export type { QrScannerErrorCode } from '../errors';

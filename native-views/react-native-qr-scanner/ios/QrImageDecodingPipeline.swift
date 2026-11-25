@@ -29,9 +29,44 @@ struct QrImageHit: Equatable {
   let pass: String
 }
 
+struct QrPipelineSymbol: Equatable {
+  let text: String
+  let centerX: Double
+  let centerY: Double
+  let boundsX: Double?
+  let boundsY: Double?
+  let boundsWidth: Double?
+  let boundsHeight: Double?
+}
+
+struct QrImageSymbolsHit: Equatable {
+  let width: Int
+  let height: Int
+  let symbols: [QrPipelineSymbol]
+  let engine: String?
+  let pass: String?
+}
+
 protocol QrImageEngine {
   var name: String { get }
   func decode(_ image: CGImage) throws -> String?
+  func decodeSymbols(_ image: CGImage) throws -> [QrPipelineSymbol]
+}
+
+extension QrImageEngine {
+  func decodeSymbols(_ image: CGImage) throws -> [QrPipelineSymbol] {
+    guard let text = try decode(image), !text.isEmpty else { return [] }
+    return [
+      QrPipelineSymbol(
+        text: text,
+        centerX: 0.5,
+        centerY: 0.5,
+        boundsX: nil,
+        boundsY: nil,
+        boundsWidth: nil,
+        boundsHeight: nil)
+    ]
+  }
 }
 
 final class VisionQrEngine: QrImageEngine {
@@ -46,6 +81,26 @@ final class VisionQrEngine: QrImageEngine {
       .lazy
       .compactMap { $0.payloadStringValue }
       .first { !$0.isEmpty }
+  }
+
+  func decodeSymbols(_ image: CGImage) throws -> [QrPipelineSymbol] {
+    let request = VNDetectBarcodesRequest()
+    request.symbologies = [.qr]
+    let handler = VNImageRequestHandler(cgImage: image, options: [:])
+    try handler.perform([request])
+    return (request.results ?? []).compactMap { observation in
+      guard let text = observation.payloadStringValue, !text.isEmpty else { return nil }
+      // Vision boundingBox uses a bottom-left origin; flip Y to top-left [0, 1].
+      let box = observation.boundingBox
+      return QrPipelineSymbol(
+        text: text,
+        centerX: Double(box.midX),
+        centerY: Double(1.0 - box.midY),
+        boundsX: Double(box.minX),
+        boundsY: Double(1.0 - box.maxY),
+        boundsWidth: Double(box.width),
+        boundsHeight: Double(box.height))
+    }
   }
 }
 
@@ -96,6 +151,99 @@ final class QrImageDecodingPipeline {
     }
     if attempted && !decoded { throw QrImageDecodeError.decoderUnavailable }
     return nil
+  }
+
+  static let maxImageSymbols = 8
+
+  func decodeSymbols(url: URL, maxPixels: Int) throws -> QrImageSymbolsHit {
+    let image = try loadOriented(url: url, maxPixels: maxPixels)
+    let passes: [(String, () -> CGImage?)] = [
+      ("original", { image }),
+      ("padded", { self.padded(image, maxPixels: maxPixels) }),
+      ("grayscale", { self.grayscale(image, inverted: false) }),
+      ("inverted", { self.grayscale(image, inverted: true) }),
+    ]
+    var attempted = false
+    var decoded = false
+    var merged: [QrPipelineSymbol] = []
+    var seen = Set<Data>()
+    var firstEngine: String?
+    var firstPass: String?
+
+    for (pass, makeVariant) in passes {
+      if merged.count >= Self.maxImageSymbols { break }
+      autoreleasepool {
+        guard let variant = makeVariant() else { return }
+        for engine in engines {
+          if merged.count >= Self.maxImageSymbols { break }
+          attempted = true
+          do {
+            let symbols = try engine.decodeSymbols(variant)
+            decoded = true
+            if !symbols.isEmpty {
+              let mapped =
+                pass == "padded"
+                ? symbols.map { self.unpadSymbol($0, original: image, padded: variant) }
+                : symbols
+              for sym in mapped {
+                if sym.text.isEmpty { continue }
+                let key = Data(sym.text.utf8)
+                if seen.contains(key) { continue }
+                seen.insert(key)
+                merged.append(sym)
+                if firstEngine == nil {
+                  firstEngine = engine.name
+                  firstPass = pass
+                }
+                if merged.count >= Self.maxImageSymbols { break }
+              }
+            }
+          } catch {
+            // A failed pass leaves the remaining engines and passes available.
+          }
+        }
+      }
+    }
+    if !merged.isEmpty {
+      return QrImageSymbolsHit(
+        width: image.width,
+        height: image.height,
+        symbols: merged,
+        engine: firstEngine,
+        pass: firstPass)
+    }
+    if attempted && !decoded { throw QrImageDecodeError.decoderUnavailable }
+    return QrImageSymbolsHit(
+      width: image.width,
+      height: image.height,
+      symbols: [],
+      engine: nil,
+      pass: nil)
+  }
+
+  private func unpadSymbol(
+    _ symbol: QrPipelineSymbol,
+    original: CGImage,
+    padded: CGImage
+  ) -> QrPipelineSymbol {
+    let margin = max(16, Int(Double(max(original.width, original.height)) * Self.paddingRatio))
+    let expandedWidth = original.width + margin * 2
+    let expandedHeight = original.height + margin * 2
+    let insetX = Double(margin) * Double(padded.width) / Double(expandedWidth)
+    let insetY = Double(margin) * Double(padded.height) / Double(expandedHeight)
+    let innerWidth = Double(padded.width) - insetX * 2
+    let innerHeight = Double(padded.height) - insetY * 2
+    guard innerWidth > 0, innerHeight > 0 else { return symbol }
+    let mapX: (Double) -> Double = { ($0 * Double(padded.width) - insetX) / innerWidth }
+    let mapY: (Double) -> Double = { ($0 * Double(padded.height) - insetY) / innerHeight }
+    return QrPipelineSymbol(
+      text: symbol.text,
+      centerX: mapX(symbol.centerX),
+      centerY: mapY(symbol.centerY),
+      boundsX: symbol.boundsX.map(mapX),
+      boundsY: symbol.boundsY.map(mapY),
+      boundsWidth: symbol.boundsWidth.map { ($0 * Double(padded.width)) / innerWidth },
+      boundsHeight: symbol.boundsHeight.map { ($0 * Double(padded.height)) / innerHeight })
   }
 
   /// Applies EXIF orientation and downscales to at most `maxPixels`.

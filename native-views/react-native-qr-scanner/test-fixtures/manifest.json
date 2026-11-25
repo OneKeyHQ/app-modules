@@ -1,0 +1,67 @@
+{
+  "a": {
+    "file": "a-single-static.png",
+    "kind": "image",
+    "expected": [
+      {
+        "text": "ethereum:0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+        "centerX": 0.5,
+        "centerY": 0.5
+      }
+    ]
+  },
+  "b": {
+    "file": "b-multi-static.png",
+    "kind": "image",
+    "expected": [
+      {
+        "text": "wc:8a3f9c2d1b0e4a5f6c7d8e9f0a1b2c3d@2?relay-protocol=irn&symKey=abcdef123456",
+        "centerX": 0.75,
+        "centerY": 0.25
+      },
+      {
+        "text": "onekey://market/detail?symbol=ETH",
+        "centerX": 0.22916666666666666,
+        "centerY": 0.5
+      },
+      {
+        "text": "ethereum:0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+        "centerX": 0.75,
+        "centerY": 0.78125
+      }
+    ]
+  },
+  "c": {
+    "file": "c-animated-ur.mp4",
+    "kind": "video",
+    "ur": {
+      "type": "crypto-psbt",
+      "bytes": 2003,
+      "fnv1a": "07a5e3d7"
+    }
+  },
+  "d": {
+    "file": "d-animated-ur-plus-multi.mp4",
+    "frame0": "d-animated-ur-plus-multi-frame0.png",
+    "kind": "video",
+    "ur": {
+      "type": "crypto-psbt",
+      "bytes": 2003,
+      "fnv1a": "07a5e3d7",
+      "centerX": 0.28125,
+      "centerY": 0.5
+    },
+    "staticCodes": [
+      {
+        "text": "ethereum:0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+        "centerX": 0.7604166666666666,
+        "centerY": 0.2604166666666667
+      },
+      {
+        "text": "onekey://market/detail?symbol=ETH",
+        "centerX": 0.7604166666666666,
+        "centerY": 0.7395833333333334
+      }
+    ]
+  }
+}

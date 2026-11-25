@@ -93,6 +93,17 @@ async function decodeImage(path, options = {}) {
   }
 }
 
+async function decodeImageSymbols(path, options = {}) {
+  if (typeof path !== "string" || path.length === 0) {
+    throw errorWithCode("invalid-image", "path must be a non-empty string");
+  }
+  try {
+    return await binding().decodeImageSymbols(path, options.maxPixels, options.engines);
+  } catch (error) {
+    throw toCodedError(error);
+  }
+}
+
 async function listCameras() {
   try {
     return await binding().listCameras();
@@ -124,8 +135,10 @@ function normalizeReadyInfo(info) {
 function createCapture(options) {
   const {
     source = { kind: "camera" },
+    multiSymbol = false,
     onReady,
     onText,
+    onSymbols,
     onError,
     onEnded,
     onFrame,
@@ -156,6 +169,7 @@ function createCapture(options) {
 
   let activeGeneration = null;
   let disposed = false;
+  let paused = false;
   let startedAt = null;
   let native;
 
@@ -180,6 +194,7 @@ function createCapture(options) {
         preferredResolution: source.kind === "camera" ? source.preferredResolution : undefined,
         lockFocusOnDetect,
         withPreview,
+        multiSymbol: Boolean(multiSymbol),
       },
       (event) => {
         if (event.kind === "frame") {
@@ -233,7 +248,17 @@ function createCapture(options) {
             break;
           }
           case "text":
-            onText?.(event.text, event.generation);
+            if (!paused) onText?.(event.text, event.generation);
+            break;
+          case "symbols":
+            if (!paused) {
+              onSymbols?.(
+                event.symbols ?? [],
+                event.width ?? 0,
+                event.height ?? 0,
+                event.generation,
+              );
+            }
             break;
           case "error": {
             const code = ERROR_CODES.has(event.code) ? event.code : "decoder-unavailable";
@@ -329,8 +354,18 @@ function createCapture(options) {
       if (disposed) return;
       const generation = activeGeneration;
       activeGeneration = null;
+      paused = false;
       native.stop();
       emitStopDiagnostic("stop", generation, native.stats(), native.lentFrames());
+    },
+    setMultiSymbol(enabled) {
+      if (disposed) return;
+      native.setMultiSymbol(Boolean(enabled));
+    },
+    setPaused(nextPaused) {
+      if (disposed) return;
+      paused = Boolean(nextPaused);
+      native.setPaused(paused);
     },
     setDevice(deviceId) {
       if (disposed) throw errorWithCode("decoder-unavailable", "The capture was disposed");
@@ -379,4 +414,10 @@ function createCapture(options) {
   };
 }
 
-module.exports = { decodeImage, listCameras, createCapture, shouldFallbackToWeb };
+module.exports = {
+  decodeImage,
+  decodeImageSymbols,
+  listCameras,
+  createCapture,
+  shouldFallbackToWeb,
+};

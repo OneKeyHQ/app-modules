@@ -24,6 +24,14 @@ extern "C" {
         out_length: *mut usize,
         out_error: *mut *mut c_char,
     ) -> i32;
+    fn oqs_decode_image_symbols(
+        path: *const c_char,
+        max_pixels: i64,
+        engines: i32,
+        out_json: *mut *mut u8,
+        out_length: *mut usize,
+        out_error: *mut *mut c_char,
+    ) -> i32;
     fn oqs_free_bytes(value: *mut u8);
     fn oqs_free_string(value: *mut c_char);
     fn oqs_list_cameras() -> *mut c_char;
@@ -39,6 +47,8 @@ extern "C" {
     fn oqs_capture_lent_frames(handle: *mut c_void) -> i32;
     fn oqs_capture_start(handle: *mut c_void) -> i64;
     fn oqs_capture_stop(handle: *mut c_void);
+    fn oqs_capture_set_multi_symbol(handle: *mut c_void, enabled: bool);
+    fn oqs_capture_set_paused(handle: *mut c_void, paused: bool);
     fn oqs_capture_focus(handle: *mut c_void, x: f64, y: f64) -> bool;
     fn oqs_capture_destroy(handle: *mut c_void);
 }
@@ -100,6 +110,82 @@ pub extern "C" fn oqs_zxing_decode(
     unsafe {
         *out_length = bytes.len();
         *out_text = Box::into_raw(bytes).cast::<u8>();
+    }
+    1
+}
+
+/// Multi-symbol ZXing-C++ fallback (up to 8 symbols) with normalized top-left
+/// coordinates. Returns 1 and a UTF-8 JSON array to free with `oqs_zxing_free`.
+#[no_mangle]
+pub extern "C" fn oqs_zxing_decode_symbols(
+    rgba: *const u8,
+    width: i32,
+    height: i32,
+    out_json: *mut *mut u8,
+    out_length: *mut usize,
+) -> i32 {
+    if rgba.is_null() || width <= 0 || height <= 0 || out_json.is_null() || out_length.is_null() {
+        return 0;
+    }
+    let length = width as usize * height as usize * 4;
+    let pixels = unsafe { std::slice::from_raw_parts(rgba, length) };
+    let Ok(image) =
+        zxingcpp::ImageView::from_slice(pixels, width, height, zxingcpp::ImageFormat::RGBA)
+    else {
+        return 0;
+    };
+    let reader = zxingcpp::read()
+        .formats([zxingcpp::BarcodeFormat::QRCode])
+        .try_harder(true)
+        .try_rotate(true)
+        .try_invert(false)
+        .max_number_of_symbols(8);
+    let Ok(barcodes) = reader.from(image) else {
+        return 0;
+    };
+    let inv_w = 1.0 / (width as f64);
+    let inv_h = 1.0 / (height as f64);
+    let mut entries = Vec::new();
+    for barcode in barcodes.iter().filter(|b| b.is_valid()) {
+        let meta = barcode.extra_with_key("ALL");
+        if meta.is_empty() {
+            continue;
+        }
+        let pos = barcode.position();
+        let xs = [
+            pos.top_left.x as f64,
+            pos.top_right.x as f64,
+            pos.bottom_right.x as f64,
+            pos.bottom_left.x as f64,
+        ];
+        let ys = [
+            pos.top_left.y as f64,
+            pos.top_right.y as f64,
+            pos.bottom_right.y as f64,
+            pos.bottom_left.y as f64,
+        ];
+        let min_x = xs.into_iter().fold(f64::INFINITY, f64::min);
+        let max_x = xs.into_iter().fold(f64::NEG_INFINITY, f64::max);
+        let min_y = ys.into_iter().fold(f64::INFINITY, f64::min);
+        let max_y = ys.into_iter().fold(f64::NEG_INFINITY, f64::max);
+        let cx = (xs[0] + xs[1] + xs[2] + xs[3]) * 0.25 * inv_w;
+        let cy = (ys[0] + ys[1] + ys[2] + ys[3]) * 0.25 * inv_h;
+        let bx = min_x * inv_w;
+        let by = min_y * inv_h;
+        let bw = ((max_x - min_x) * inv_w).max(0.0);
+        let bh = ((max_y - min_y) * inv_h).max(0.0);
+        entries.push(format!(
+            r#"{{"meta":{meta},"cx":{cx},"cy":{cy},"x":{bx},"y":{by},"w":{bw},"h":{bh}}}"#
+        ));
+    }
+    if entries.is_empty() {
+        return 0;
+    }
+    let json = format!("[{}]", entries.join(","));
+    let bytes = json.into_bytes().into_boxed_slice();
+    unsafe {
+        *out_length = bytes.len();
+        *out_json = Box::into_raw(bytes).cast::<u8>();
     }
     1
 }
@@ -211,6 +297,103 @@ pub fn decode_image(
     }))
 }
 
+pub struct DecodeImageSymbolsTask {
+    path: CString,
+    max_pixels: i64,
+    engines: i32,
+}
+
+impl Task for DecodeImageSymbolsTask {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let mut json: *mut u8 = ptr::null_mut();
+        let mut json_length = 0;
+        let mut error: *mut c_char = ptr::null_mut();
+        let status = unsafe {
+            oqs_decode_image_symbols(
+                self.path.as_ptr(),
+                self.max_pixels,
+                self.engines,
+                &mut json,
+                &mut json_length,
+                &mut error,
+            )
+        };
+        match status {
+            1 => {
+                let value = unsafe {
+                    let value =
+                        String::from_utf8_lossy(std::slice::from_raw_parts(json, json_length))
+                            .into_owned();
+                    oqs_free_bytes(json);
+                    value
+                };
+                Ok(value)
+            }
+            _ => Err(Error::new(Status::GenericFailure, unsafe {
+                take_string(error)
+            })),
+        }
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// JSON `{ width, height, symbols }` of all QR symbols in a local image.
+#[napi]
+pub fn decode_image_symbols(
+    path: String,
+    max_pixels: Option<f64>,
+    engines: Option<Vec<String>>,
+) -> Result<AsyncTask<DecodeImageSymbolsTask>> {
+    let engines = match engines {
+        None => ENGINE_VISION | ENGINE_ZXING,
+        Some(names) => {
+            let mut mask = 0;
+            for name in names {
+                mask |= match name.as_str() {
+                    "vision" => ENGINE_VISION,
+                    "zxing" => ENGINE_ZXING,
+                    other => {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            format!("decoder-unavailable: unknown engine {other}"),
+                        ))
+                    }
+                };
+            }
+            if mask == 0 {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "decoder-unavailable: no engine",
+                ));
+            }
+            mask
+        }
+    };
+    let max_pixels = match max_pixels {
+        None => DEFAULT_MAX_PIXELS,
+        Some(value) if value.is_finite() && value >= 1.0 => (value as i64).min(MAX_PIXELS_CEILING),
+        Some(_) => {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "invalid-image: maxPixels must be at least 1",
+            ))
+        }
+    };
+    let path = CString::new(path)
+        .map_err(|_| Error::new(Status::InvalidArg, "invalid-image: path contains NUL"))?;
+    Ok(AsyncTask::new(DecodeImageSymbolsTask {
+        path,
+        max_pixels,
+        engines,
+    }))
+}
+
 #[napi(object)]
 pub struct CaptureEvent {
     /// `ready`, `text`, `error`, `ended` or `frame`.
@@ -304,6 +487,10 @@ extern "C" fn on_event(
             message: Some(second),
             ..event("error", generation)
         },
+        4 => CaptureEvent {
+            text: Some(first),
+            ..event("symbols", generation)
+        },
         _ => event("ended", generation),
     };
     tsfn.call(payload, ThreadsafeFunctionCallMode::NonBlocking);
@@ -389,6 +576,20 @@ impl NativeCapture {
     pub fn stop(&self) -> Result<()> {
         self.live()?;
         unsafe { oqs_capture_stop(self.handle) };
+        Ok(())
+    }
+
+    #[napi]
+    pub fn set_multi_symbol(&self, enabled: bool) -> Result<()> {
+        self.live()?;
+        unsafe { oqs_capture_set_multi_symbol(self.handle, enabled) };
+        Ok(())
+    }
+
+    #[napi]
+    pub fn set_paused(&self, paused: bool) -> Result<()> {
+        self.live()?;
+        unsafe { oqs_capture_set_paused(self.handle, paused) };
         Ok(())
     }
 

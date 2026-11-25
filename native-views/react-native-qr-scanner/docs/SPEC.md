@@ -409,6 +409,136 @@ createWebQrScanner({
   `"single-shot"` and `"continuous"`, the latest successful tap schedules a
   5 s restore to `"continuous"`.
 
+### 3.4 Multi-symbol detection, preview freeze and UR latch — Implemented
+
+Supports WeChat-style multi-QR selection (freeze preview on multiple codes,
+overlay clickable anchors at each code center, zero-latency resume on cancel)
+across iOS, Android, Web/extension/Linux Electron, and the desktop N-API
+modules without regressing single-code or animated BC-UR throughput.
+
+#### Types and API additions
+
+```ts
+type QrSymbolCoordinateSpace = 'view' | 'frame';
+
+interface QrDetectedSymbol {
+  text: string;
+  /** Normalized center in [0, 1], top-left origin. */
+  centerX: number;
+  centerY: number;
+  /** Optional normalized bounding box in [0, 1], top-left origin. */
+  bounds?: { x: number; y: number; width: number; height: number };
+}
+
+interface QrFrameSymbolsEvent {
+  symbols: QrDetectedSymbol[];
+  /**
+   * 'view'  : coordinates already map to the visible preview bounds (iOS/Android).
+   * 'frame' : coordinates map to raw frame pixels (Web/Desktop; caller maps through object-fit: cover).
+   */
+  coordinateSpace: QrSymbolCoordinateSpace;
+  frameWidth?: number;
+  frameHeight?: number;
+  generation: number;
+}
+
+interface QrImageSymbolsResult {
+  /** EXIF-oriented decoded image dimensions. */
+  width: number;
+  height: number;
+  symbols: QrDetectedSymbol[];
+  /** True when optional fallback passes stopped early (e.g. deadline reached). */
+  partial?: boolean;
+}
+```
+
+- **Nitro view (`QrScannerProps`)**:
+  - `multiSymbol?: boolean` (default `false`): when `false`, capture stays on
+    the single-symbol `onFrameText` fast path. When `true`, the native backend
+    emits whole-frame symbol arrays through `onFrameSymbols(symbols, generation)`
+    without splitting them through `QrFrameTextGate`. Toggling `multiSymbol`
+    while active takes effect on the next frame without restarting the camera
+    session or incrementing the capture generation.
+  - `frozen?: boolean` (default `false`): decoupled from `active`. Unlike
+    `active=false` (which stops and releases the camera), `frozen=true` holds
+    the last rendered preview frame on screen, pauses detection dispatch,
+    disables tap-to-focus and pinch-zoom gestures, and keeps the camera session
+    warm so `frozen=false` resumes with zero black flash.
+- **Web (`./web`)**:
+  - `WebQrScannerOptions` adds `multiSymbol?: boolean` (default `false`) and
+    `onFrameSymbols?: (event: Omit<QrFrameSymbolsEvent, 'generation'>) => void`.
+  - `WebQrScanner` adds `setMultiSymbol(enabled: boolean): void` and
+    `setFrozen(frozen: boolean): void` (`video.pause()` + cancel frame
+    scheduling while keeping `MediaStream` live; `video.play()` + reschedule on
+    unfreeze).
+  - `ZXingWorkerRequest` (`decode`) carries `multiSymbol?: boolean`.
+    `ZXING_READER_OPTIONS` uses `maxNumberOfSymbols: 8` when `multiSymbol` is
+    `true` and stays at `maxNumberOfSymbols: 1` when `false`.
+- **Image decoding**:
+  - Add `decodeQrImageSymbols(uri: string, options?)` (native) and
+    `decodeQrImageSymbols(blob: Blob, options?)` (web) returning
+    `QrImageSymbolsResult` in EXIF-oriented image coordinates so album picking
+    reuses the same multi-QR selection overlay.
+
+#### Platform coordinate normalization and freeze rules
+
+| Platform | Coordinate space | Multi-symbol & coordinate mapping | Zero-black-screen freeze (`frozen=true`) |
+| --- | --- | --- | --- |
+| iOS (`QrScanner.swift`) | `view` | Iterate all `metadataObjects`; map each via `previewLayer.transformedMetadataObject(for:)` (handles `.resizeAspectFill` crop and rotation) and divide by `previewLayer.bounds.size`. | Set `previewLayer.connection?.isEnabled = false`, pause `onFrameSymbols` dispatch, suppress tap/pinch gestures; keep `AVCaptureSession` running. |
+| Android (`QrScanner.kt`) | `view` | ML Kit returns `List<Barcode>`; bind `Preview` and `ImageAnalysis` in a shared `UseCaseGroup` viewport when available and map each `boundingBox` through `ImageProxyTransformFactory` + `CoordinateTransform` against `previewView.outputTransform` (falling back to `HybridQrScanner.mapFillCenterRect` if `outputTransform` is unavailable). | Snapshot `previewView.bitmap` into an overlay `ImageView` inside `container`, pause `ImageAnalysis` dispatch, suppress tap/pinch gestures, and preserve freeze state across temporary rebinds/pause-resume while `frozen=true`; hide and clear on unfreeze or `dispose`. |
+| Web / extension / Linux (`./web`) | `frame` | `BarcodeDetector.detect()` `boundingBox` or `zxing-wasm` `position` 4-corner centroid divided by analysed `image.width`/`height`. `onFrameSymbols` also carries `frame: RgbaImage` (the exact decoded frame pixels). | `video.pause()` + `cancelSchedule()`, keep `MediaStream` tracks live; caller renders `event.frame` onto a frozen overlay `<canvas>` so markers stay locked to the decoded frame. |
+| macOS / Windows Electron (`desktop/*/electron-qr-scanner`) | `frame` | See each desktop package `SPEC.md` (macOS Vision with `centerY = 1 - box.midY`; Windows `ZXing::ReadBarcodes`). | Preload skips `context.drawImage` for frozen `sessionId` (still closing `VideoFrame` and releasing `importedSharedTexture` in `finally`); main process pauses native analysis. |
+
+For `frame`-space backends, the caller maps `(fx, fy)` through `object-fit: cover`
+(accounting for container aspect crop and front-camera mirroring) and drops
+symbols that fall outside `[0, 1]` visible bounds before multi-symbol
+evaluation.
+
+#### Caller state-machine contract & BC-UR balance
+
+Callers with a dedicated hardware-wallet UR flow (`DeviceStage` /
+`qrWalletScene`) leave `multiSymbol=false` so ZXing always runs with
+`maxNumberOfSymbols=1`.
+
+On general-purpose scan pages (which can receive both static codes and animated
+BC-UR codes from hardware wallets), the caller starts with `multiSymbol=true`
+and applies three rules:
+
+1. **UR fast-path latch**: if a single visible symbol matches `/^ur:/i`, bypass
+   any aggregation window (0 ms delay), feed the part immediately via
+   `onCommitText` (callers return `ScanSession.receive(text)` or an explicit
+   `MultiSymbolCommitResult` — never `void`), enter `ur-streaming` only once
+   explicitly accepted, and dynamically set `multiSymbol=false` so subsequent
+   frames run at full single-symbol throughput (crucial for Windows ZXing-C++
+   and Web ZXing-WASM) without restarting the camera.
+2. **Single-frame anchor integrity**: a frame with `>= 2` distinct visible
+   symbols freezes into `selecting` immediately so every selection anchor is
+   backed by the exact displayed frozen frame. During a short anti-race
+   aggregation window (120–150 ms) after a single non-UR symbol, an earlier
+   frame's symbol is never merged into a later frame's selection overlay.
+3. **Mixed UR + static in the same frame**: before `ur-streaming` begins, a
+   frame containing `>= 2` symbols (even if one is `ur:`) freezes into
+   `selecting`; picking the `ur:` anchor calls `setFrozen(false)` and latches
+   into `ur-streaming` while keeping `multiSymbol=true` (because competing
+   lower-density static codes in the same frame would otherwise win
+   `maxNumberOfSymbols=1` and starve the denser animated UR). Similarly, if a
+   single-code `ur-streaming` session later sees a frame containing only a
+   competing non-UR symbol, it auto-heals by setting `multiSymbol=true`. Once
+   in `ur-streaming`, stray static symbols in view are ignored until assembly
+   finishes or resets.
+
+#### Planned conformance checks
+
+- Unit tests: `QrScanner.nitro.ts` / Web `scanner.ts` / `zxingWorkerProtocol.ts`
+  multi-symbol decode (`maxNumberOfSymbols: 8` vs `1`), dynamic
+  `setMultiSymbol` without restarting camera/generation, `setFrozen` keeping
+  the stream/session alive and suppressing callbacks, and `decodeQrImageSymbols`
+  on multi-QR fixtures.
+- Device / runtime checks: anchor accuracy across portrait/landscape/square
+  `cover` viewports on all five backends; 20 consecutive freeze/unfreeze cycles
+  with no black flash and zero leaked Electron shared-texture slots; animated
+  BC-UR regression check confirming no drop in completion rate or parts/s.
+
 ## 4. Lifecycle and concurrency
 
 - `./ur` is synchronous and single-owner. Each call to `receive` runs to

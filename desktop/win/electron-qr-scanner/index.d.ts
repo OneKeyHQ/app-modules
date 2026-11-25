@@ -18,8 +18,34 @@ export interface DecodeImageOptions {
   engines?: "zxing"[];
 }
 
+export interface QrSymbolBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface QrDetectedSymbol {
+  text: string;
+  centerX: number;
+  centerY: number;
+  bounds?: QrSymbolBounds;
+}
+
+export interface QrImageSymbolsResult {
+  width: number;
+  height: number;
+  symbols: QrDetectedSymbol[];
+}
+
 /** Raw text of the first QR symbol in a local image file, or null. */
 export function decodeImage(path: string, options?: DecodeImageOptions): Promise<string | null>;
+
+/** All QR symbols in a local image file with top-left normalized coordinates. */
+export function decodeImageSymbols(
+  path: string,
+  options?: DecodeImageOptions,
+): Promise<QrImageSymbolsResult>;
 
 export interface CameraDevice {
   /** Media Foundation symbolic link used to target this camera in `CaptureSource` or `setDevice`. */
@@ -148,9 +174,18 @@ export type CaptureSource =
 
 export interface CaptureOptions {
   source?: CaptureSource;
+  /** When true, report whole-frame symbols via `onSymbols` (top-left normalized `frame` space). Default false. */
+  multiSymbol?: boolean;
   onReady?: (generation: number, info?: CaptureReadyInfo, deviceId?: string) => void;
   /** Each distinct QR text; the same text repeats at most once per second. */
   onText?: (text: string, generation: number) => void;
+  /** Whole-frame symbols when `multiSymbol` is enabled. */
+  onSymbols?: (
+    symbols: QrDetectedSymbol[],
+    frameWidth: number,
+    frameHeight: number,
+    generation: number,
+  ) => void;
   onError?: (error: QrScannerError, generation: number) => void;
   /** A non-looping file reached its end and the last queued decode finished. */
   onEnded?: (generation: number) => void;
@@ -181,6 +216,10 @@ export interface QrPreviewFrame {
 export interface QrCapture {
   start(): void;
   stop(): void;
+  /** Dynamically toggles whole-frame multi-symbol reporting on the next frame. */
+  setMultiSymbol(enabled: boolean): void;
+  /** Pauses or resumes ZXing decode worker evaluation without releasing the camera. */
+  setPaused(paused: boolean): void;
   /**
    * Selects a camera by `CameraDevice.id` (or resets to the default camera when
    * omitted / null). If the capture is running, stops the current camera and

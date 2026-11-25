@@ -4,6 +4,7 @@ import { getEngines } from './engines';
 import { fitToPixelBudget } from './imageOps';
 
 import type { QrScannerErrorCode } from '../errors';
+import type { QrDetectedSymbol, QrFrameSymbolsEvent } from '../symbols';
 import type { ScanError, ScanMode, ScanResult, UrLimits } from '../ur';
 import type { QrImageEngine, RgbaImage } from './imageOps';
 
@@ -12,6 +13,15 @@ export type WebScanSource =
   | { kind: 'camera'; deviceId?: string }
   /** A video element the caller already plays (a file, a stream it owns). */
   | { kind: 'element' };
+
+export type WebQrFrameSymbolsEvent = Omit<QrFrameSymbolsEvent, 'generation'> & {
+  /**
+   * Exact RGBA frame pixels that produced `symbols`. Consumers should render
+   * this frame when freezing for multi-QR selection so markers stay locked to
+   * the decoded frame even if the video advanced during async decoding.
+   */
+  frame?: RgbaImage;
+};
 
 export interface WebQrScannerOptions {
   video: HTMLVideoElement;
@@ -30,6 +40,14 @@ export interface WebQrScannerOptions {
    * text, such as the next UR part, is reported at once.
    */
   onFrameText?: (text: string) => void;
+  /**
+   * When true, detect up to 8 QR symbols per frame and deliver them via
+   * `onFrameSymbols` without splitting through the 1 s repeat throttle.
+   * Default false.
+   */
+  multiSymbol?: boolean;
+  /** Whole-frame symbols in normalized `frame` coordinates (top-left origin). */
+  onFrameSymbols?: (event: WebQrFrameSymbolsEvent) => void;
   onProgress?: (progress: number) => void;
   onResult?: (result: ScanResult) => void;
   onError?: (error: QrScannerError | ScanError) => void;
@@ -44,6 +62,16 @@ export interface WebQrScanner {
    * choice for the next `start()`.
    */
   switchCamera(deviceId?: string): Promise<void>;
+  /**
+   * Dynamically toggles multi-symbol detection without restarting the camera
+   * or incrementing the capture generation. Takes effect on the next frame.
+   */
+  setMultiSymbol(enabled: boolean): void;
+  /**
+   * Freezes or unfreezes preview playback and frame analysis while keeping the
+   * underlying MediaStream alive (zero black flash on resume).
+   */
+  setFrozen(frozen: boolean): void;
   /**
    * Triggers tap-to-focus on the active camera track when the hardware
    * reports autofocus capability (`single-shot` or `continuous`). `point`
@@ -181,10 +209,15 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let generation = 0;
   let disposed = false;
   let active = false;
+  let multiSymbol = options.multiSymbol === true;
+  let frozen = false;
   let acquisition: { deviceId?: string; cancelPreview?: () => void } | undefined;
   let mediaAcquisitions = 0;
   let staleMediaSettlements = 0;
-  const usesBuiltInSession = !handlers.onFrameText || !!handlers.onResult || !!handlers.onProgress;
+  const usesBuiltInSession =
+    (!handlers.onFrameText && !handlers.onFrameSymbols) ||
+    !!handlers.onResult ||
+    !!handlers.onProgress;
   let stream: MediaStream | undefined;
   type RecoveryTarget = { stream: MediaStream; deviceId?: string; blockedAt?: number };
   let interruptedCamera: RecoveryTarget | undefined;
@@ -245,14 +278,58 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   }
 
   async function analyse(runGeneration: number) {
+    if (frozen) return;
     const image = readFrame();
     if (!image) return;
     const frameSession = session;
-    const isCurrent = () => runGeneration === generation && frameSession === session;
+    const isCurrent = () =>
+      runGeneration === generation && frameSession === session && !frozen;
+    const wantMulti = multiSymbol;
     frameIndex += 1;
     let failed: { error: unknown } | undefined;
     for (const [index, engine] of engines.entries()) {
       if (index > 0 && !failed && frameIndex % ZXING_EVERY_N_FRAMES !== 0) continue;
+      if (handlers.onFrameSymbols) {
+        let symbols: QrDetectedSymbol[];
+        try {
+          symbols = engine.decodeSymbols
+            ? await engine.decodeSymbols(image, wantMulti)
+            : await engine.decode(image).then((t) =>
+                t ? [{ text: t, centerX: 0.5, centerY: 0.5 }] : []
+              );
+        } catch (error) {
+          failed = { error };
+          if (!isCurrent()) return;
+          continue;
+        }
+        if (!isCurrent()) return;
+        if (symbols.length === 0) continue;
+        try {
+          handlers.onFrameSymbols({
+            symbols,
+            coordinateSpace: 'frame',
+            frameWidth: image.width,
+            frameHeight: image.height,
+            frame: image,
+          });
+        } catch {
+          // A consumer observer cannot interrupt the built-in session.
+        }
+        if (!isCurrent()) return;
+        const firstText = symbols[0]?.text;
+        if (firstText) {
+          reportFrameText(firstText);
+          if (!isCurrent() || !usesBuiltInSession) return;
+          const outcome = frameSession.receive(firstText);
+          if (outcome.status === 'progress') handlers.onProgress?.(outcome.progress);
+          else if (outcome.status === 'complete') {
+            if (outcome.result.kind === 'ur') handlers.onProgress?.(1);
+            if (isCurrent()) handlers.onResult?.(outcome.result);
+          } else if (outcome.status === 'rejected') handlers.onError?.(outcome.error);
+        }
+        return;
+      }
+
       let text: string | null;
       try {
         text = await engine.decode(image);
@@ -280,8 +357,11 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   }
 
   function schedule(runGeneration: number) {
-    if (runGeneration !== generation || disposed) return;
+    if (runGeneration !== generation || disposed || frozen) return;
+    if (frameHandle !== undefined || timer !== undefined) return;
     const tick = () => {
+      frameHandle = undefined;
+      timer = undefined;
       if (runGeneration !== generation || disposed) return;
       // One frame in analysis at a time; skip frames that arrive meanwhile.
       if (analysing || video.currentTime === lastTime) {
@@ -469,11 +549,16 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       superseded?.getTracks().forEach((track) => track.stop());
       if (preview !== video) {
         preview.srcObject = null;
-        void video.play().catch((error: unknown) => {
-          if (stream === candidateStream) {
-            fail(cameraErrorCode(error), error instanceof Error ? error.message : String(error));
-          }
-        });
+        if (!frozen) {
+          void video.play().catch((error: unknown) => {
+            if (stream === candidateStream) {
+              fail(cameraErrorCode(error), error instanceof Error ? error.message : String(error));
+            }
+          });
+        }
+      }
+      if (frozen) {
+        video.pause();
       }
       startAnalysis(nextEngines);
     } catch (error) {
@@ -552,6 +637,26 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       }
       if (acquisition && nextDeviceId === acquisition.deviceId) return;
       await acquireCamera(nextDeviceId, !hasLiveCamera());
+    },
+    setMultiSymbol(enabled: boolean) {
+      multiSymbol = enabled;
+    },
+    setFrozen(nextFrozen: boolean) {
+      if (disposed || frozen === nextFrozen) return;
+      frozen = nextFrozen;
+      if (frozen) {
+        cancelSchedule();
+        video.pause();
+        return;
+      }
+      if (active) {
+        lastTime = -1;
+        void video.play().catch(() => {});
+        // Always schedule current generation: `schedule` is idempotent via
+        // frameHandle/timer, and an in-flight decode from a previous camera
+        // generation will not schedule the new generation when it settles.
+        schedule(generation);
+      }
     },
     async focus(point?: { x: number; y: number }): Promise<boolean> {
       if (disposed || !active || source.kind !== 'camera' || !stream) return false;
@@ -633,6 +738,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     },
     stop() {
       active = false;
+      frozen = false;
       interruptedCamera = undefined;
       generation += 1;
       invalidateAcquisition();

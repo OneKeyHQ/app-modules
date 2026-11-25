@@ -9,6 +9,7 @@ enum QrCaptureEventKind: Int32 {
   case text = 1
   case error = 2
   case ended = 3
+  case symbols = 4
 }
 
 enum QrCaptureTermination {
@@ -366,6 +367,8 @@ final class QrCaptureController {
   let previewPool = QrPreviewPool()
   private var frameEmitter: EmitFrame?
   private var previewing = false
+  private var multiSymbol = false
+  private var paused = false
 
   private let sessionQueue = DispatchQueue(label: "so.onekey.qrscanner.desktop.session")
   private let analysisQueue = DispatchQueue(label: "so.onekey.qrscanner.desktop.analysis")
@@ -409,6 +412,18 @@ final class QrCaptureController {
     defer { emitLock.unlock() }
     guard gate.currentGeneration == generation else { return }
     emitter?(kind, a, b, generation)
+  }
+
+  func setMultiSymbol(_ enabled: Bool) {
+    emitLock.lock()
+    multiSymbol = enabled
+    emitLock.unlock()
+  }
+
+  func setPaused(_ value: Bool) {
+    emitLock.lock()
+    paused = value
+    emitLock.unlock()
   }
 
   func start() -> Int {
@@ -510,11 +525,49 @@ final class QrCaptureController {
   /// Runs on the analysis queue.
   private func analyze(_ buffer: CVPixelBuffer, generation: Int) {
     guard gate.currentGeneration == generation else { return }
+    emitLock.lock()
+    let isMulti = multiSymbol
+    let isPaused = paused
+    emitLock.unlock()
+    if isPaused { return }
+
     let request = VNDetectBarcodesRequest()
     request.symbologies = [.qr]
     let handler = VNImageRequestHandler(cvPixelBuffer: buffer, options: [:])
     guard (try? handler.perform([request])) != nil else { return }
-    let texts = (request.results ?? []).compactMap { $0.payloadStringValue }
+    let results = request.results ?? []
+
+    if isMulti {
+      let symbols: [[String: Any]] = results.compactMap { observation in
+        guard let text = observation.payloadStringValue, !text.isEmpty else { return nil }
+        // Vision boundingBox uses a bottom-left origin; flip Y to top-left [0, 1].
+        let box = observation.boundingBox
+        return [
+          "text": text,
+          "centerX": Double(box.midX),
+          "centerY": Double(1.0 - box.midY),
+          "bounds": [
+            "x": Double(box.minX),
+            "y": Double(1.0 - box.maxY),
+            "width": Double(box.width),
+            "height": Double(box.height),
+          ],
+        ]
+      }
+      guard !symbols.isEmpty else { return }
+      let payload: [String: Any] = [
+        "frameWidth": CVPixelBufferGetWidth(buffer),
+        "frameHeight": CVPixelBufferGetHeight(buffer),
+        "symbols": symbols,
+      ]
+      guard let data = try? JSONSerialization.data(withJSONObject: payload),
+        let json = String(data: data, encoding: .utf8)
+      else { return }
+      emit(.symbols, json, "", generation)
+      return
+    }
+
+    let texts = results.compactMap { $0.payloadStringValue }
     guard !texts.isEmpty else { return }
     for report in gate.filter(texts, now: ProcessInfo.processInfo.systemUptime, generation: generation) {
       emit(.text, report.text, "", report.generation)

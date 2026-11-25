@@ -1,0 +1,8 @@
+{
+  "type": "crypto-psbt",
+  "bytes": 2003,
+  "fnv1a": "07a5e3d7",
+  "fragments": 17,
+  "frames": 51,
+  "fps": 8
+}

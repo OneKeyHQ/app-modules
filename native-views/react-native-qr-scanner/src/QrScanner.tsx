@@ -6,6 +6,7 @@ import { QrScannerError, isQrScannerErrorCode } from './errors';
 import { createScanSession } from './ur';
 
 import type { QrScannerMethods, QrScannerProps } from './QrScanner.nitro';
+import type { QrDetectedSymbol } from './symbols';
 import type { ScanError, ScanMode, ScanResult, UrLimits } from './ur';
 import type { StyleProp, ViewStyle } from 'react-native';
 
@@ -25,6 +26,10 @@ export interface QrScannerComponentProps {
    * back camera. Switching keeps the scan session (collected UR parts).
    */
   cameraId?: string;
+  /** Enable whole-frame multi-symbol reporting via `onFrameSymbols`. Default false. */
+  multiSymbol?: boolean;
+  /** Freeze the last preview frame and pause detection without releasing the camera. */
+  frozen?: boolean;
   mode: ScanMode;
   allowPlainText?: boolean;
   limits?: Partial<UrLimits>;
@@ -35,6 +40,10 @@ export interface QrScannerComponentProps {
   sessionKey?: string | number;
   style?: StyleProp<ViewStyle>;
   onReady?: (cameraId: string) => void;
+  /** Raw single-symbol text stream (useful when toggling `multiSymbol` off after a UR latch). */
+  onFrameText?: (text: string) => void;
+  /** Whole-frame symbols in normalized visible view coordinates (`[0, 1]`). */
+  onFrameSymbols?: (symbols: QrDetectedSymbol[]) => void;
   /** UR assembly progress, 0..1 (below 1 until complete). */
   onProgress?: (progress: number) => void;
   /** Fired once per session. */
@@ -50,20 +59,39 @@ export interface QrScannerComponentProps {
 export function QrScanner({
   active,
   cameraId,
+  multiSymbol,
+  frozen,
   mode,
   allowPlainText,
   limits,
   sessionKey,
   style,
   onReady,
+  onFrameText,
+  onFrameSymbols,
   onProgress,
   onResult,
   onError,
 }: QrScannerComponentProps) {
-  const handlers = useRef({ onReady, onProgress, onResult, onError });
+  const hasOnFrameSymbols = typeof onFrameSymbols === 'function';
+  const handlers = useRef({
+    onReady,
+    onFrameText,
+    onFrameSymbols,
+    onProgress,
+    onResult,
+    onError,
+  });
   useLayoutEffect(() => {
-    handlers.current = { onReady, onProgress, onResult, onError };
-  }, [onReady, onProgress, onResult, onError]);
+    handlers.current = {
+      onReady,
+      onFrameText,
+      onFrameSymbols,
+      onProgress,
+      onResult,
+      onError,
+    };
+  }, [onReady, onFrameText, onFrameSymbols, onProgress, onResult, onError]);
 
   // Limits are read once per session; callers pass a constant object.
   const limitsRef = useRef(limits);
@@ -108,6 +136,18 @@ export function QrScanner({
     return {
       onFrameText: callback((text: string, generation: number) => {
         if (!accept(generation)) return;
+        if (handlers.current.onFrameText) {
+          try {
+            handlers.current.onFrameText(text);
+          } catch {
+            // A consumer observer cannot interrupt the built-in session.
+          }
+        }
+        const usesBuiltInSession =
+          !handlers.current.onFrameText ||
+          !!handlers.current.onResult ||
+          !!handlers.current.onProgress;
+        if (!usesBuiltInSession) return;
         const outcome = session.receive(text);
         if (outcome.status === 'progress') {
           handlers.current.onProgress?.(outcome.progress);
@@ -118,6 +158,12 @@ export function QrScanner({
           handlers.current.onError?.(outcome.error);
         }
       }),
+      onFrameSymbols: hasOnFrameSymbols
+        ? callback((symbols: QrDetectedSymbol[], generation: number) => {
+            if (!accept(generation)) return;
+            handlers.current.onFrameSymbols?.(symbols);
+          })
+        : undefined,
       onError: callback((code: string, message: string, generation: number) => {
         if (!accept(generation)) return;
         handlers.current.onError?.(
@@ -128,13 +174,15 @@ export function QrScanner({
         );
       }),
     };
-  }, [acceptGeneration, session, sessionIdentity]);
+  }, [acceptGeneration, hasOnFrameSymbols, session, sessionIdentity]);
 
   return (
     <QrScannerView
       style={style}
       active={active}
       cameraId={cameraId}
+      multiSymbol={multiSymbol}
+      frozen={frozen}
       onReady={nativeOnReady}
       {...sessionCallbacks}
     />

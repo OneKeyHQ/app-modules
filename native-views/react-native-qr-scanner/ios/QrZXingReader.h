@@ -10,6 +10,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Text of the first QR symbol in `image`, or nil when none is found.
 - (nullable NSString *)decodeImage:(CGImageRef)image;
 
+/// All QR symbols in `image` (up to 8) with normalized top-left coordinates.
+- (NSArray<NSDictionary<NSString *, id> *> *)decodeImageSymbols:(CGImageRef)image;
+
 @end
 
 NS_ASSUME_NONNULL_END

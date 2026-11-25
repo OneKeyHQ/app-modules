@@ -135,6 +135,24 @@ createCapture(options?: {
 - **Error codes**: `permission-denied`, `no-camera`, `camera-busy`,
   `decoder-unavailable`, `preview-unavailable`, `invalid-image`,
   `resource-limit`.
+- **Multi-symbol detection and freeze (Implemented)** — contract shared with
+  `native-views/react-native-qr-scanner/docs/SPEC.md` section 3.4:
+  - `createCapture` adds `multiSymbol?: boolean` (default `false`) and
+    `onSymbols?(symbols: QrDetectedSymbol[], frameWidth: number, frameHeight: number, generation: number): void`,
+    plus handle methods `setMultiSymbol(enabled: boolean): void` and
+    `setPaused(paused: boolean): void` (pauses decode worker evaluation without
+    closing the Media Foundation camera handle or D3D11 pool; Electron preload
+    freezes `<canvas>` while still releasing every `importedSharedTexture`).
+  - When `multiSymbol` is `true`, `src/zxing_text.cpp` switches from
+    `ZXing::ReadBarcode` (`maxNumberOfSymbols(1)`) to `ZXing::ReadBarcodes`
+    (`maxNumberOfSymbols(8)`) and emits top-left normalized `[0, 1]` `frame`
+    coordinates computed from each `ZXing::Barcode::position()` 4-corner
+    centroid divided by `width`/`height`, bypassing `frame_gate.rs` splitting.
+    Switching `setMultiSymbol(false)` (e.g. on UR fast-path latch) takes effect
+    on the next frame with zero camera restart.
+  - Add `decodeImageSymbols(path: string, options?)` returning EXIF-oriented
+    image dimensions and all detected symbols with normalized top-left
+    coordinates.
 
 ## 4. Threads and lifetime
 

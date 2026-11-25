@@ -1,5 +1,7 @@
 import { QrScannerError } from '../errors';
 
+import type { QrDetectedSymbol } from '../symbols';
+
 /**
  * Pixel operations for the image passes, on plain RGBA buffers so they run
  * the same in browsers, workers and tests (no canvas needed).
@@ -85,12 +87,194 @@ export interface QrImageEngine {
   name: string;
   /** Text of the first QR symbol, or null. */
   decode(image: RgbaImage): Promise<string | null>;
+  /** All QR symbols with normalized top-left coordinates in `image`. */
+  decodeSymbols?(image: RgbaImage, multiSymbol: boolean): Promise<QrDetectedSymbol[]>;
 }
 
 export interface QrImageHit {
   text: string;
   engine: string;
   pass: DecodePass;
+}
+
+export interface QrImageSymbolsHit {
+  symbols: QrDetectedSymbol[];
+  engine: string;
+  pass: DecodePass;
+  /** True when remaining optional passes stopped early due to the post-hit deadline. */
+  partial?: boolean;
+}
+
+function unpadSymbol(
+  symbol: QrDetectedSymbol,
+  original: RgbaImage,
+  paddedImage: RgbaImage
+): QrDetectedSymbol {
+  const margin = Math.max(
+    MIN_PADDING,
+    Math.floor(Math.max(original.width, original.height) * PADDING_RATIO)
+  );
+  const expandedWidth = original.width + margin * 2;
+  const expandedHeight = original.height + margin * 2;
+  const left = Math.min(
+    Math.floor((margin * paddedImage.width) / expandedWidth),
+    Math.floor((paddedImage.width - 1) / 2)
+  );
+  const top = Math.min(
+    Math.floor((margin * paddedImage.height) / expandedHeight),
+    Math.floor((paddedImage.height - 1) / 2)
+  );
+  const innerWidth = paddedImage.width - left * 2;
+  const innerHeight = paddedImage.height - top * 2;
+  if (innerWidth <= 0 || innerHeight <= 0) return symbol;
+
+  const mapX = (x: number) => (x * paddedImage.width - left) / innerWidth;
+  const mapY = (y: number) => (y * paddedImage.height - top) / innerHeight;
+  const bounds = symbol.bounds
+    ? {
+        x: mapX(symbol.bounds.x),
+        y: mapY(symbol.bounds.y),
+        width: (symbol.bounds.width * paddedImage.width) / innerWidth,
+        height: (symbol.bounds.height * paddedImage.height) / innerHeight,
+      }
+    : undefined;
+  return {
+    text: symbol.text,
+    centerX: mapX(symbol.centerX),
+    centerY: mapY(symbol.centerY),
+    bounds,
+  };
+}
+
+const MAX_IMAGE_SYMBOLS = 8;
+const DEFAULT_POST_HIT_DEADLINE_MS = 3000;
+
+function raceWithDeadline<T>(
+  promise: Promise<T>,
+  remainingMs: number
+): Promise<{ timedOut: true } | { timedOut: false; value: T }> {
+  if (remainingMs <= 0) {
+    // Observe rejections from already-started work so the browser never sees
+    // an unhandled rejection after the fallback budget expires.
+    promise.catch(() => {});
+    return Promise.resolve({ timedOut: true });
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve({ timedOut: true });
+    }, remainingMs);
+    promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ timedOut: false, value });
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
+/**
+ * The same pass order as `decodePixels`, accumulating unique QR symbols across
+ * passes and engines (up to 8) so mixed normal/inverted or multi-engine codes
+ * all reach the selection UI, mapped back to original image space. Once the
+ * first hit arrives, remaining optional passes share a bounded deadline so a
+ * slow or stalled fallback engine cannot block returning already-found codes.
+ */
+export async function decodePixelsSymbols(
+  image: RgbaImage,
+  engines: readonly QrImageEngine[],
+  maxPixels?: number,
+  postHitDeadlineMs = DEFAULT_POST_HIT_DEADLINE_MS
+): Promise<QrImageSymbolsHit | null> {
+  const passes: [DecodePass, () => RgbaImage][] = [
+    ['original', () => image],
+    ['padded', () => padded(image, maxPixels)],
+    ['grayscale', () => grayscale(image)],
+    ['inverted', () => grayscale(image, true)],
+  ];
+  let attempted = false;
+  let decoded = false;
+  const merged: QrDetectedSymbol[] = [];
+  const seen = new Set<string>();
+  let firstEngine: string | undefined;
+  let firstPass: DecodePass | undefined;
+  let postHitDeadline: number | undefined;
+  let partial = false;
+
+  for (const [pass, make] of passes) {
+    if (merged.length >= MAX_IMAGE_SYMBOLS) break;
+    if (postHitDeadline !== undefined && Date.now() >= postHitDeadline) {
+      partial = true;
+      break;
+    }
+    const variant = make();
+    for (const engine of engines) {
+      if (merged.length >= MAX_IMAGE_SYMBOLS) break;
+      if (postHitDeadline !== undefined && Date.now() >= postHitDeadline) {
+        partial = true;
+        break;
+      }
+      attempted = true;
+      try {
+        const work = engine.decodeSymbols
+          ? engine.decodeSymbols(variant, true)
+          : engine.decode(variant).then((text) =>
+              text ? [{ text, centerX: 0.5, centerY: 0.5 }] : []
+            );
+        let symbols: QrDetectedSymbol[];
+        if (postHitDeadline !== undefined) {
+          const raced = await raceWithDeadline(work, postHitDeadline - Date.now());
+          if (raced.timedOut) {
+            partial = true;
+            break;
+          }
+          symbols = raced.value;
+        } else {
+          symbols = await work;
+        }
+        decoded = true;
+        if (symbols.length > 0) {
+          const normalized =
+            pass === 'padded'
+              ? symbols.map((sym) => unpadSymbol(sym, image, variant))
+              : symbols;
+          for (const sym of normalized) {
+            if (!sym.text || seen.has(sym.text)) continue;
+            seen.add(sym.text);
+            merged.push(sym);
+            if (!firstEngine) {
+              firstEngine = engine.name;
+              firstPass = pass;
+              postHitDeadline = Date.now() + postHitDeadlineMs;
+            }
+            if (merged.length >= MAX_IMAGE_SYMBOLS) break;
+          }
+        }
+      } catch {
+        // A failed pass leaves the remaining engines and passes available.
+      }
+    }
+  }
+  if (merged.length > 0 && firstEngine && firstPass) {
+    return {
+      symbols: merged,
+      engine: firstEngine,
+      pass: firstPass,
+      ...(partial ? { partial: true } : {}),
+    };
+  }
+  if (attempted && !decoded) throw new QrScannerError('decoder-unavailable', 'A QR decoder failed');
+  return null;
 }
 
 /**

@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import XCTest
 
@@ -111,6 +112,125 @@ final class QrImageDecodingPipelineTests: XCTestCase {
     XCTAssertEqual(hit?.text, try lightningPayload())
     XCTAssertEqual(hit?.engine, "zxing")
     XCTAssertEqual(hit?.pass, "original")
+  }
+
+  // MARK: - 4-scenario multi-symbol & animated UR coverage (a, b, c, d)
+
+  func testCaseASingleStaticImageSymbols() throws {
+    let expected = "ethereum:0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+    let url = try fixture("a-single-static.png")
+    let hit = try makePipeline().decodeSymbols(url: url, maxPixels: 12_000_000)
+    XCTAssertEqual(hit.symbols.count, 1)
+    XCTAssertEqual(hit.symbols.first?.text, expected)
+    XCTAssertEqual(hit.symbols.first?.centerX ?? -1, 0.5, accuracy: 0.03)
+    XCTAssertEqual(hit.symbols.first?.centerY ?? -1, 0.5, accuracy: 0.03)
+  }
+
+  func testCaseBMultiStaticImageSymbols() throws {
+    let expected: [(text: String, x: Double, y: Double)] = [
+      (
+        "wc:8a3f9c2d1b0e4a5f6c7d8e9f0a1b2c3d@2?relay-protocol=irn&symKey=abcdef123456",
+        (540.0 + 180.0) / 960.0,
+        (60.0 + 180.0) / 960.0
+      ),
+      (
+        "onekey://market/detail?symbol=ETH",
+        (90.0 + 130.0) / 960.0,
+        (350.0 + 130.0) / 960.0
+      ),
+      (
+        "ethereum:0x71C7656EC7ab88b098defB751B7401B5f6d8976F",
+        (580.0 + 140.0) / 960.0,
+        (610.0 + 140.0) / 960.0
+      ),
+    ]
+    let url = try fixture("b-multi-static.png")
+    let hit = try makePipeline().decodeSymbols(url: url, maxPixels: 12_000_000)
+    XCTAssertEqual(hit.symbols.count, 3)
+    for target in expected {
+      let match = try XCTUnwrap(
+        hit.symbols.first { $0.text == target.text },
+        "missing \(target.text)")
+      XCTAssertEqual(match.centerX, target.x, accuracy: 0.03, "X for \(target.text)")
+      XCTAssertEqual(match.centerY, target.y, accuracy: 0.03, "Y for \(target.text)")
+    }
+  }
+
+  private func decodeFrameSymbolsWithFallback(_ frame: CGImage) -> [QrPipelineSymbol] {
+    if let symbols = try? VisionQrEngine().decodeSymbols(frame), !symbols.isEmpty {
+      return symbols
+    }
+    return ZXingQrEngine().decodeSymbols(frame)
+  }
+
+  private func readVideoFrames(_ url: URL) throws -> [CGImage] {
+    let asset = AVURLAsset(url: url)
+    guard let track = asset.tracks(withMediaType: .video).first else {
+      throw NSError(domain: "QrScannerTests", code: 1)
+    }
+    let reader = try AVAssetReader(asset: asset)
+    let output = AVAssetReaderTrackOutput(
+      track: track,
+      outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+    reader.add(output)
+    XCTAssertTrue(reader.startReading())
+    let ciContext = CIContext(options: [.cacheIntermediates: false])
+    var frames: [CGImage] = []
+    while let sample = output.copyNextSampleBuffer(),
+      let buffer = CMSampleBufferGetImageBuffer(sample)
+    {
+      let ciImage = CIImage(cvPixelBuffer: buffer)
+      if let cg = ciContext.createCGImage(ciImage, from: ciImage.extent) {
+        frames.append(cg)
+      }
+    }
+    return frames
+  }
+
+  func testCaseCAnimatedUrVideoFrames() throws {
+    let frames = try readVideoFrames(fixture("c-animated-ur.mp4"))
+    XCTAssertGreaterThanOrEqual(frames.count, 17)
+    var urParts = Set<String>()
+    for frame in frames {
+      let symbols = decodeFrameSymbolsWithFallback(frame)
+      XCTAssertEqual(symbols.count, 1)
+      let text = try XCTUnwrap(symbols.first?.text)
+      XCTAssertTrue(text.uppercased().hasPrefix("UR:CRYPTO-PSBT/"), text)
+      urParts.insert(text)
+    }
+    XCTAssertGreaterThanOrEqual(urParts.count, 17)
+  }
+
+  func testCaseDAnimatedUrPlusMultiStaticVideoFrames() throws {
+    let frames = try readVideoFrames(fixture("d-animated-ur-plus-multi.mp4"))
+    XCTAssertGreaterThanOrEqual(frames.count, 17)
+
+    // First frame must detect all 3 codes simultaneously (1 UR + 2 static) with accurate centers.
+    let firstSymbols = decodeFrameSymbolsWithFallback(frames[0])
+    XCTAssertEqual(firstSymbols.count, 3)
+    let firstUr = try XCTUnwrap(firstSymbols.first { $0.text.uppercased().hasPrefix("UR:CRYPTO-PSBT/") })
+    let firstEth = try XCTUnwrap(firstSymbols.first {
+      $0.text == "ethereum:0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
+    })
+    let firstMarket = try XCTUnwrap(firstSymbols.first {
+      $0.text == "onekey://market/detail?symbol=ETH"
+    })
+    XCTAssertEqual(firstUr.centerX, (40.0 + 230.0) / 960.0, accuracy: 0.03)
+    XCTAssertEqual(firstUr.centerY, (250.0 + 230.0) / 960.0, accuracy: 0.03)
+    XCTAssertEqual(firstEth.centerX, (580.0 + 150.0) / 960.0, accuracy: 0.03)
+    XCTAssertEqual(firstEth.centerY, (100.0 + 150.0) / 960.0, accuracy: 0.03)
+    XCTAssertEqual(firstMarket.centerX, (580.0 + 150.0) / 960.0, accuracy: 0.03)
+    XCTAssertEqual(firstMarket.centerY, (560.0 + 150.0) / 960.0, accuracy: 0.03)
+
+    // Across the video, multi-symbol extraction collects >= 17 distinct UR parts despite competing static QRs.
+    var urParts = Set<String>()
+    for frame in frames {
+      let symbols = decodeFrameSymbolsWithFallback(frame)
+      if let ur = symbols.first(where: { $0.text.uppercased().hasPrefix("UR:CRYPTO-PSBT/") }) {
+        urParts.insert(ur.text)
+      }
+    }
+    XCTAssertGreaterThanOrEqual(urParts.count, 17)
   }
 
   // MARK: - Pass order and limits (fake engines)

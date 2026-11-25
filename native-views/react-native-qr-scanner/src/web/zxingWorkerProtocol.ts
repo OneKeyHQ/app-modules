@@ -1,5 +1,7 @@
 import { prepareZXingModule, readBarcodes } from 'zxing-wasm/reader';
 
+import type { QrDetectedSymbol } from '../symbols';
+
 /** Messages between the page and the zxing worker. */
 export type ZXingWorkerRequest =
   | { id: number; type: 'init'; wasm: ArrayBuffer }
@@ -9,10 +11,12 @@ export type ZXingWorkerRequest =
       data: Uint8ClampedArray<ArrayBuffer>;
       width: number;
       height: number;
+      multiSymbol?: boolean;
+      includeSymbols?: boolean;
     };
 
 export type ZXingWorkerResponse =
-  | { id: number; ok: true; text: string | null }
+  | { id: number; ok: true; text: string | null; symbols?: QrDetectedSymbol[] }
   | { id: number; ok: false; error: string };
 
 /** zxing reader options shared by the page-thread and worker engines. */
@@ -24,6 +28,8 @@ export const ZXING_READER_OPTIONS = {
   maxNumberOfSymbols: 1,
 };
 
+export const ZXING_MULTI_SYMBOL_LIMIT = 8;
+
 export async function prepareZXingFromBinary(binary: ArrayBuffer): Promise<void> {
   await prepareZXingModule({
     overrides: { wasmBinary: binary },
@@ -32,13 +38,75 @@ export async function prepareZXingFromBinary(binary: ArrayBuffer): Promise<void>
   });
 }
 
+function positionToSymbol(
+  text: string,
+  position:
+    | {
+        topLeft: { x: number; y: number };
+        topRight: { x: number; y: number };
+        bottomRight: { x: number; y: number };
+        bottomLeft: { x: number; y: number };
+      }
+    | undefined,
+  width: number,
+  height: number
+): QrDetectedSymbol {
+  if (!position || width <= 0 || height <= 0) {
+    return { text, centerX: 0.5, centerY: 0.5 };
+  }
+  const corners = [
+    position.topLeft,
+    position.topRight,
+    position.bottomRight,
+    position.bottomLeft,
+  ];
+  const xs = corners.map((p) => p.x);
+  const ys = corners.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const centerX = xs.reduce((sum, x) => sum + x, 0) / (4 * width);
+  const centerY = ys.reduce((sum, y) => sum + y, 0) / (4 * height);
+  return {
+    text,
+    centerX,
+    centerY,
+    bounds: {
+      x: minX / width,
+      y: minY / height,
+      width: Math.max(0, (maxX - minX) / width),
+      height: Math.max(0, (maxY - minY) / height),
+    },
+  };
+}
+
+export async function readQrSymbols(
+  data: Uint8ClampedArray<ArrayBuffer>,
+  width: number,
+  height: number,
+  multiSymbol = false
+): Promise<QrDetectedSymbol[]> {
+  const results = await readBarcodes(new ImageData(data, width, height), {
+    ...ZXING_READER_OPTIONS,
+    maxNumberOfSymbols: multiSymbol ? ZXING_MULTI_SYMBOL_LIMIT : 1,
+  });
+  const symbols: QrDetectedSymbol[] = [];
+  for (const result of results) {
+    if (result.isValid && result.text) {
+      symbols.push(positionToSymbol(result.text, result.position, width, height));
+    }
+  }
+  return symbols;
+}
+
 export async function readQrText(
   data: Uint8ClampedArray<ArrayBuffer>,
   width: number,
   height: number
 ): Promise<string | null> {
-  const results = await readBarcodes(new ImageData(data, width, height), ZXING_READER_OPTIONS);
-  return results.find((result) => result.isValid && result.text)?.text ?? null;
+  const symbols = await readQrSymbols(data, width, height, false);
+  return symbols[0]?.text ?? null;
 }
 
 /**
@@ -56,6 +124,20 @@ export function createZXingWorkerHandler() {
       }
       if (!ready) throw new Error('zxing worker used before init');
       await ready;
+      if (request.multiSymbol === true || request.includeSymbols === true) {
+        const symbols = await readQrSymbols(
+          request.data,
+          request.width,
+          request.height,
+          request.multiSymbol === true
+        );
+        return {
+          id: request.id,
+          ok: true,
+          text: symbols[0]?.text ?? null,
+          symbols,
+        };
+      }
       return {
         id: request.id,
         ok: true,

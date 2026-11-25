@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OneKey Web QR Scanner · Multi-Code & Animated UR Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #09090b; color: #f4f4f5; min-height: 100vh; padding: 24px; -webkit-font-smoothing: antialiased; }
+    .hidden { display: none !important; }
+    .max-w-5xl { max-width: 1024px; margin: 0 auto; }
+    .space-y-5 > * + * { margin-top: 20px; }
+    .space-y-4 > * + * { margin-top: 16px; }
+    .space-y-2\.5 > * + * { margin-top: 10px; }
+    .space-y-2 > * + * { margin-top: 8px; }
+    .space-y-1\.5 > * + * { margin-top: 6px; }
+    .space-y-1 > * + * { margin-top: 4px; }
+    .flex { display: flex; }
+    .flex-wrap { flex-wrap: wrap; }
+    .items-center { align-items: center; }
+    .items-start { align-items: flex-start; }
+    .justify-between { justify-content: space-between; }
+    .justify-center { justify-content: center; }
+    .gap-2 { gap: 8px; }
+    .gap-3 { gap: 12px; }
+    .gap-6 { gap: 24px; }
+    .grid { display: grid; }
+    .grid-cols-1 { grid-template-columns: minmax(0, 1fr); }
+    @media (min-width: 1024px) {
+      .lg\:grid-cols-12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+      .lg\:col-span-6 { grid-column: span 6 / span 6; }
+    }
+    .relative { position: relative; }
+    .absolute { position: absolute; }
+    .inset-0 { inset: 0; }
+    .bottom-3 { bottom: 12px; }
+    .left-3 { left: 12px; }
+    .right-3 { right: 12px; }
+    .left-1\/2 { left: 50%; }
+    .-top-7 { top: -28px; }
+    .-translate-x-1\/2 { transform: translateX(-50%); }
+    .z-10 { z-index: 10; }
+    .z-20 { z-index: 20; }
+    .w-full { width: 100%; }
+    .h-full { height: 100%; }
+    .w-\[380px\] { width: 380px; }
+    .w-9 { width: 36px; }
+    .h-9 { height: 36px; }
+    .h-0\.5 { height: 2px; }
+    .h-1\.5 { height: 6px; }
+    .h-\[220px\] { height: 220px; }
+    .min-h-\[100px\] { min-height: 100px; }
+    .aspect-square { aspect-ratio: 1 / 1; }
+    .overflow-hidden { overflow: hidden; }
+    .overflow-x-auto { overflow-x: auto; }
+    .overflow-y-auto { overflow-y: auto; }
+    .object-cover { object-fit: cover; }
+    .object-contain { object-fit: contain; }
+    .select-none { user-select: none; }
+    .pointer-events-none { pointer-events: none; }
+    .pointer-events-auto { pointer-events: auto; }
+    .cursor-pointer { cursor: pointer; }
+    .p-2\.5 { padding: 10px; }
+    .p-3 { padding: 12px; }
+    .p-4 { padding: 16px; }
+    .px-2 { padding-left: 8px; padding-right: 8px; }
+    .px-2\.5 { padding-left: 10px; padding-right: 10px; }
+    .px-3 { padding-left: 12px; padding-right: 12px; }
+    .px-5 { padding-left: 20px; padding-right: 20px; }
+    .py-0\.5 { padding-top: 2px; padding-bottom: 2px; }
+    .py-1 { padding-top: 4px; padding-bottom: 4px; }
+    .py-2 { padding-top: 8px; padding-bottom: 8px; }
+    .py-5 { padding-top: 20px; padding-bottom: 20px; }
+    .pt-5 { padding-top: 20px; }
+    .pb-4 { padding-bottom: 16px; }
+    .mt-1 { margin-top: 4px; }
+    .text-center { text-align: center; }
+    .text-lg { font-size: 18px; line-height: 28px; }
+    .text-sm { font-size: 14px; line-height: 20px; }
+    .text-xs { font-size: 12px; line-height: 16px; }
+    .text-\[11px\] { font-size: 11px; line-height: 16px; }
+    .font-semibold { font-weight: 600; }
+    .font-medium { font-weight: 500; }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .uppercase { text-transform: uppercase; }
+    .tracking-wider { letter-spacing: 0.05em; }
+    .whitespace-nowrap { white-space: nowrap; }
+    .whitespace-pre-wrap { white-space: pre-wrap; }
+    .break-all { word-break: break-all; }
+    .rounded-md { border-radius: 6px; }
+    .rounded-lg { border-radius: 8px; }
+    .rounded-xl { border-radius: 12px; }
+    .rounded-2xl { border-radius: 16px; }
+    .rounded-3xl { border-radius: 24px; }
+    .rounded-full { border-radius: 9999px; }
+    .border { border: 1px solid #27272a; }
+    .border-2 { border-width: 2px; border-style: solid; }
+    .border-b { border-bottom: 1px solid #27272a; }
+    .border-zinc-800 { border-color: #27272a; }
+    .border-zinc-700 { border-color: #3f3f46; }
+    .border-white { border-color: #ffffff; }
+    .border-white\/10 { border-color: rgba(255,255,255,0.1); }
+    .border-white\/15 { border-color: rgba(255,255,255,0.15); }
+    .border-emerald-500 { border-color: #10b981; }
+    .border-emerald-700\/60 { border-color: rgba(4,120,87,0.6); }
+    .border-sky-700\/60 { border-color: rgba(3,105,161,0.6); }
+    .bg-black { background: #000000; }
+    .bg-black\/50 { background: rgba(0,0,0,0.5); }
+    .bg-black\/75 { background: rgba(0,0,0,0.75); }
+    .bg-black\/85 { background: rgba(0,0,0,0.85); }
+    .bg-zinc-900 { background: #18181b; }
+    .bg-zinc-900\/80 { background: rgba(24,24,27,0.8); }
+    .bg-zinc-800 { background: #27272a; }
+    .bg-\[\#111315\] { background: #111315; }
+    .bg-\[\#e9edf2\] { background: #e9edf2; }
+    .bg-\[\#00B812\] { background: #00B812; }
+    .bg-\[\#00B812\]\/50 { background: rgba(0,184,18,0.5); }
+    .bg-emerald-600 { background: #059669; }
+    .bg-emerald-950\/80 { background: rgba(2,44,34,0.8); }
+    .bg-sky-950\/80 { background: rgba(8,47,73,0.8); }
+    .bg-white\/12 { background: rgba(255,255,255,0.12); }
+    .bg-white\/15 { background: rgba(255,255,255,0.15); }
+    .text-white { color: #ffffff; }
+    .text-zinc-200 { color: #e4e4e7; }
+    .text-zinc-300 { color: #d4d4d8; }
+    .text-zinc-400 { color: #a1a1aa; }
+    .text-emerald-300 { color: #6ee7b7; }
+    .text-emerald-400 { color: #34d399; }
+    .text-sky-300 { color: #7dd3fc; }
+    .shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+    .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.4); }
+    .opacity-0 { opacity: 0; }
+    .group:hover .group-hover\:opacity-100 { opacity: 1; }
+    .transition { transition: all 0.15s ease; }
+    .transition-opacity { transition: opacity 0.15s ease; }
+    .transition-transform { transition: transform 0.15s ease; }
+    .transition-all { transition: all 0.15s ease; }
+    button { border: none; background: transparent; color: inherit; }
+    .bg-white\/12:hover { background: rgba(255,255,255,0.2); }
+    .bg-zinc-900:hover { border-color: #52525b; }
+    @keyframes scanLine {
+      0% { transform: translateY(0%); opacity: 0; }
+      10% { opacity: 0.9; }
+      90% { opacity: 0.9; }
+      100% { transform: translateY(340px); opacity: 0; }
+    }
+    @keyframes popIn {
+      0% { transform: translate(-50%, -50%) scale(0.35); opacity: 0; }
+      70% { transform: translate(-50%, -50%) scale(1.12); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    }
+    @keyframes pulseRing {
+      0% { transform: scale(1); opacity: 0.55; }
+      70% { transform: scale(1.55); opacity: 0; }
+      100% { transform: scale(1.55); opacity: 0; }
+    }
+    .scan-line { animation: scanLine 2.1s linear infinite; background: linear-gradient(90deg, transparent, #00B812, transparent); box-shadow: 0 0 12px #00B812; }
+    .qr-dot { animation: popIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+    .qr-dot-ring { animation: pulseRing 2s ease-out infinite; }
+    .qr-dot:hover .qr-dot-core { transform: scale(1.14); }
+    .qr-dot:active .qr-dot-core { transform: scale(0.94); }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen p-6 antialiased">
+  <div class="max-w-5xl mx-auto space-y-5">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 pb-4">
+      <div>
+        <h1 class="text-lg font-semibold">OneKey 自研扫码 SDK · Web 闭环实测台</h1>
+        <p class="text-xs text-zinc-400 mt-1">
+          直接驱动 <code class="text-emerald-400">@onekeyfe/react-native-qr-scanner/web</code> 真实解码引擎（BarcodeDetector + 本地 zxing-wasm），无需摄像头即可全闭环验证 4 类场景
+        </p>
+      </div>
+      <span id="statusBadge" class="px-2.5 py-1 rounded-full text-xs font-medium border bg-zinc-800 text-zinc-200 border-zinc-700">
+        准备中…
+      </span>
+    </div>
+
+    <!-- Test Case Switcher -->
+    <div class="flex flex-wrap gap-2">
+      <button data-case="a">a. 单码图片</button>
+      <button data-case="b">b. 多码图片 (3 QR)</button>
+      <button data-case="c">c. 动态码视频 (BC-UR)</button>
+      <button data-case="d">d. 动态码 + 多码混合视频</button>
+      <button data-case="camera">e. 真实摄像头</button>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <!-- Scanner Card (mirrors OneKey ScanQrCodeModal) -->
+      <div class="lg:col-span-6 flex justify-center">
+        <div class="w-[380px] rounded-3xl bg-[#111315] border border-zinc-800 shadow-2xl overflow-hidden">
+          <div class="px-5 pt-5">
+            <div id="viewport" class="relative w-full aspect-square rounded-2xl overflow-hidden bg-black border border-white/10 select-none">
+              <video id="video" class="hidden absolute inset-0 w-full h-full object-cover" muted playsinline></video>
+              <canvas id="frozenCanvas" class="hidden absolute inset-0 w-full h-full object-cover"></canvas>
+              <img id="stillImage" class="hidden absolute inset-0 w-full h-full object-contain bg-[#e9edf2]" alt="QR fixture" />
+
+              <div id="scanLine" class="hidden pointer-events-none absolute inset-0 z-10">
+                <div class="scan-line w-full h-0.5 bg-gradient-to-r from-transparent via-[#00B812] to-transparent shadow-[0_0_12px_#00B812]"></div>
+              </div>
+
+              <!-- UR Progress Pill -->
+              <div id="urProgressWrap" class="hidden absolute bottom-3 left-3 right-3 z-20 p-2.5 rounded-xl bg-black/75 backdrop-blur-sm border border-white/10 space-y-1.5">
+                <div class="flex items-center justify-between text-xs">
+                  <span id="urProgressText" class="font-medium text-white">BC-UR 组装中 0%</span>
+                </div>
+                <div class="w-full h-1.5 rounded-full bg-white/15 overflow-hidden">
+                  <div id="urProgressBar" class="h-full bg-[#00B812] transition-all duration-100" style="width: 0%"></div>
+                </div>
+              </div>
+
+              <!-- Scheme A Multi-QR Selection Overlay -->
+              <div id="selectionOverlay" class="hidden absolute inset-0 z-20">
+                <div id="dimBackdrop" class="absolute inset-0 bg-black/50 cursor-pointer" title="点击空白处恢复扫码"></div>
+                <div id="anchorsLayer" class="absolute inset-0 pointer-events-none"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="px-5 py-5 text-center space-y-2.5">
+            <div id="footerTitle" class="text-sm font-medium text-white">准备中…</div>
+            <div id="footerHint" class="text-xs text-zinc-400"></div>
+            <button id="resumeBtn" class="hidden mt-1 px-5 py-2 rounded-full bg-white/12 hover:bg-white/20 text-white text-xs font-medium transition cursor-pointer">
+              重新扫描 (Esc)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Result & Live Event Log -->
+      <div class="lg:col-span-6 space-y-4">
+        <div class="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+          <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">解码结果</div>
+          <pre id="resultBox" class="text-xs font-mono text-emerald-300 bg-black/50 p-3 rounded-xl overflow-x-auto min-h-[100px] whitespace-pre-wrap break-all">等待识别…</pre>
+        </div>
+
+        <div class="p-4 rounded-2xl bg-zinc-900/80 border border-zinc-800 space-y-2">
+          <div class="text-xs font-semibold uppercase tracking-wider text-zinc-400">状态机 &amp; SDK 事件流</div>
+          <div id="eventLog" class="text-[11px] font-mono text-zinc-300 bg-black/50 p-3 rounded-xl h-[220px] overflow-y-auto space-y-1"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/dist/main.js"></script>
+</body>
+</html>

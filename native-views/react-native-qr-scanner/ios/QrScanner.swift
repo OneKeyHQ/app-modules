@@ -79,6 +79,15 @@ final class QrPreviewView: UIView {
     updateLegacyOrientationTimer()
   }
 
+  /// Holds the last rendered frame on screen without stopping the capture session.
+  func setFrozen(_ frozen: Bool) {
+    previewLayer.connection?.isEnabled = !frozen
+    if frozen {
+      focusIndicator.layer.removeAllAnimations()
+      focusIndicator.alpha = 0
+    }
+  }
+
   private func updateDeviceOrientationObserver() {
     if let deviceOrientationObserver {
       NotificationCenter.default.removeObserver(deviceOrientationObserver)
@@ -224,8 +233,11 @@ class HybridQrScanner: HybridQrScannerSpec {
   // Props
   var active: Bool = false
   var cameraId: String?
+  var multiSymbol: Bool?
+  var frozen: Bool?
   var onReady: ((Double, String) -> Void)?
   var onFrameText: ((String, Double) -> Void)?
+  var onFrameSymbols: (([QrDetectedSymbol], Double) -> Void)?
   var onError: ((String, String, Double) -> Void)?
 
   // Owned by `sessionQueue`.
@@ -234,12 +246,17 @@ class HybridQrScanner: HybridQrScannerSpec {
   private let session = AVCaptureSession()
   private struct CaptureProps {
     var active = false
+    var multiSymbol = false
+    var frozen = false
     var ready: ((Double, String) -> Void)?
     var text: ((String, Double) -> Void)?
+    var symbols: (([QrDetectedSymbol], Double) -> Void)?
     var error: ((String, String, Double) -> Void)?
   }
 
   private var captureProps = CaptureProps()
+  /// Mirrors `captureProps.frozen` for main-thread gesture checks.
+  private var isFrozenMain = false
   private var disposed = false
   private var permissionPending = false
   private var output: AVCaptureMetadataOutput?
@@ -281,8 +298,22 @@ class HybridQrScanner: HybridQrScannerSpec {
   }
 
   func afterUpdate() {
-    let props = CaptureProps(active: active, ready: onReady, text: onFrameText, error: onError)
+    let props = CaptureProps(
+      active: active,
+      multiSymbol: multiSymbol ?? false,
+      frozen: frozen ?? false,
+      ready: onReady,
+      text: onFrameText,
+      symbols: onFrameSymbols,
+      error: onError)
     let cameraId = cameraId
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.isFrozenMain = props.frozen
+      if props.active {
+        self.previewView.setFrozen(props.frozen)
+      }
+    }
     sessionQueue.async { [weak self] in
       guard let self, !self.disposed else { return }
       let previous = self.captureProps
@@ -372,6 +403,10 @@ class HybridQrScanner: HybridQrScannerSpec {
     _ = nextGeneration()
     pinchGeneration = nil
     output?.setMetadataObjectsDelegate(nil, queue: nil)
+    DispatchQueue.main.async { [weak self] in
+      self?.isFrozenMain = false
+      self?.previewView.setFrozen(false)
+    }
     guard running || session.isRunning else { return }
     session.stopRunning()
     running = false
@@ -498,10 +533,11 @@ class HybridQrScanner: HybridQrScannerSpec {
   // MARK: - Gestures (main thread in, sessionQueue for the device)
 
   fileprivate func handleTap(_ recognizer: UITapGestureRecognizer) {
+    guard !isFrozenMain else { return }
     let layerPoint = recognizer.location(in: previewView)
     let devicePoint = previewView.previewLayer.captureDevicePointConverted(fromLayerPoint: layerPoint)
     sessionQueue.async { [weak self] in
-      guard let self, self.running, let device = self.device,
+      guard let self, self.running, !self.captureProps.frozen, let device = self.device,
         QrCameraControl.supportsTapToFocus(device),
         (try? device.lockForConfiguration()) != nil
       else { return }
@@ -536,10 +572,13 @@ class HybridQrScanner: HybridQrScannerSpec {
   }
 
   fileprivate func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+    guard !isFrozenMain else { return }
     let state = recognizer.state
     let scale = recognizer.scale
     sessionQueue.async { [weak self] in
-      guard let self, self.running, let device = self.device else { return }
+      guard let self, self.running, !self.captureProps.frozen, let device = self.device else {
+        return
+      }
       let generation = self.currentGeneration()
       if state == .began {
         self.pinchGeneration = generation
@@ -634,12 +673,50 @@ class HybridQrScanner: HybridQrScannerSpec {
   }
 
   /// Called on `metadataQueue`.
-  fileprivate func handle(texts: [String], generation: Int) {
-    let reports = gate.filter(
-      texts, now: ProcessInfo.processInfo.systemUptime, generation: generation)
-    guard !reports.isEmpty else { return }
+  fileprivate func handle(codes: [AVMetadataMachineReadableCodeObject], generation: Int) {
+    guard !codes.isEmpty else { return }
     sessionQueue.async { [weak self] in
-      guard let self, self.running, self.currentGeneration() == generation else { return }
+      guard let self, self.running, !self.captureProps.frozen,
+        self.currentGeneration() == generation
+      else { return }
+
+      if self.captureProps.multiSymbol, let symbolsCallback = self.captureProps.symbols {
+        DispatchQueue.main.async { [weak self] in
+          guard let self, !self.isFrozenMain else { return }
+          let layer = self.previewView.previewLayer
+          let layerBounds = layer.bounds
+          guard layerBounds.width > 0, layerBounds.height > 0 else { return }
+          let symbols: [QrDetectedSymbol] = codes.compactMap { code in
+            guard let text = code.stringValue, !text.isEmpty else { return nil }
+            let transformed =
+              layer.transformedMetadataObject(for: code) as? AVMetadataMachineReadableCodeObject
+            let rect = transformed?.bounds ?? CGRect(
+              x: layerBounds.midX, y: layerBounds.midY, width: 0, height: 0)
+            let normX = Double(rect.minX / layerBounds.width)
+            let normY = Double(rect.minY / layerBounds.height)
+            let normW = Double(rect.width / layerBounds.width)
+            let normH = Double(rect.height / layerBounds.height)
+            return QrDetectedSymbol(
+              text: text,
+              centerX: Double(rect.midX / layerBounds.width),
+              centerY: Double(rect.midY / layerBounds.height),
+              bounds: QrSymbolBounds(x: normX, y: normY, width: normW, height: normH))
+          }
+          guard !symbols.isEmpty else { return }
+          self.sessionQueue.async { [weak self] in
+            guard let self, self.running, !self.captureProps.frozen,
+              self.currentGeneration() == generation
+            else { return }
+            symbolsCallback(symbols, Double(generation))
+          }
+        }
+        return
+      }
+
+      let texts = codes.compactMap { $0.stringValue }
+      guard !texts.isEmpty else { return }
+      let reports = self.gate.filter(
+        texts, now: ProcessInfo.processInfo.systemUptime, generation: generation)
       for report in reports {
         self.captureProps.text?(report.text, Double(report.generation))
       }
@@ -678,11 +755,9 @@ private final class MetadataDelegate: NSObject, AVCaptureMetadataOutputObjectsDe
     _ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject],
     from connection: AVCaptureConnection
   ) {
-    let texts = metadataObjects.compactMap {
-      ($0 as? AVMetadataMachineReadableCodeObject)?.stringValue
-    }
-    if !texts.isEmpty {
-      owner?.handle(texts: texts, generation: generation)
+    let codes = metadataObjects.compactMap { $0 as? AVMetadataMachineReadableCodeObject }
+    if !codes.isEmpty {
+      owner?.handle(codes: codes, generation: generation)
     }
   }
 }

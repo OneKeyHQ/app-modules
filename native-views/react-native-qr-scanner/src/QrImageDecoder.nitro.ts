@@ -1,4 +1,5 @@
 import type { HybridObject } from 'react-native-nitro-modules';
+import type { QrDetectedSymbol } from './symbols';
 
 /** Which engine produced a hit. */
 export type QrDecodeEngine = 'vision' | 'mlkit' | 'zxing';
@@ -9,6 +10,15 @@ export type QrDecodePass = 'original' | 'padded' | 'grayscale' | 'inverted';
 export interface QrImageDecodeResult {
   /** Raw QR text; absent when no pass found a QR symbol. */
   text?: string;
+  engine?: QrDecodeEngine;
+  pass?: QrDecodePass;
+}
+
+export interface QrImageSymbolsDecodeResult {
+  /** EXIF-oriented decoded image dimensions. */
+  width: number;
+  height: number;
+  symbols: QrDetectedSymbol[];
   engine?: QrDecodeEngine;
   pass?: QrDecodePass;
 }
@@ -24,4 +34,12 @@ export interface QrImageDecoder
    * @param maxPixels Images above this pixel count are downscaled first.
    */
   decodeImage(uri: string, maxPixels: number): Promise<QrImageDecodeResult>;
+  /**
+   * Decodes all QR symbols in a local image with normalized top-left
+   * coordinates in EXIF-oriented image space.
+   */
+  decodeImageSymbols(
+    uri: string,
+    maxPixels: number
+  ): Promise<QrImageSymbolsDecodeResult>;
 }
