@@ -203,6 +203,11 @@ public func oqs_capture_set_paused(_ handle: UnsafeMutableRawPointer, _ paused: 
   Unmanaged<QrCaptureController>.fromOpaque(handle).takeUnretainedValue().setPaused(paused)
 }
 
+@_cdecl("oqs_capture_focus")
+public func oqs_capture_focus(_ handle: UnsafeMutableRawPointer, _ x: Double, _ y: Double) -> Bool {
+  Unmanaged<QrCaptureController>.fromOpaque(handle).takeUnretainedValue().focus(x: x, y: y)
+}
+
 /// Stops capture; no callback runs after this returns. Releases the handle.
 @_cdecl("oqs_capture_destroy")
 public func oqs_capture_destroy(_ handle: UnsafeMutableRawPointer) {

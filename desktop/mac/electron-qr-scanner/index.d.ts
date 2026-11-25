@@ -95,6 +95,8 @@ export interface QrCapture {
   setMultiSymbol(enabled: boolean): void;
   /** Pauses or resumes Vision analysis without stopping capture or releasing the camera. */
   setPaused(paused: boolean): void;
+  /** Triggers autofocus at normalized [0, 1] coordinates when the camera supports it. */
+  focus?(x?: number, y?: number): boolean;
   /** Preview frames currently held by the consumer (at most 3). */
   lentFrames(): number;
   /** Idempotent; no callback runs after it returns. */

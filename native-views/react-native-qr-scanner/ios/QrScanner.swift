@@ -10,15 +10,20 @@ final class QrPreviewView: UIView {
     layer as! AVCaptureVideoPreviewLayer
   }
 
+  static let focusBoxSize: CGFloat = 73
+
   private var sceneGeometryObservation: NSKeyValueObservation?
+  private var deviceOrientationObserver: NSObjectProtocol?
+  private var generatingDeviceOrientationNotifications = false
   private var legacyOrientationTimer: Timer?
+  private var focusFadeWorkItem: DispatchWorkItem?
   private var captureRunning = false
 
-  private let focusIndicator: UIView = {
-    let view = UIView(frame: CGRect(x: 0, y: 0, width: 72, height: 72))
-    view.layer.borderColor = UIColor.white.cgColor
-    view.layer.borderWidth = 1.5
-    view.layer.cornerRadius = 8
+  let focusIndicator: UIView = {
+    let view = UIView(frame: CGRect(x: 0, y: 0, width: focusBoxSize, height: focusBoxSize))
+    view.backgroundColor = .clear
+    view.layer.borderColor = UIColor.yellow.cgColor
+    view.layer.borderWidth = 1
     view.isUserInteractionEnabled = false
     view.alpha = 0
     return view
@@ -29,6 +34,24 @@ final class QrPreviewView: UIView {
     backgroundColor = .black
     previewLayer.videoGravity = .resizeAspectFill
     addSubview(focusIndicator)
+  }
+
+  deinit {
+    focusFadeWorkItem?.cancel()
+    legacyOrientationTimer?.invalidate()
+    if let deviceOrientationObserver {
+      NotificationCenter.default.removeObserver(deviceOrientationObserver)
+    }
+    if generatingDeviceOrientationNotifications {
+      let endNotifications = {
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
+      }
+      if Thread.isMainThread {
+        MainActor.assumeIsolated(endNotifications)
+      } else {
+        DispatchQueue.main.async(execute: endNotifications)
+      }
+    }
   }
 
   override func didMoveToWindow() {
@@ -42,12 +65,13 @@ final class QrPreviewView: UIView {
     } else {
       updateLegacyOrientationTimer()
     }
+    updateDeviceOrientationObserver()
     updateCaptureOrientation()
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    if #unavailable(iOS 16.0) { updateCaptureOrientation() }
+    updateCaptureOrientation()
   }
 
   func setCaptureRunning(_ running: Bool) {
@@ -61,6 +85,36 @@ final class QrPreviewView: UIView {
     if frozen {
       focusIndicator.layer.removeAllAnimations()
       focusIndicator.alpha = 0
+    }
+  }
+
+  private func updateDeviceOrientationObserver() {
+    if let deviceOrientationObserver {
+      NotificationCenter.default.removeObserver(deviceOrientationObserver)
+      self.deviceOrientationObserver = nil
+    }
+    if generatingDeviceOrientationNotifications {
+      UIDevice.current.endGeneratingDeviceOrientationNotifications()
+      generatingDeviceOrientationNotifications = false
+    }
+    guard window != nil else { return }
+    UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+    generatingDeviceOrientationNotifications = true
+    deviceOrientationObserver = NotificationCenter.default.addObserver(
+      forName: UIDevice.orientationDidChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated {
+        self?.updateCaptureOrientation()
+        self?.scheduleFollowUpOrientationUpdates()
+      }
+    }
+  }
+
+  private func scheduleFollowUpOrientationUpdates() {
+    for delay in [0.1, 0.3] {
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        self?.updateCaptureOrientation()
+      }
     }
   }
 
@@ -144,18 +198,27 @@ final class QrPreviewView: UIView {
     }
   }
 
-  /// Shows the tap-to-focus box at `point` and fades it out.
+  /// Shows the legacy yellow tap-to-focus square at `point` and fades it out.
   func showFocusIndicator(at point: CGPoint) {
+    focusFadeWorkItem?.cancel()
     focusIndicator.layer.removeAllAnimations()
+    focusIndicator.transform = .identity
+    focusIndicator.bounds = CGRect(x: 0, y: 0, width: Self.focusBoxSize, height: Self.focusBoxSize)
     focusIndicator.center = point
-    focusIndicator.alpha = 1
-    focusIndicator.transform = CGAffineTransform(scaleX: 1.25, y: 1.25)
-    UIView.animate(withDuration: 0.2) {
+    focusIndicator.alpha = 0
+    focusIndicator.transform = CGAffineTransform(scaleX: 2.0, y: 2.0)
+    UIView.animate(withDuration: 0.2, delay: 0, options: [.curveEaseOut]) {
       self.focusIndicator.transform = .identity
+      self.focusIndicator.alpha = 1
     }
-    UIView.animate(withDuration: 0.3, delay: 0.8, options: [.beginFromCurrentState]) {
-      self.focusIndicator.alpha = 0
+    let fadeWork = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      UIView.animate(withDuration: 0.2) {
+        self.focusIndicator.alpha = 0
+      }
     }
+    focusFadeWorkItem = fadeWork
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: fadeWork)
   }
 
   required init?(coder: NSCoder) {
@@ -328,6 +391,7 @@ class HybridQrScanner: HybridQrScannerSpec {
     running = session.isRunning
     setCapturing(running)
     if running, let device {
+      updatePreviewOrientation()
       captureProps.ready?(Double(currentGeneration), device.uniqueID)
     } else {
       emitError("camera-busy", "The camera could not start", currentGeneration)
@@ -452,13 +516,12 @@ class HybridQrScanner: HybridQrScannerSpec {
   /// Continuous focus and exposure over the whole frame. Caller holds the lock.
   private static func applyContinuousFocus(_ device: AVCaptureDevice) {
     let center = CGPoint(x: 0.5, y: 0.5)
+    if device.isAutoFocusRangeRestrictionSupported {
+      device.autoFocusRangeRestriction = .none
+    }
     if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = center }
     if device.isFocusModeSupported(.continuousAutoFocus) {
       device.focusMode = .continuousAutoFocus
-    }
-    if device.isAutoFocusRangeRestrictionSupported {
-      // Codes are held close to the lens.
-      device.autoFocusRangeRestriction = .near
     }
     if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = center }
     if device.isExposureModeSupported(.continuousAutoExposure) {
@@ -473,24 +536,38 @@ class HybridQrScanner: HybridQrScannerSpec {
     guard !isFrozenMain else { return }
     let layerPoint = recognizer.location(in: previewView)
     let devicePoint = previewView.previewLayer.captureDevicePointConverted(fromLayerPoint: layerPoint)
-    previewView.showFocusIndicator(at: layerPoint)
     sessionQueue.async { [weak self] in
       guard let self, self.running, !self.captureProps.frozen, let device = self.device,
+        QrCameraControl.supportsTapToFocus(device),
         (try? device.lockForConfiguration()) != nil
       else { return }
       defer { device.unlockForConfiguration() }
-      if device.isFocusPointOfInterestSupported, device.isFocusModeSupported(.autoFocus) {
-        device.focusPointOfInterest = devicePoint
-        device.focusMode = .autoFocus
+      if device.isAutoFocusRangeRestrictionSupported {
+        device.autoFocusRangeRestriction = .none
       }
-      if device.isExposurePointOfInterestSupported,
-        device.isExposureModeSupported(.continuousAutoExposure)
-      {
-        device.exposurePointOfInterest = devicePoint
-        device.exposureMode = .continuousAutoExposure
+      if device.isFocusPointOfInterestSupported {
+        if device.isFocusModeSupported(.autoFocus) {
+          device.focusPointOfInterest = devicePoint
+          device.focusMode = .autoFocus
+        } else if device.isFocusModeSupported(.continuousAutoFocus) {
+          device.focusPointOfInterest = devicePoint
+          device.focusMode = .continuousAutoFocus
+        }
+      }
+      if device.isExposurePointOfInterestSupported {
+        if device.isExposureModeSupported(.autoExpose) {
+          device.exposurePointOfInterest = devicePoint
+          device.exposureMode = .autoExpose
+        } else if device.isExposureModeSupported(.continuousAutoExposure) {
+          device.exposurePointOfInterest = devicePoint
+          device.exposureMode = .continuousAutoExposure
+        }
       }
       // Moving the camera afterwards hands focus back to continuous mode.
       device.isSubjectAreaChangeMonitoringEnabled = true
+      DispatchQueue.main.async { [weak self] in
+        self?.previewView.showFocusIndicator(at: layerPoint)
+      }
     }
   }
 

@@ -52,7 +52,7 @@ createCapture(options?: {
   onError?(error: Error & { code: QrScannerErrorCode }, generation: number): void;
   onEnded?(generation: number): void;
   onFrame?(frame: { ioSurface: Buffer; width: number; height: number; generation: number; release(): void }): void;
-}): { start(): void; stop(): void; lentFrames(): number; dispose(): void };
+}): { start(): void; stop(): void; focus(x?: number, y?: number): boolean; lentFrames(): number; dispose(): void };
 listCameras(): { id: string; position: "front" | "external"; label: string }[];
 ```
 
@@ -94,6 +94,15 @@ analysis queue, so preview rate is bounded by detection time per frame.
   default if it is disconnected. Continuity Cameras are external regardless
   of the reported device type.
 - Camera readiness reports the bound device ID, including after default fallback. File sources have no device ID.
+- `focus(x?, y?)` moves focus and exposure on the active camera to normalized
+  `[0, 1]` capture coordinates (defaulting non-finite or omitted coordinates to
+  `0.5`) when the running `AVCaptureDevice` supports `.autoFocus` or
+  `.continuousAutoFocus` and `lockForConfiguration()` succeeds, returning
+  `true` (or `false` when stopped, on file sources, or on fixed-focus cameras).
+  Point-of-interest assignment is gated on device capability so whole-camera
+  autofocus webcams still focus. After 5 s, a running camera that supports
+  continuous focus or exposure restores centered `.continuousAutoFocus` /
+  `.continuousAutoExposure`.
 - Camera: the chosen (else default) video device at 720p, BGRA, late frames discarded so
   at most one frame is in analysis. Missing hardware is reported as
   `no-camera` before any permission request. Error codes: `no-camera`,

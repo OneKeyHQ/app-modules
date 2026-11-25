@@ -1,11 +1,13 @@
 package com.margelo.nitro.qrscanner
 
 import android.Manifest
-import android.content.pm.PackageManager
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
+import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -13,6 +15,7 @@ import android.util.Size
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.Surface
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -50,6 +53,40 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
+ * React Native drives layout from Yoga and suppresses Android's native
+ * `requestLayout()` pass for children added or updated after initial layout.
+ * Re-measuring on `requestLayout()` keeps the dynamically replaced CameraX
+ * `PreviewView` and its internal `TextureView` sized to this container.
+ */
+internal class QrScannerContainer(context: Context) : FrameLayout(context) {
+  private var layoutPosted = false
+  private val reLayout = Runnable {
+    layoutPosted = false
+    if (width > 0 && height > 0) {
+      measure(
+        MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
+      )
+      layout(left, top, right, bottom)
+    }
+  }
+
+  override fun requestLayout() {
+    super.requestLayout()
+    if (!layoutPosted && width > 0 && height > 0) {
+      layoutPosted = true
+      post(reLayout)
+    }
+  }
+
+  override fun onDetachedFromWindow() {
+    removeCallbacks(reLayout)
+    layoutPosted = false
+    super.onDetachedFromWindow()
+  }
+}
+
+/**
  * CameraX preview plus ML Kit QR detection. Native code reports raw text only;
  * mode handling and BC-UR assembly run in JS through `./ur`.
  */
@@ -57,7 +94,7 @@ import java.util.concurrent.TimeUnit
 class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), LifecycleOwner {
   internal companion object {
     const val DECODE_ERROR_INTERVAL_MS = 1_000L
-    const val FOCUS_INDICATOR_DP = 72
+    const val FOCUS_INDICATOR_DP = 73
     // A tapped focus point is held this long, then CameraX returns to
     // continuous focus over the whole frame.
     const val FOCUS_HOLD_SECONDS = 5L
@@ -120,13 +157,13 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     val size = (FOCUS_INDICATOR_DP * density).toInt()
     layoutParams = FrameLayout.LayoutParams(size, size)
     background = GradientDrawable().apply {
-      setStroke((1.5f * density).toInt().coerceAtLeast(1), Color.WHITE)
-      cornerRadius = 8 * density
+      setStroke((1f * density).toInt().coerceAtLeast(1), Color.YELLOW)
     }
     alpha = 0f
     isClickable = false
   }
-  private val container = FrameLayout(context).apply {
+  private val container = QrScannerContainer(context).apply {
+    setBackgroundColor(Color.BLACK)
     addView(previewView, FrameLayout.LayoutParams(
       FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
     ))
@@ -191,6 +228,27 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   private var running = false
   private var hostResumed = true
   private var dropped = false
+  private val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+  private var displayListenerRegistered = false
+  private var lastTargetRotation: Int? = null
+  private val displayListener = object : DisplayManager.DisplayListener {
+    override fun onDisplayAdded(displayId: Int) = Unit
+    override fun onDisplayRemoved(displayId: Int) = Unit
+    override fun onDisplayChanged(displayId: Int) {
+      val display = container.display ?: return
+      if (display.displayId == displayId) {
+        updateTargetRotation(display.rotation)
+      }
+    }
+  }
+  private val hideFocusRunnable = Runnable {
+    focusIndicator.animate()
+      .setStartDelay(0)
+      .alpha(0f)
+      .setDuration(200)
+      .withEndAction(null)
+      .start()
+  }
   private val hostObserver = LifecycleEventObserver { _, event ->
     when (event) {
       Lifecycle.Event.ON_RESUME -> { hostResumed = true; start() }
@@ -207,7 +265,17 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       hostResumed = hostLifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) ?: true
       hostLifecycle?.addObserver(hostObserver)
     }
+    container.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+      container.display?.rotation?.let(::updateTargetRotation)
+    }
     installGestures()
+  }
+
+  private fun updateTargetRotation(rotation: Int) {
+    if (lastTargetRotation == rotation) return
+    lastTargetRotation = rotation
+    previewUseCase?.targetRotation = rotation
+    analysisUseCase?.targetRotation = rotation
   }
 
   @SuppressLint("ClickableViewAccessibility")
@@ -264,25 +332,34 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
   private fun focusAt(x: Float, y: Float) {
     val camera = camera ?: return
-    showFocusIndicator(x, y)
     val point = previewView.meteringPointFactory.createPoint(x, y)
     val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
       .setAutoCancelDuration(FOCUS_HOLD_SECONDS, TimeUnit.SECONDS)
       .build()
+    if (!camera.cameraInfo.isFocusMeteringSupported(action)) return
+    showFocusIndicator(x, y)
     // Rejected when the camera cannot meter that point; scanning goes on.
     camera.cameraControl.startFocusAndMetering(action)
   }
 
   private fun showFocusIndicator(x: Float, y: Float) {
+    main.removeCallbacks(hideFocusRunnable)
     focusIndicator.animate().cancel()
     focusIndicator.x = x - focusIndicator.width / 2f
     focusIndicator.y = y - focusIndicator.height / 2f
-    focusIndicator.alpha = 1f
-    focusIndicator.scaleX = 1.25f
-    focusIndicator.scaleY = 1.25f
-    focusIndicator.animate().scaleX(1f).scaleY(1f).setDuration(200).withEndAction {
-      focusIndicator.animate().alpha(0f).setStartDelay(800).setDuration(300)
-    }
+    focusIndicator.alpha = 0f
+    focusIndicator.scaleX = 2f
+    focusIndicator.scaleY = 2f
+    focusIndicator.animate()
+      .setStartDelay(0)
+      .alpha(1f)
+      .scaleX(1f)
+      .scaleY(1f)
+      .setDuration(200)
+      .withEndAction {
+        main.postDelayed(hideFocusRunnable, 800)
+      }
+      .start()
   }
 
   override fun afterUpdate() {
@@ -525,9 +602,15 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     targetPreview: PreviewView,
     generation: Int,
   ) {
-    val preview = Preview.Builder().build().also { it.surfaceProvider = targetPreview.surfaceProvider }
+    val initialRotation = container.display?.rotation ?: Surface.ROTATION_0
+    lastTargetRotation = initialRotation
+    val preview = Preview.Builder()
+      .setTargetRotation(initialRotation)
+      .build()
+      .also { it.surfaceProvider = targetPreview.surfaceProvider }
     val analysis = ImageAnalysis.Builder()
       .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+      .setTargetRotation(initialRotation)
       .setResolutionSelector(
         ResolutionSelector.Builder()
           .setResolutionStrategy(
@@ -588,6 +671,10 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     cameraObserver = cameraStateObserver
     targetPreview.previewStreamState.observeForever(previewStateObserver)
     bound.cameraInfo.cameraState.observeForever(cameraStateObserver)
+    if (!displayListenerRegistered) {
+      displayManager?.registerDisplayListener(displayListener, main)
+      displayListenerRegistered = true
+    }
     syncLifecycle()
   }
 
@@ -609,6 +696,14 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     // (camera switch or host pause/resume) while `frozen` remains true;
     // `afterUpdate` and `dispose` clear the freeze explicitly.
     pinchGeneration = null
+    main.removeCallbacks(hideFocusRunnable)
+    focusIndicator.animate().cancel()
+    focusIndicator.alpha = 0f
+    if (displayListenerRegistered) {
+      displayManager?.unregisterDisplayListener(displayListener)
+      displayListenerRegistered = false
+    }
+    lastTargetRotation = null
     streamObserver?.let { previewView.previewStreamState.removeObserver(it) }
     cameraObserver?.let { camera?.cameraInfo?.cameraState?.removeObserver(it) }
     streamObserver = null

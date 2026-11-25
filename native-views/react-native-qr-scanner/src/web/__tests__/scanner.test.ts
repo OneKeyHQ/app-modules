@@ -776,4 +776,211 @@ describe('createWebQrScanner camera start', () => {
     expect(opened).toEqual(['unplugged', undefined]);
     scanner.dispose();
   });
+
+  it('triggers tap-to-focus when the track supports autofocus and restores continuous focus', async () => {
+    jest.useFakeTimers();
+    const applyConstraints = jest.fn(async () => {});
+    const track = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['continuous', 'single-shot'] }),
+      applyConstraints,
+    };
+    const stream = { getTracks: () => [track], getVideoTracks: () => [track] };
+    setGetUserMedia(async () => stream);
+    const scanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto' });
+    await scanner.start();
+
+    await expect(scanner.focus({ x: 0.25, y: 0.75 })).resolves.toBe(true);
+    expect(applyConstraints).toHaveBeenCalledWith({
+      advanced: [{ focusMode: 'single-shot', pointsOfInterest: [{ x: 0.25, y: 0.75 }] }],
+    });
+
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(applyConstraints).toHaveBeenLastCalledWith({
+      advanced: [{ focusMode: 'continuous' }],
+    });
+    scanner.dispose();
+  });
+
+  it('falls back to mode-only constraint when pointsOfInterest is rejected and returns false for fixed-focus tracks', async () => {
+    const applyConstraints = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('pointsOfInterest unsupported'))
+      .mockResolvedValueOnce(undefined);
+    const track = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['continuous'] }),
+      applyConstraints,
+    };
+    setGetUserMedia(async () => ({ getTracks: () => [track], getVideoTracks: () => [track] }));
+    const scanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto' });
+    await scanner.start();
+
+    await expect(scanner.focus({ x: 0.5, y: 0.5 })).resolves.toBe(true);
+    expect(applyConstraints).toHaveBeenNthCalledWith(2, {
+      advanced: [{ focusMode: 'continuous' }],
+    });
+    scanner.dispose();
+
+    const fixedTrack = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['manual'] }),
+      applyConstraints: jest.fn(),
+    };
+    setGetUserMedia(async () => ({
+      getTracks: () => [fixedTrack],
+      getVideoTracks: () => [fixedTrack],
+    }));
+    const fixedScanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto' });
+    await fixedScanner.start();
+    await expect(fixedScanner.focus({ x: 0.5, y: 0.5 })).resolves.toBe(false);
+    expect(fixedTrack.applyConstraints).not.toHaveBeenCalled();
+    fixedScanner.dispose();
+
+    const noFocusCapsTrack = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({}),
+      applyConstraints: jest.fn(),
+    };
+    setGetUserMedia(async () => ({
+      getTracks: () => [noFocusCapsTrack],
+      getVideoTracks: () => [noFocusCapsTrack],
+    }));
+    const noFocusCapsScanner = createWebQrScanner({
+      video: fakeVideo(async () => {}),
+      mode: 'auto',
+    });
+    await noFocusCapsScanner.start();
+    await expect(noFocusCapsScanner.focus({ x: 0.5, y: 0.5 })).resolves.toBe(false);
+    expect(noFocusCapsTrack.applyConstraints).not.toHaveBeenCalled();
+    noFocusCapsScanner.dispose();
+  });
+
+  it('checks effective focusMode settings and preserves unrelated track constraints', async () => {
+    jest.useFakeTimers();
+    let currentSettings = { focusMode: 'continuous' };
+    let currentConstraints: MediaTrackConstraints = {
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      advanced: [{ zoom: 2 } as MediaTrackConstraintSet],
+    };
+    const applyConstraints = jest.fn(async (next: MediaTrackConstraints) => {
+      currentConstraints = next;
+      const lastAdvanced = next.advanced?.[next.advanced.length - 1] as
+        | { focusMode?: string; pointsOfInterest?: unknown }
+        | undefined;
+      // Simulate a browser that silently ignores advanced sets containing pointsOfInterest.
+      if (lastAdvanced && !lastAdvanced.pointsOfInterest && lastAdvanced.focusMode) {
+        currentSettings = { focusMode: lastAdvanced.focusMode };
+      }
+    });
+    const track = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['continuous', 'single-shot'] }),
+      getSettings: () => currentSettings,
+      getConstraints: () => currentConstraints,
+      applyConstraints,
+    };
+    setGetUserMedia(async () => ({ getTracks: () => [track], getVideoTracks: () => [track] }));
+    const scanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto' });
+    await scanner.start();
+
+    await expect(scanner.focus({ x: 0.3, y: 0.4 })).resolves.toBe(true);
+    expect(applyConstraints).toHaveBeenCalledTimes(2);
+    expect(applyConstraints).toHaveBeenNthCalledWith(1, {
+      advanced: [
+        { zoom: 2 },
+        { focusMode: 'single-shot', pointsOfInterest: [{ x: 0.3, y: 0.4 }] },
+      ],
+    });
+    expect(applyConstraints).toHaveBeenNthCalledWith(2, {
+      advanced: [{ zoom: 2 }, { focusMode: 'single-shot' }],
+    });
+
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(applyConstraints).toHaveBeenLastCalledWith({
+      advanced: [{ zoom: 2 }, { focusMode: 'continuous' }],
+    });
+    scanner.dispose();
+  });
+
+  it('keeps the restore timer from the last successful tap when a subsequent tap fails', async () => {
+    jest.useFakeTimers();
+    const applyConstraints = jest
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('transient driver error'))
+      .mockResolvedValueOnce(undefined);
+    const track = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['continuous', 'single-shot'] }),
+      applyConstraints,
+    };
+    setGetUserMedia(async () => ({ getTracks: () => [track], getVideoTracks: () => [track] }));
+    const scanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto' });
+    await scanner.start();
+
+    await expect(scanner.focus()).resolves.toBe(true);
+    await expect(scanner.focus()).resolves.toBe(false);
+
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(applyConstraints).toHaveBeenCalledTimes(3);
+    expect(applyConstraints).toHaveBeenLastCalledWith({
+      advanced: [{ focusMode: 'continuous' }],
+    });
+    scanner.dispose();
+  });
+
+  it('does not focus caller-owned element sources or streams superseded while focus is in flight', async () => {
+    const elementTrack = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['continuous', 'single-shot'] }),
+      applyConstraints: jest.fn(async () => {}),
+    };
+    const elementVideo = fakeVideo(async () => {});
+    elementVideo.srcObject = {
+      getTracks: () => [elementTrack],
+      getVideoTracks: () => [elementTrack],
+    } as unknown as MediaStream;
+    const elementScanner = createWebQrScanner({
+      video: elementVideo,
+      source: { kind: 'element' },
+      mode: 'auto',
+    });
+    await elementScanner.start();
+    await expect(elementScanner.focus({ x: 0.5, y: 0.5 })).resolves.toBe(false);
+    expect(elementTrack.applyConstraints).not.toHaveBeenCalled();
+    elementScanner.dispose();
+
+    let resolveFocus: (() => void) | undefined;
+    const cameraTrack = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['continuous', 'single-shot'] }),
+      applyConstraints: jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFocus = resolve;
+          })
+      ),
+    };
+    setGetUserMedia(async () => ({
+      getTracks: () => [cameraTrack],
+      getVideoTracks: () => [cameraTrack],
+    }));
+    const cameraScanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto' });
+    await cameraScanner.start();
+    const pendingFocus = cameraScanner.focus();
+    cameraScanner.stop();
+    resolveFocus?.();
+    await expect(pendingFocus).resolves.toBe(false);
+    cameraScanner.dispose();
+  });
 });

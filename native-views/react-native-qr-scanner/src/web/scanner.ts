@@ -72,6 +72,13 @@ export interface WebQrScanner {
    * underlying MediaStream alive (zero black flash on resume).
    */
   setFrozen(frozen: boolean): void;
+  /**
+   * Triggers tap-to-focus on the active camera track when the hardware
+   * reports autofocus capability (`single-shot` or `continuous`). `point`
+   * uses normalized [0, 1] preview coordinates. Resolves true when focus was
+   * triggered, or false when the camera is fixed-focus / inactive.
+   */
+  focus(point?: { x: number; y: number }): Promise<boolean>;
   /** Stops analysis (and the camera, for a camera source); keeps UR parts. */
   stop(): void;
   /** Starts a new scan session: drops collected UR parts. */
@@ -84,6 +91,99 @@ const ZXING_EVERY_N_FRAMES = 4;
 
 /** Same rule as the native frame gates (`QrFrameTextGate`). */
 const REPEAT_INTERVAL_MS = 1000;
+
+/** Hold single-shot tap focus before returning to continuous autofocus. */
+const FOCUS_HOLD_MS = 5000;
+
+type FocusTrackCapabilities = MediaTrackCapabilities & {
+  focusMode?: string[];
+};
+
+type FocusTrackSettings = MediaTrackSettings & {
+  focusMode?: string;
+  pointsOfInterest?: { x: number; y: number }[];
+};
+
+type FocusConstraintSet = MediaTrackConstraintSet & {
+  focusMode?: string;
+  pointsOfInterest?: { x: number; y: number }[];
+};
+
+const NON_IMAGE_CAPTURE_CONSTRAINT_KEYS = new Set([
+  'width',
+  'height',
+  'aspectRatio',
+  'frameRate',
+  'facingMode',
+  'resizeMode',
+  'deviceId',
+  'groupId',
+]);
+
+function stripFocusAndBasicVideoKeys(source: Record<string, unknown>): MediaTrackConstraintSet {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (
+      key === 'advanced' ||
+      key === 'focusMode' ||
+      key === 'pointsOfInterest' ||
+      NON_IMAGE_CAPTURE_CONSTRAINT_KEYS.has(key) ||
+      value === undefined
+    ) {
+      continue;
+    }
+    result[key] = value;
+  }
+  return result as MediaTrackConstraintSet;
+}
+
+function buildFocusConstraints(
+  track: MediaStreamTrack,
+  focusConstraint: FocusConstraintSet
+): MediaTrackConstraints {
+  const current = (track.getConstraints?.() ?? {}) as Record<string, unknown>;
+  const topLevel = stripFocusAndBasicVideoKeys(current);
+  const preservedAdvanced: MediaTrackConstraintSet[] = [];
+  if (Array.isArray(current.advanced)) {
+    for (const entry of current.advanced) {
+      if (!entry || typeof entry !== 'object') continue;
+      const cleaned = stripFocusAndBasicVideoKeys(entry as Record<string, unknown>);
+      if (Object.keys(cleaned).length > 0) {
+        preservedAdvanced.push(cleaned);
+      }
+    }
+  }
+  return {
+    ...topLevel,
+    advanced: [...preservedAdvanced, focusConstraint],
+  };
+}
+
+function didApplyFocusConstraint(
+  track: MediaStreamTrack,
+  expectedMode: string,
+  expectedPoint?: { x: number; y: number }
+): boolean {
+  if (typeof track.getSettings !== 'function') return true;
+  const settings = track.getSettings() as FocusTrackSettings | undefined;
+  if (!settings) return true;
+  if ('focusMode' in settings && settings.focusMode !== expectedMode) {
+    return false;
+  }
+  if (expectedPoint && 'pointsOfInterest' in settings) {
+    const points = settings.pointsOfInterest;
+    if (!Array.isArray(points) || points.length === 0) return false;
+    const first = points[0];
+    if (
+      !first ||
+      Math.abs(first.x - expectedPoint.x) > 1e-3 ||
+      Math.abs(first.y - expectedPoint.y) > 1e-3
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 type VideoWithFrameCallback = HTMLVideoElement & {
   requestVideoFrameCallback?: (callback: () => void) => number;
@@ -123,6 +223,9 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let interruptedCamera: RecoveryTarget | undefined;
   let frameHandle: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let focusResetTimer: ReturnType<typeof setTimeout> | undefined;
+  let nextFocusRequestId = 0;
+  let latestAppliedFocusRequestId = 0;
   let analysing = false;
   let lastTime = -1;
   let frameIndex = 0;
@@ -295,7 +398,13 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     timer = undefined;
   }
 
+  function clearFocusResetTimer() {
+    if (focusResetTimer !== undefined) clearTimeout(focusResetTimer);
+    focusResetTimer = undefined;
+  }
+
   function releaseCamera() {
+    clearFocusResetTimer();
     stream?.getTracks().forEach((track) => track.stop());
     if (stream && video.srcObject === stream) video.srcObject = null;
     stream = undefined;
@@ -429,6 +538,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       }
 
       // Handoff has no await so a stale request cannot release the new stream.
+      clearFocusResetTimer();
       const superseded = stream;
       video.srcObject = candidate;
       stream = candidate;
@@ -513,7 +623,15 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     async switchCamera(nextDeviceId?: string) {
       deviceId = nextDeviceId;
       if (disposed || source.kind !== 'camera' || !active) return;
-      if (nextDeviceId === streamDeviceId && hasLiveCamera()) {
+      const activeTrackId = stream
+        ?.getVideoTracks?.()[0]
+        ?.getSettings?.().deviceId;
+      if (
+        (nextDeviceId === streamDeviceId ||
+          (nextDeviceId !== undefined && nextDeviceId === activeTrackId)) &&
+        hasLiveCamera()
+      ) {
+        streamDeviceId = nextDeviceId;
         invalidateAcquisition();
         return;
       }
@@ -539,6 +657,84 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
         // generation will not schedule the new generation when it settles.
         schedule(generation);
       }
+    },
+    async focus(point?: { x: number; y: number }): Promise<boolean> {
+      if (disposed || !active || source.kind !== 'camera' || !stream) return false;
+      const targetStream = stream;
+      const targetGeneration = generation;
+      const track = targetStream
+        .getVideoTracks()
+        .find((candidate) => candidate.readyState === 'live');
+      if (!track || typeof track.applyConstraints !== 'function') return false;
+      const capabilities = track.getCapabilities?.() as FocusTrackCapabilities | undefined;
+      const focusModes = capabilities?.focusMode;
+      if (!Array.isArray(focusModes)) return false;
+      const supportsSingleShot = focusModes.includes('single-shot');
+      const supportsContinuous = focusModes.includes('continuous');
+      if (!supportsSingleShot && !supportsContinuous) return false;
+
+      const focusMode = supportsSingleShot ? 'single-shot' : 'continuous';
+      const normalizedPoint =
+        point && Number.isFinite(point.x) && Number.isFinite(point.y)
+          ? {
+              x: Math.min(1, Math.max(0, point.x)),
+              y: Math.min(1, Math.max(0, point.y)),
+            }
+          : undefined;
+      const requestId = ++nextFocusRequestId;
+      const isCurrentTarget = () =>
+        active &&
+        !disposed &&
+        stream === targetStream &&
+        generation === targetGeneration &&
+        track.readyState === 'live';
+      const applyMode = (withPoint: boolean) => {
+        const constraint: FocusConstraintSet =
+          withPoint && normalizedPoint
+            ? { focusMode, pointsOfInterest: [normalizedPoint] }
+            : { focusMode };
+        return track.applyConstraints(buildFocusConstraints(track, constraint));
+      };
+      try {
+        if (normalizedPoint) {
+          let appliedWithPoint = false;
+          try {
+            await applyMode(true);
+            appliedWithPoint =
+              isCurrentTarget() && didApplyFocusConstraint(track, focusMode, normalizedPoint);
+          } catch {
+            appliedWithPoint = false;
+          }
+          if (!appliedWithPoint) {
+            if (!isCurrentTarget()) return false;
+            await applyMode(false);
+          }
+        } else {
+          await applyMode(false);
+        }
+      } catch {
+        return false;
+      }
+      if (!isCurrentTarget() || !didApplyFocusConstraint(track, focusMode)) {
+        return false;
+      }
+      if (requestId >= latestAppliedFocusRequestId) {
+        latestAppliedFocusRequestId = requestId;
+        clearFocusResetTimer();
+        if (supportsSingleShot && supportsContinuous) {
+          focusResetTimer = setTimeout(() => {
+            focusResetTimer = undefined;
+            if (!isCurrentTarget() || latestAppliedFocusRequestId !== requestId) {
+              return;
+            }
+            const continuousConstraint: FocusConstraintSet = { focusMode: 'continuous' };
+            void track
+              .applyConstraints(buildFocusConstraints(track, continuousConstraint))
+              .catch(() => {});
+          }, FOCUS_HOLD_MS);
+        }
+      }
+      return true;
     },
     stop() {
       active = false;

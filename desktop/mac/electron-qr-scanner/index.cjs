@@ -166,6 +166,12 @@ function createCapture(options) {
       paused = Boolean(nextPaused);
       native.setPaused(paused);
     },
+    focus(x = 0.5, y = 0.5) {
+      if (disposed || activeGeneration === undefined || typeof native.focus !== "function") {
+        return false;
+      }
+      return Boolean(native.focus(x, y));
+    },
     /** Preview frames currently held by the consumer (at most 3). */
     lentFrames() {
       return disposed ? 0 : native.lentFrames();

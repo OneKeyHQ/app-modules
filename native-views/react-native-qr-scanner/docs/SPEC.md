@@ -309,10 +309,13 @@ and `onReady(generation, cameraId)`, `onFrameText(text, generation)`,
     and starts at the wide lens's zoom factor (1x). Virtual devices move to
     the ultra-wide lens by themselves when a code is closer than the wide lens
     can focus. Rules live in `ios/QrCameraControl.swift`.
-  - Tap to focus: focus and exposure move to the tapped point and a 72 pt
-    focus box fades in and out. iOS returns to continuous focus over the
-    whole frame when the subject area changes; Android uses
-    `FocusMeteringAction` (AF + AE) with a 5 s auto-cancel.
+  - Tap to focus: focus and exposure move to the tapped point and a 73 pt /
+    73 dp yellow focus box shrinks from 2x to 1x over 200 ms, holds for 1 s,
+    and fades out over 200 ms. iOS uses full-range continuous autofocus and
+    returns to continuous focus over the whole frame when the subject area
+    changes; Android checks `FocusMeteringAction` (AF + AE) support before
+    showing the indicator or starting focus and metering with a 5 s
+    auto-cancel, and hides the indicator on unbind.
   - Pinch to zoom from the current zoom, clamped to the device range and at
     most 8x the 1x factor (`QrCameraControl.clampZoom`,
     `QrCameraZoom.clampRatio`). A pinch applies only to the running capture
@@ -329,7 +332,14 @@ createWebQrScanner({
   mode; allowPlainText?; limits?; maxAnalysisSize?; // default 1280
   firstFrameTimeoutMs?; // default 8000
   onReady?; onFrameText?; onProgress?; onResult?; onError?;
-}): { start(): Promise<void>; stop(): void; resetSession(): void; dispose(): void };
+}): {
+  start(): Promise<void>;
+  switchCamera(deviceId?: string): Promise<void>;
+  focus(point?: { x: number; y: number }): Promise<boolean>;
+  stop(): void;
+  resetSession(): void;
+  dispose(): void;
+};
 ```
 
 - `camera` calls `getUserMedia({ audio: false, video: { facingMode:
@@ -387,6 +397,17 @@ createWebQrScanner({
 - A camera whose track delivers no frame within `firstFrameTimeoutMs`
   (default 8000) fails `start()` with `camera-busy` and is released, instead
   of waiting forever on `video.play()`.
+- `focus(point?)` triggers tap-to-focus on the active scanner-owned camera
+  track (`source.kind === "camera"`) when `getCapabilities().focusMode`
+  includes `"single-shot"` or `"continuous"`. `point` uses normalized `[0, 1]`
+  preview coordinates (clamped when finite) passed via `pointsOfInterest`.
+  Existing non-focus track constraints from `getConstraints()` are preserved.
+  If `pointsOfInterest` is rejected or `getSettings().focusMode` reports that
+  the mode did not take effect, the scanner falls back to a mode-only
+  constraint and resolves `false` when the mode still does not apply or the
+  capture generation changes while in flight. When the track supports both
+  `"single-shot"` and `"continuous"`, the latest successful tap schedules a
+  5 s restore to `"continuous"`.
 
 ### 3.4 Multi-symbol detection, preview freeze and UR latch — Implemented
 
@@ -548,7 +569,7 @@ freed on terminal status plus `reset()`, or when the session is dropped.
 
 | Platform | Live engine | Image engine | Fallback | Status |
 | --- | --- | --- | --- | --- |
-| iOS | AVFoundation metadata output, 1080p, back virtual device at 1x, continuous near autofocus, tap to focus, pinch zoom | Vision | ZXing-C++ (image only) | Implemented in source |
+| iOS | AVFoundation metadata output, 1080p, back virtual device at 1x, continuous autofocus, tap to focus, pinch zoom | Vision | ZXing-C++ (image only) | Implemented in source |
 | Android | CameraX + bundled ML Kit (no Play Services) | Same ML Kit detector | ZXing-C++ (image only; arm ABIs) | Implemented, emulator verified (image) |
 | Web / extension / Linux Electron | `BarcodeDetector` when it supports `qr_code` | Same | `zxing-wasm` reader (page thread or Worker) | Implemented; Chrome, WebKit and extension-CSP verified |
 | macOS Electron | `desktop/mac/electron-qr-scanner` (AVFoundation + Vision) | Same | ZXing-C++ (image) | Implemented, not integrated |
@@ -609,7 +630,7 @@ camera sees one original frame followed by mixed frames.
 | Live view JS session wiring | `src/QrScanner.tsx` | `src/__tests__/QrScanner.test.tsx` (jest, mocked native host): a looping 40-frame animated `crypto-psbt` stream completes once with progress < 1 until done; pause keeps parts and drops stale generations; `sessionKey` resets assembly and drops queued frames while preserving current capture readiness; other codes ignored mid-assembly; static text once; UR limit and camera error mapping. |
 | JS → Nitro → native on device runtime | example app `pages/QrScannerTestPage.tsx` | iOS 27.2 simulator (iPad Air 13-inch M4), example app Debug build: the native `QrScanner` view mounts; "Pick from album and decode" (image-crop-picker → `decodeQrImage`) returns the full BTCPay `lightning:LNBC…` invoice in 137 ms; "Start camera" reports `no-camera` with no permission prompt. |
 | Web pixel passes and engine selection | `src/web/imageOps.ts`, `src/web/engines.ts` | `src/web/__tests__/` (jest, 9 tests): budget fit, padding, grayscale/invert, pass order and stop-at-first-hit, no zxing without a loader, loader used once, native preferred only with `qr_code`, `disableNativeDetector`. |
-| Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt` | `android/src/test/` Robolectric (SDK 34, native graphics), 11 tests (14 with `QrCameraZoomTest`): gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms. In CI `android-unit`. |
+| Android gate and pipeline | `android/src/main/java/.../QrFrameTextGate.kt`, `QrImageDecodingPipeline.kt`, `QrScanner.kt` | `android/src/test/` Robolectric (SDK 34, native graphics): gate rules incl. 10 fps animated UR, pass order, platform-before-fallback, padding/grayscale/invert, downscale from a PNG file, `invalid-image` for corrupt and missing files, accepted URI forms, `QrCameraZoomTest`, `QrCameraCatalogTest`, `QrCameraPermissionTest`, and `QrScannerContainerTest` (re-measuring dynamically replaced preview children and grandchildren when the RN host suppresses `requestLayout()`). In CI `android-unit`. |
 | Android on device runtime | example app, Android 15 emulator (Pixel 7, arm64) | `decodeQrImage` through JS → Nitro → Kotlin: BTCPay lightning fixture → full invoice (12-41 ms), EXIF-rotated JPEG → invoice (13 ms), no-QR → `null`, corrupt and missing → `invalid-image`. Live view: camera permission prompt via `PermissionAwareActivity`, CameraX binds camera 1, preview surface attached, `onReady` fires; stop releases the camera. Preview content was black (headless emulated camera), so live detection is not verified. |
 | Web backend in a browser | `src/web/` | Chrome 156 (built-in browser), esbuild bundle of `./web` with Buffer/process shims, served locally. Native `BarcodeDetector`: BTCPay lightning fixtures → exact payload (14-159 ms), no-QR → `null`, corrupt → `invalid-image`; live scanner on a `<video>` of the animated `crypto-psbt` UR (2,003 bytes) assembles with matching FNV-1a in 2.8 s. Forced zxing-wasm: same image results (16-61 ms), animated UR in 3.6 s; WASM fetched only through `loadZXingWasm`, no CDN request. `getUserMedia` camera not exercised. |
 | Web worker, engines and camera start | `src/web/engines.ts`, `src/web/zxingWorkerProtocol.ts`, `src/web/scanner.ts` | jest: worker handler (no decode before init, init failure then retry), worker client (one worker, copy transferred, crashed worker replaced), camera start (no-frame timeout → `camera-busy` and release, `NotAllowedError`/`NotFoundError`/`NotReadableError` mapping, stream arriving after `stop()` is stopped), `onFrameText` repeat throttle. Regression tests cover cancellation, staged switches, stale frames on reset, and Worker initialization retries. |

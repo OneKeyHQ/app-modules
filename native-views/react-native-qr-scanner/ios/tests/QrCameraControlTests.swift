@@ -76,4 +76,43 @@ final class QrCameraControlTests: XCTestCase {
     XCTAssertEqual(cameras.map(\.0), ["back", "front", "usb"])
     XCTAssertEqual(cameras.map(\.1), ["back", "front", "external"])
   }
+
+  func testTapToFocusRequiresPointOfInterestAndAnAutoFocusMode() {
+    XCTAssertTrue(
+      QrCameraControl.supportsTapToFocus(
+        isFocusPointOfInterestSupported: true,
+        supportsAutoFocus: true,
+        supportsContinuousAutoFocus: false))
+    XCTAssertTrue(
+      QrCameraControl.supportsTapToFocus(
+        isFocusPointOfInterestSupported: true,
+        supportsAutoFocus: false,
+        supportsContinuousAutoFocus: true))
+    XCTAssertFalse(
+      QrCameraControl.supportsTapToFocus(
+        isFocusPointOfInterestSupported: false,
+        supportsAutoFocus: true,
+        supportsContinuousAutoFocus: true))
+    XCTAssertFalse(
+      QrCameraControl.supportsTapToFocus(
+        isFocusPointOfInterestSupported: true,
+        supportsAutoFocus: false,
+        supportsContinuousAutoFocus: false))
+  }
+
+  @MainActor
+  func testShowFocusIndicatorDisplaysYellowSquareAtTapPoint() {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 320))
+    let preview = QrPreviewView(frame: window.bounds)
+    window.addSubview(preview)
+    window.makeKeyAndVisible()
+
+    let point = CGPoint(x: 120, y: 180)
+    preview.showFocusIndicator(at: point)
+
+    XCTAssertEqual(preview.focusIndicator.center, point)
+    XCTAssertEqual(preview.focusIndicator.alpha, 1, accuracy: 0.001)
+    XCTAssertEqual(preview.focusIndicator.bounds.size, CGSize(width: 73, height: 73))
+    XCTAssertEqual(preview.focusIndicator.layer.borderColor, UIColor.yellow.cgColor)
+  }
 }
