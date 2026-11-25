@@ -23,6 +23,7 @@ const GAP = TOAST_GEOMETRY.stackGap;
 const SWIPE_DISTANCE = 64;
 const SWIPE_FLICK_DISTANCE = 20;
 const SWIPE_FLICK_VELOCITY = 0.5; // px per ms (500 px/s)
+const SWIPE_VELOCITY_WINDOW_MS = 80;
 const SWIPE_OPACITY_RANGE = 260;
 const SWIPE_MIN_OPACITY = 0.35;
 const TOUCH_START_THRESHOLD = 10;
@@ -49,7 +50,7 @@ interface IToastNode {
   removed: boolean;
   swiping: boolean;
   swipeOut: boolean;
-  offsetBeforeRemove: number;
+  exitLayout?: { index: number; offset: number; expanded: boolean };
   initialHeight: number;
   closeTimer?: ReturnType<typeof setTimeout>;
   unmountTimer?: ReturnType<typeof setTimeout>;
@@ -62,6 +63,7 @@ interface IToastPress {
   y: number;
   startedAt: number;
   moved: boolean;
+  samples: { x: number; t: number }[];
 }
 
 interface IToastGroup {
@@ -347,8 +349,15 @@ export function createToastDomRenderer(
     if (statusTile) {
       stopStatusTile(statusTile);
     }
-    node.offsetBeforeRemove = group ? offsetOf(group, node) : 0;
     if (group) {
+      node.exitLayout = {
+        index: Math.max(
+          0,
+          group.heights.findIndex((entry) => entry.id === node.id)
+        ),
+        offset: offsetOf(group, node),
+        expanded: isExpanded(),
+      };
       group.heights = group.heights.filter((entry) => entry.id !== node.id);
     }
     clearCloseTimer(node);
@@ -360,16 +369,21 @@ export function createToastDomRenderer(
         reason,
       });
     }
-    node.unmountTimer = setTimeout(() => {
-      node.unmountTimer = undefined;
+    if (nodes.get(node.id) !== node) {
+      return;
+    }
+    if (reduceMotion()) {
       unmount(node, reason);
-      update();
-    }, TIME_BEFORE_UNMOUNT);
+    } else {
+      node.unmountTimer = setTimeout(() => {
+        unmount(node, reason);
+        update();
+      }, TIME_BEFORE_UNMOUNT);
+    }
     update();
   }
 
-  function clearPress(pointerId: number, { node }: IToastPress) {
-    presses.delete(pointerId);
+  function clearSwipe(node: IToastNode, pointerId: number) {
     if (node.swipePointerId === pointerId) {
       node.swipePointerId = undefined;
       node.swiping = false;
@@ -380,6 +394,11 @@ export function createToastDomRenderer(
         node.li.releasePointerCapture(pointerId);
       }
     }
+  }
+
+  function clearPress(pointerId: number, { node }: IToastPress) {
+    presses.delete(pointerId);
+    clearSwipe(node, pointerId);
   }
 
   function clearNodePresses(node: IToastNode) {
@@ -414,6 +433,25 @@ export function createToastDomRenderer(
     return isExpanded() || index === 0;
   }
 
+  function recordSwipeSample(press: IToastPress, x: number, now: number) {
+    press.samples.push({ x, t: now });
+    while (
+      press.samples.length > 2 &&
+      now - press.samples[0]!.t > SWIPE_VELOCITY_WINDOW_MS
+    ) {
+      press.samples.shift();
+    }
+  }
+
+  function swipeVelocity(press: IToastPress, x: number, now: number): number {
+    const oldest = press.samples[0];
+    if (!oldest) {
+      return 0;
+    }
+    const dt = Math.max(1, now - oldest.t);
+    return Math.abs(x - oldest.x) / dt;
+  }
+
   function onGlobalPointerMove(event: PointerEvent) {
     const press = presses.get(event.pointerId);
     if (!press) {
@@ -432,9 +470,10 @@ export function createToastDomRenderer(
       return;
     }
     if (!canSwipeNode(node)) {
-      clearPress(event.pointerId, press);
+      clearSwipe(node, event.pointerId);
       return;
     }
+    const now = Date.now();
     if (!node.swiping) {
       if (absDx <= threshold || absDx <= absDy) {
         return;
@@ -442,7 +481,11 @@ export function createToastDomRenderer(
       node.li.setPointerCapture?.(event.pointerId);
       node.swiping = true;
       node.li.setAttribute('data-swiping', 'true');
+      if (now - press.startedAt > SWIPE_VELOCITY_WINDOW_MS) {
+        press.samples = [{ x: press.x, t: now }];
+      }
     }
+    recordSwipeSample(press, event.clientX, now);
     node.li.style.setProperty('--swipe-amount', `${dx}px`);
     node.li.style.setProperty('--swipe-opacity', String(swipeOpacityFor(dx)));
   }
@@ -456,10 +499,13 @@ export function createToastDomRenderer(
     const { node } = press;
     const released = event.type === 'pointerup';
     const rawDx = event.clientX - press.x;
-    const swiped = released && node.swipePointerId === pointerId && node.swiping;
+    const swiped =
+      released && node.swipePointerId === pointerId && node.swiping;
     const amount = swiped ? rawDx : 0;
     const absAmount = Math.abs(amount);
-    const velocity = absAmount / Math.max(1, Date.now() - press.startedAt);
+    const velocity = swiped
+      ? swipeVelocity(press, event.clientX, Date.now())
+      : 0;
     const dismissed =
       swiped &&
       (absAmount >= SWIPE_DISTANCE ||
@@ -494,7 +540,12 @@ export function createToastDomRenderer(
         '--swipe-opacity',
         String(swipeOpacityFor(amount))
       );
-      node.li.style.setProperty('--swipe-exit-sign', amount >= 0 ? '1' : '-1');
+      const { left, right } = node.li.getBoundingClientRect();
+      const exitX =
+        amount >= 0
+          ? amount + Math.max(0, globalThis.innerWidth - left) + 48
+          : amount - Math.max(0, right) - 48;
+      node.li.style.setProperty('--swipe-exit-x', `${exitX}px`);
       deleteToast(node, 'swipe', true);
     } else {
       update();
@@ -513,16 +564,19 @@ export function createToastDomRenderer(
       const target = event.target as HTMLElement | null;
       if (
         node.swipePointerId === undefined &&
+        canSwipeNode(node) &&
         !target?.closest?.('button, [data-okt-link]')
       ) {
         node.swipePointerId = event.pointerId;
       }
+      const startedAt = Date.now();
       presses.set(event.pointerId, {
         node,
         x: event.clientX,
         y: event.clientY,
-        startedAt: Date.now(),
+        startedAt,
         moved: false,
+        samples: [{ x: event.clientX, t: startedAt }],
       });
       update();
     });
@@ -607,7 +661,6 @@ export function createToastDomRenderer(
       removed: false,
       swiping: false,
       swipeOut: false,
-      offsetBeforeRemove: 0,
       initialHeight: 0,
     };
     const revealClose = (event: PointerEvent) => {
@@ -712,11 +765,14 @@ export function createToastDomRenderer(
     ol.style.top = top > 0 ? `${top}px` : '';
 
     const expanded = isExpanded();
-    group.toasts.forEach((node, index) => {
-      const { li, body } = node;
+    let activeIndex = 0;
+    group.toasts.forEach((node, stackIndex) => {
+      const { li, body, exitLayout } = node;
+      const index = exitLayout?.index ?? activeIndex++;
+      const cardExpanded = exitLayout?.expanded ?? expanded;
       const visible = index < VISIBLE_TOASTS;
       const front = index === 0;
-      const bodyHidden = !front && !expanded;
+      const bodyHidden = !front && !cardExpanded;
       li.inert = !visible || node.removed;
       const lastFocus = document.activeElement;
       const needsFocusHandoff =
@@ -737,13 +793,16 @@ export function createToastDomRenderer(
       li.setAttribute('data-front', String(front));
       li.setAttribute('data-swiping', String(node.swiping));
       li.setAttribute('data-swipe-out', String(node.swipeOut));
-      li.setAttribute('data-expanded', String(expanded));
+      li.setAttribute('data-expanded', String(cardExpanded));
       li.style.setProperty('--index', String(index));
       li.style.setProperty('--toasts-before', String(index));
-      li.style.setProperty('--z-index', String(group.toasts.length - index));
+      li.style.setProperty(
+        '--z-index',
+        String(group.toasts.length - stackIndex)
+      );
       li.style.setProperty(
         '--offset',
-        `${node.removed ? node.offsetBeforeRemove : offsetOf(group, node)}px`
+        `${exitLayout?.offset ?? offsetOf(group, node)}px`
       );
       li.style.setProperty('--initial-height', `${node.initialHeight}px`);
     });
@@ -771,6 +830,11 @@ export function createToastDomRenderer(
       keyboardExpanded = false;
       touchExpandedGroup = undefined;
     }
+    presses.forEach(({ node }, pointerId) => {
+      if (node.swiping && !canSwipeNode(node)) {
+        clearSwipe(node, pointerId);
+      }
+    });
     groups.forEach((group) => {
       applyGroup(group);
     });

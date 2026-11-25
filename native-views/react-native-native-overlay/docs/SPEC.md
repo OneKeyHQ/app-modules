@@ -1475,7 +1475,7 @@ non-interactive exit `190 ms` `cubic-bezier(0.2, 0, 0, 1)`).
 | Card | `356 px` wide, `10 px` padding, `21 px` concentric radius + `1 px` outer ring (`box-shadow`) + layered shadow, corner close button revealed by mouse/pen hover or keyboard focus | Content box from `contentWidth` plus `10 pt/dp` padding, `21 pt/dp` continuous radius + `1 px` hairline ring (`0.06` light / `0.09` dark), subtle shadow |
 | Enter / exit | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; swipe exit slides horizontally off-side (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, scale `0.98`, opacity `0`); non-interactive exit (`timeout`, `programmatic`, `close`) dissolves gently (`190 ms` `cubic-bezier(0.2, 0, 0, 1)`: front/expanded drifts `16 px` toward the anchored edge and scales to `0.95`; collapsed back drifts `12 px` and scales to `0.90`) | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; swipe exit slides horizontally off-side (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, scale `0.98`, opacity `0`); non-interactive exit (`timeout`, `programmatic`) dissolves gently (`190 ms` `cubic-bezier(0.2, 0, 0, 1)`: front/expanded drifts `-16 pt/dp` and scales to `0.95`; collapsed back drifts `-12 pt/dp` and scales to `0.90`) |
 | Message status entrance & settle | Tile at `110 ms` (`620/50` spring), glyph pop at `155 ms` (`920/40` spring), `180 ms` stroke draw at `210 ms` (~`390 ms` total); settle crossfades text/actions over `160 ms` `cubic-bezier(0.2, 0, 0, 1)` (`translateY 3 -> 0`) | Same spring parameters, stroke draw, tile bump/tint, and `160 ms` content crossfade (`CASpringAnimation` on iOS, analytical spring step response on Android) |
-| `close` reported | `200 ms` after the exit starts | `220 ms` after the exit starts |
+| `close` reported | `200 ms` after the exit starts, or immediately with reduced motion | `220 ms` after the exit starts, or immediately with reduced motion |
 | Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed or the stack is expanded; resuming continues the remaining time |
 | Swipe | Horizontal (left or right) across all viewports (desktop and small screen). Once a horizontal swipe starts (`|dx| > |dy|`), only horizontal displacement counts and opacity attenuates down to `0.35`. Release dismisses at `64 px`, or `20 px` at `0.5 px/ms`, exiting to the dragged side while remaining cards promote vertically on the card spring. | Horizontal (left or right) on front card (collapsed) or any visible card (expanded); `64 pt/dp`, or `20 pt/dp` at `500 pt/dp/s`; card follows 1:1 on X with opacity attenuating down to `0.35`; exits to the dragged side (`200 ms`) while remaining cards promote vertically on the card spring; settle-back uses the card spring |
 | Top obstruction | Inline `top` on top groups, 220 ms | Cards translate within the full-window touch stage, 220 ms |
@@ -1491,7 +1491,7 @@ through settlement.
 
 Native collapsed back cards accept taps in their visible bounds to expand
 the stack. Movement past the drag threshold does not expand a back card.
-An active swipe is cancelled when the card loses swipe eligibility. The
+On all platforms, a swipe is cancelled when the card loses swipe eligibility. The
 front card exposes an accessibility action to expand a collapsed stack. On
 iOS the expansion control is a separate accessibility element alongside the
 front card's visible text, links and action buttons. Its focus frame uses

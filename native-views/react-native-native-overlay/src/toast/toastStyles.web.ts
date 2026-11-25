@@ -93,7 +93,7 @@ function buildOverlayToastCss(): string {
 [data-onekey-toast][data-swipe-out="true"][data-y-position="bottom"],[data-onekey-toast][data-swipe-out="true"][data-y-position="top"]{animation:onekey-toast-swipe-out ${TOAST_MOTION.cardExitMs}ms ${cardExitEase} forwards}
 @keyframes onekey-toast-swipe-out{
   0%{transform:translateY(calc(var(--lift) * var(--offset))) translateX(var(--swipe-amount,0px)) scale(1);opacity:var(--swipe-opacity,1)}
-  to{transform:translateY(calc(var(--lift) * var(--offset))) translateX(calc(var(--swipe-exit-sign,1) * (100% + 48px))) scale(${TOAST_MOTION.swipeExitScale});opacity:0}
+  to{transform:translateY(calc(var(--lift) * var(--offset))) translateX(var(--swipe-exit-x)) scale(${TOAST_MOTION.swipeExitScale});opacity:0}
 }
 
 /* Raised concentric card with outer 1px ring + layered box-shadow (no clip-path/filter haze) */

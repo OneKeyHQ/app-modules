@@ -333,6 +333,12 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     if report {
       onEvent?(entry.id, entry.item.generation, "dismiss", reason)
     }
+    if reduceMotion {
+      remove(entry, report: true)
+      layout(animated: false)
+      syncTimers()
+      return
+    }
     entry.removal = Timer.scheduledTimer(
       withTimeInterval: ToasterMetrics.removeDelay, repeats: false
     ) { [weak self, weak entry] _ in
@@ -523,9 +529,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       let canSwipe = interactive && !hideBody
       if entry.pan?.isEnabled != canSwipe {
         if !canSwipe && entry.dragged && !entry.leaving {
-          entry.card.layer.removeAllAnimations()
-          entry.card.transform = .identity
-          entry.card.alpha = targetAlpha
+          settle(entry.card)
           entry.dragged = false
         }
         entry.pan?.isEnabled = canSwipe
@@ -678,10 +682,9 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       let distance = abs(totalX)
       let velocity = abs(gesture.velocity(in: stage).x)
       let dismissed =
-        abs(translation.x) > abs(translation.y)
-        && (distance >= ToasterMetrics.swipeDistance
-          || (distance >= ToasterMetrics.swipeFlickDistance
-            && velocity >= ToasterMetrics.swipeFlickVelocity))
+        distance >= ToasterMetrics.swipeDistance
+        || (distance >= ToasterMetrics.swipeFlickDistance
+          && velocity >= ToasterMetrics.swipeFlickVelocity)
       if dismissed {
         entry.swipeExitSign = totalX >= 0 ? 1 : -1
         dismiss(entry, reason: "swipe", report: true)

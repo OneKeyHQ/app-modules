@@ -743,3 +743,73 @@ test('dragging back within threshold cancels a recognized horizontal swipe', () 
   expect(card.getAttribute('data-removed')).toBe('false');
   expect(card.style.getPropertyValue('--swipe-amount')).toBe('0px');
 });
+
+test('touch jitter on a collapsed back card still expands the stack and resumes timers', () => {
+  const onBackClose = jest.fn();
+  store.configure({ position: 'top-center' });
+  store.show(message('back', { duration: 1000 }), { onClose: onBackClose });
+  store.show(message('front', { duration: 1000 }));
+  const backCard = cards()[1]!;
+  document.elementFromPoint = jest.fn(() => backCard);
+
+  dispatchPointer(backCard, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY: 60,
+  });
+  dispatchPointer(backCard, 'pointermove', {
+    pointerType: 'touch',
+    clientX: 181,
+    clientY: 60,
+  });
+  dispatchPointer(backCard, 'pointerup', {
+    pointerType: 'touch',
+    clientX: 181,
+    clientY: 60,
+  });
+
+  expect(backCard.getAttribute('data-expanded')).toBe('true');
+  // Collapse by tapping outside, then confirm timers are not frozen.
+  dispatchPointer(document.body, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 10,
+    clientY: 500,
+  });
+  expect(backCard.getAttribute('data-expanded')).toBe('false');
+  jest.advanceTimersByTime(1200);
+  expect(onBackClose).toHaveBeenCalledWith('timeout');
+});
+
+test('short horizontal flick dismisses even after a stationary hold', () => {
+  const onClose = jest.fn();
+  store.configure({ position: 'top-center' });
+  store.show(message('held-flick', { duration: 5000 }), { onClose });
+  const card = cards()[0]!;
+
+  dispatchPointer(card, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 200,
+    clientY: 60,
+  });
+  jest.advanceTimersByTime(600);
+  dispatchPointer(card, 'pointermove', {
+    pointerType: 'touch',
+    clientX: 222,
+    clientY: 60,
+  });
+  jest.advanceTimersByTime(15);
+  dispatchPointer(card, 'pointermove', {
+    pointerType: 'touch',
+    clientX: 240,
+    clientY: 60,
+  });
+  jest.advanceTimersByTime(15);
+  dispatchPointer(card, 'pointerup', {
+    pointerType: 'touch',
+    clientX: 240,
+    clientY: 60,
+  });
+
+  jest.advanceTimersByTime(200);
+  expect(onClose).toHaveBeenCalledWith('swipe');
+});

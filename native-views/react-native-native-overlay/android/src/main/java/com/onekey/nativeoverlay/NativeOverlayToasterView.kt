@@ -515,6 +515,12 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
     entry.reason = reason
     cancelTimer(entry)
     if (report) onEvent?.invoke(entry.id, entry.item.generation, "dismiss", reason)
+    if (reduceMotion) {
+      remove(entry, report = true)
+      layout(animated = false)
+      syncTimers()
+      return
+    }
     val removal = Runnable {
       remove(entry, report = true)
       layout(animated = true)
