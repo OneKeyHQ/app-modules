@@ -5,8 +5,10 @@ import android.content.res.Configuration
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.widget.ImageView
+import com.facebook.react.bridge.UiThreadUtil
 import com.facebook.react.uimanager.ThemedReactContext
 import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicBoolean
 
 private class OneKeyIconHost(context: Context) : ImageView(context) {
   var changed: (() -> Unit)? = null
@@ -27,6 +29,7 @@ private class OneKeyIconHost(context: Context) : ImageView(context) {
 class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec() {
   private val host = OneKeyIconHost(context)
   private val owner = Any()
+  private val disposed = AtomicBoolean(false)
   private var generation = 0L
   private var identity: String? = null
   private var displayedGeometry: String? = null
@@ -49,6 +52,7 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec() {
   }
 
   private fun refresh() {
+    if (disposed.get()) return
     if (dropped) {
       // Keep the last frame while a transition still draws the dropped host.
       if (host.attached) return
@@ -75,6 +79,7 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec() {
     OneKeyNamedSVG.setCacheDirIfNeeded(appContext.cacheDir)
     val hit = OneKeyNamedSVG.cachedRender(name, color, host.width, host.height, scale)
       ?: OneKeyNamedSVG.diskRender(appContext.assets, name, color, host.width, host.height, scale)
+    if (disposed.get()) return
     if (hit != null) {
       displayed = hit; displayedGeometry = geometry
       applyTint(hit, color)
@@ -87,7 +92,8 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec() {
       host.width, host.height, scale) { result ->
       val current = weakSelf.get()
       val target = weakHost.get()
-      if (current?.generation != revision || target?.attached != true) return@requestRender
+      if (current == null || current.disposed.get() || current.generation != revision ||
+        target?.attached != true) return@requestRender
       if (result == null) { current.clearImage(); return@requestRender }
       current.displayed = result; current.displayedGeometry = geometry
       current.applyTint(result, color)
@@ -107,7 +113,7 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec() {
   }
 
   override fun onDropView() {
-    if (!dropped) {
+    if (!disposed.get() && !dropped) {
       if (host.attached && host.drawable != null) {
         dropped = true
         generation++
@@ -120,8 +126,13 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec() {
   }
 
   override fun dispose() {
-    host.changed = null
-    prepareForRecycle()
+    if (disposed.compareAndSet(false, true)) {
+      val cleanup = Runnable {
+        host.changed = null
+        prepareForRecycle()
+      }
+      if (UiThreadUtil.isOnUiThread()) cleanup.run() else UiThreadUtil.runOnUiThread(cleanup)
+    }
     super.dispose()
   }
 }

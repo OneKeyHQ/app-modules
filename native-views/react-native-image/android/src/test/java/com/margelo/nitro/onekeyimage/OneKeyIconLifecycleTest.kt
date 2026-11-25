@@ -2,6 +2,7 @@ package com.margelo.nitro.onekeyimage
 
 import android.app.Activity
 import android.graphics.Bitmap
+import android.os.Looper
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -26,7 +27,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.LooperMode
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -158,6 +163,39 @@ class OneKeyIconLifecycleTest {
     assertNull(view.drawable)
     icon.afterUpdate()
     assertNull(view.drawable)
+  }
+
+  @Test
+  @LooperMode(LooperMode.Mode.PAUSED)
+  fun backgroundDisposeClearsAnAttachedIconOnTheUiThread() {
+    val manager = HybridOneKeyIconManager()
+    val view = manager.createView(1, context, null, null, null) as ImageView
+    attach(view)
+    bind(view)
+    val icon = hybridIcon(view)
+    val drawable = view.drawable
+    val tint = view.colorFilter
+    val disposal = FutureTask { icon.dispose() }
+
+    Thread(disposal).start()
+    disposal.get(5, TimeUnit.SECONDS)
+
+    // Cleanup is queued, but UI updates must already ignore the disposed icon.
+    assertSame(drawable, view.drawable)
+    icon.resolvedColor = "rgba(255,0,0,1)"
+    icon.afterUpdate()
+    view.layout(0, 0, 0, 0)
+    view.layout(0, 0, 32, 32)
+    assertSame(drawable, view.drawable)
+    assertSame(tint, view.colorFilter)
+
+    shadowOf(Looper.getMainLooper()).idle()
+
+    assertTrue(view.isAttachedToWindow)
+    assertNull(icon.iconName)
+    assertNull(icon.resolvedColor)
+    assertNull(view.drawable)
+    assertNull(view.colorFilter)
   }
 
   private fun bind(view: ImageView, color: String = "rgba(0,0,0,1)") {

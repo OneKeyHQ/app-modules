@@ -737,11 +737,13 @@ that is drawing an icon (an outgoing screen transition) keeps that frame and its
 bounds until the view detaches, then clears; it invalidates pending work at drop
 time. The Android view opts out of Fabric view recycling even when the host
 enables the pool globally, because the pool zeroes the bounds of dropped views.
-An explicit Android `prepareForRecycle()` immediately cancels pending work and
-clears props, render identity, drawable and tint, including during a deferred
-drop. A native owner can bind fresh props on the same attached host as soon as
-the reset returns. Explicit `dispose()` performs the same immediate clear and
-removes the host callback so later prop or host updates cannot start rendering.
+An explicit Android `prepareForRecycle()` on the UI thread immediately cancels
+pending work and clears props, render identity, drawable and tint, including
+during a deferred drop. A native owner can bind fresh props on the same attached
+host as soon as the reset returns. Explicit `dispose()` marks the icon disposed
+on the calling thread. Subsequent prop and host updates and pending render
+completions are ignored. The clear and host callback removal run immediately
+when called on the UI thread and are posted to the main looper otherwise.
 Before queuing, the view probes the decoded-raster
 LRU synchronously on the UI thread; a hit binds in the same frame (no blank frame
 on remount or recycle). The probe never reads assets or loads the manifest, so
