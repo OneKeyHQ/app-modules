@@ -1483,18 +1483,21 @@ non-interactive exit `190 ms` `cubic-bezier(0.2, 0, 0, 1)`).
 
 In a browser viewport that reports two segments along an axis, a left or right
 anchor chooses the matching side and a centered anchor chooses the leading
-segment. Top and bottom anchors choose the corresponding row of segments.
+segment in the document's current computed text direction. Top and bottom
+anchors choose the corresponding row of segments.
 Web positions that resolve to the same lane share a stack. Moving a card
 between lanes remeasures its content at the destination width. In Android
-windows that report a separating display feature, the toaster chooses the wider side of a vertical fold, using the leading side for
-ties, and the upper side of a horizontal fold. The native anchor remains
+windows that report a separating display feature, the toaster chooses the
+wider side of a vertical fold, using the leading side for ties, and the upper
+side of a horizontal fold. The native anchor remains
 top-center within that area. iOS and windows with no reported separator use the
 available window bounds. Insets, resizing and posture changes recalculate the
 placement without restarting toast lifetimes. On Web and Android, a
 horizontal fold limits the settled stack to the space between its anchor
 (after any obstruction shift) and the hinge-facing edge of its pane. If the
 stack exceeds this budget, its cards and gaps scale together so every action
-stays in the pane.
+stays in the pane. On Web, cards with no remaining pane space are excluded
+from pointer input, keyboard focus and the accessibility tree until space returns.
 
 A single eligible message action stays inline when its measured width, icon
 and spacing leave at least 96 px/pt/dp for the text column. A smaller text
@@ -1519,8 +1522,9 @@ visible toasts on touch browsers. The hidden control is transparent to
 pointer input. Cards beyond the display limit are excluded from focus and
 the accessibility tree until they become visible. While the stack is
 collapsed, the hidden bodies of back cards are also excluded. After the
-stack layout updates, focus inside a newly collapsed body moves to its
-visible shell if focus has stayed with the toast. The shell keeps its
+stack layout updates, focus on a lane that no longer contains active cards
+follows its cards to a destination lane. Focus inside a newly collapsed body
+moves to its visible shell if focus has stayed with the toast. The shell keeps its
 close button accessible. Enabling Reduce Motion
 finalizes mounted status animations and keeps loading rings static. On Web
 it also completes in-flight exits with their original dismissal reasons.
@@ -1537,8 +1541,11 @@ turn every `850 ms` on every platform.
 
 On Web, the card captures the pointer after recognizing a swipe. Flick speed
 uses input event timestamps from the last 80 ms, including movement before
-the swipe locks. The short flick must be moving toward its exit side on
-every platform. Holding the card still and then moving it slowly below the
+the swipe locks. Android measures both swipe velocity and displacement in
+window coordinates. While an eligible Android card is held during a pane
+resize, its visible horizontal displacement continues to match the input.
+The short flick must be moving toward its exit side on every platform.
+Holding the card still and then moving it slowly below the
 distance threshold settles it back in place. Ordinary
 clicks and taps activate the pressable row, buttons, or links through their
 own handlers. Each press ends independently on release or cancellation.

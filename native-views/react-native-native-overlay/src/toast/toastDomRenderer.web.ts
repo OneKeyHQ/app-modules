@@ -84,14 +84,12 @@ interface IToastGroup {
 }
 
 function getDocumentDirection(): 'ltr' | 'rtl' {
-  const attribute = document.documentElement.getAttribute('dir');
-  if (attribute === 'rtl' || attribute === 'ltr') {
-    return attribute;
+  const root = document.documentElement;
+  const direction = globalThis.getComputedStyle(root).direction;
+  if (direction === 'rtl' || direction === 'ltr') {
+    return direction;
   }
-  return globalThis.getComputedStyle(document.documentElement).direction ===
-    'rtl'
-    ? 'rtl'
-    : 'ltr';
+  return root.dir === 'rtl' ? 'rtl' : 'ltr';
 }
 
 function createCloseButton(label: string): HTMLButtonElement {
@@ -149,6 +147,7 @@ export function createToastDomRenderer(
   let keyboardExpanded = false;
   let touchExpandedGroup: IToastGroup | undefined;
   let destroyed = false;
+  let documentDirection = getDocumentDirection();
   let itemOrder = new Map<string, number>();
   const groupResizeObserver =
     typeof ResizeObserver === 'function'
@@ -171,7 +170,7 @@ export function createToastDomRenderer(
     if (splitColumns?.matches) {
       const lane =
         horizontal === 'center'
-          ? getDocumentDirection() === 'rtl'
+          ? documentDirection === 'rtl'
             ? 'right'
             : 'left'
           : horizontal;
@@ -252,7 +251,7 @@ export function createToastDomRenderer(
       });
       ol.addEventListener('transitionend', (event) => {
         if (event.target === ol && event.propertyName === 'top') {
-          applyGroup(nextGroup);
+          update();
         }
       });
       group = nextGroup;
@@ -469,7 +468,7 @@ export function createToastDomRenderer(
       return false;
     }
     const group = groups.get(node.position);
-    if (!group) {
+    if (!group || group.paneScale === 0) {
       return false;
     }
     const active = group.toasts.filter((entry) => !entry.removed);
@@ -643,7 +642,7 @@ export function createToastDomRenderer(
       true
     );
     li.addEventListener('pointerdown', (event) => {
-      if (node.removed || event.button !== 0) {
+      if (li.inert || event.button !== 0) {
         return;
       }
       node.suppressNotificationClick = false;
@@ -853,7 +852,7 @@ export function createToastDomRenderer(
   function applyGroup(group: IToastGroup) {
     const { ol } = group;
     const [yPosition, xPosition] = group.position.split('-');
-    ol.dir = getDocumentDirection();
+    ol.dir = documentDirection;
     ol.setAttribute('data-theme', config.theme ?? 'light');
     ol.setAttribute('data-y-position', yPosition ?? 'bottom');
     ol.setAttribute('data-x-position', xPosition ?? 'right');
@@ -903,10 +902,13 @@ export function createToastDomRenderer(
       const { li, body, exitLayout } = node;
       const index = exitLayout?.index ?? activeIndex++;
       const cardExpanded = exitLayout?.expanded ?? expanded;
-      const visible = index < VISIBLE_TOASTS;
+      const paneScale = exitLayout?.paneScale ?? group.paneScale;
+      const visible = index < VISIBLE_TOASTS && paneScale > 0;
       const front = index === 0;
       const bodyHidden = !front && !cardExpanded;
-      const paneScale = exitLayout?.paneScale ?? group.paneScale;
+      if (paneScale === 0) {
+        clearNodePresses(node);
+      }
       li.inert = !visible || node.removed;
       const lastFocus = document.activeElement;
       const needsFocusHandoff =
@@ -947,6 +949,11 @@ export function createToastDomRenderer(
   function update() {
     if (destroyed) {
       return;
+    }
+    const nextDirection = getDocumentDirection();
+    if (nextDirection !== documentDirection) {
+      documentDirection = nextDirection;
+      reconcilePositions();
     }
     groups.forEach((group, position) => {
       if (group.toasts.length === 0) {
@@ -1010,6 +1017,13 @@ export function createToastDomRenderer(
     if (restoreFocus && document.activeElement === document.body) {
       focusAfterLayout(focused, document.body);
     }
+    if (previous && focused === previous.ol && previous.heights.length === 0) {
+      focusAfterLayout(
+        group.ol,
+        previous.toasts.length > 0 ? previous.ol : document.body,
+        () => previous.heights.length === 0
+      );
+    }
     applyGroup(group);
     measure(node);
     return group;
@@ -1057,7 +1071,7 @@ export function createToastDomRenderer(
     }
   }
 
-  function onResize() {
+  function reconcilePositions() {
     const moved = new Set<IToastGroup>();
     nodes.forEach((node) => {
       if (!node.removed) {
@@ -1070,6 +1084,11 @@ export function createToastDomRenderer(
       }
     });
     moved.forEach((group) => reconcileGroupOrder(group, itemOrder));
+  }
+
+  function onResize() {
+    documentDirection = getDocumentDirection();
+    reconcilePositions();
     update();
   }
 
@@ -1129,10 +1148,13 @@ export function createToastDomRenderer(
   document.addEventListener('pointerup', onGlobalPointerEnd, true);
   document.addEventListener('pointercancel', onGlobalPointerEnd, true);
   const layoutQueries = [narrowViewport, splitColumns, splitRows];
-  const directionObserver = new MutationObserver(onResize);
+  const directionObserver = new MutationObserver(() => {
+    if (getDocumentDirection() !== documentDirection) {
+      update();
+    }
+  });
   directionObserver.observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ['dir'],
   });
   layoutQueries.forEach((query) =>
     query?.addEventListener?.('change', onResize)
@@ -1150,6 +1172,7 @@ export function createToastDomRenderer(
       const heightCapChanged =
         config.webContentMaxHeight !== nextConfig.webContentMaxHeight;
       config = nextConfig;
+      documentDirection = getDocumentDirection();
       if (heightCapChanged) {
         groups.forEach(applyGroup);
       }

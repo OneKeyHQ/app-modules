@@ -960,7 +960,7 @@ async function foldablePage(t) {
       mobile: true,
       displayFeature,
     });
-  return { page, fold };
+  return { page, fold, client };
 }
 
 test('a separating fold keeps a toast stack centered inside its selected pane', async (t) => {
@@ -1204,3 +1204,131 @@ for (const reason of ['swipe', 'programmatic']) {
     assert.deepEqual(await callbacks(page), [reason]);
   });
 }
+
+test('keyboard focus follows a stack across the narrow layout breakpoint', async (t) => {
+  const page = await statusPage(t, 'reduce');
+  await page.setViewportSize({ width: 601, height: 800 });
+  await page.clock.install();
+  await page.evaluate(() => {
+    for (const id of ['older', 'newer']) {
+      window.showStatus('success', {
+        id,
+        position: 'bottom-right',
+        duration: 1000,
+      });
+    }
+  });
+  await page.keyboard.press('Alt+t');
+  const oldLane = page.locator(
+    '[data-onekey-toast-toaster][data-x-position="right"]'
+  );
+  assert.equal(
+    await oldLane.evaluate((lane) => lane === document.activeElement),
+    true
+  );
+
+  await page.setViewportSize({ width: 600, height: 800 });
+  const newLane = page.locator(
+    '[data-onekey-toast-toaster][data-x-position="center"]'
+  );
+  await newLane.waitFor({ state: 'attached' });
+  assert.equal(
+    await newLane.evaluate((lane) => lane === document.activeElement),
+    true
+  );
+  await page.keyboard.press('Escape');
+  const cards = newLane.locator('[data-onekey-toast]');
+  assert.equal(await cards.first().getAttribute('data-expanded'), 'false');
+  await page.clock.runFor(1100);
+  assert.equal(await cards.count(), 0);
+});
+
+test('a toast with no pane space excludes its action from keyboard focus until space returns', async (t) => {
+  const { page, fold, client } = await foldablePage(t);
+  await fold({ orientation: 'horizontal', offset: 230, maskLength: 24 });
+  await page.waitForFunction(
+    () => matchMedia('(vertical-viewport-segments: 2)').matches
+  );
+  await page.evaluate(() => {
+    window.configure({ topObstruction: 260, topObstructionRoom: 4 });
+    window.showStatus('success', {
+      actions: [
+        {
+          id: 'view',
+          label: 'View details',
+          borderRadius: 11,
+          color: '#111',
+          backgroundColor: '#eee',
+          fontSize: 14,
+          lineHeight: 20,
+          paddingHorizontal: 12,
+          paddingVertical: 4,
+        },
+      ],
+    });
+  });
+  const card = page.locator('[data-onekey-toast]');
+  const action = card.locator('[data-okt-action]');
+  assert.equal(
+    await card.evaluate((node) =>
+      node.style.getPropertyValue('--toast-pane-scale')
+    ),
+    '0'
+  );
+  assert.equal(await card.getAttribute('data-visible'), 'false');
+  await action.focus();
+  assert.equal(
+    await action.evaluate((node) => node === document.activeElement),
+    false
+  );
+  const hasAccessibleAction = async () => {
+    const { nodes } = await client.send('Accessibility.getFullAXTree');
+    return nodes.some(
+      (node) =>
+        !node.ignored &&
+        node.role?.value === 'button' &&
+        node.name?.value === 'View details'
+    );
+  };
+  assert.equal(await hasAccessibleAction(), false);
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await callbacks(page), []);
+
+  await page.evaluate(() => window.configure({ topObstruction: 0 }));
+  assert.equal(await card.getAttribute('data-visible'), 'true');
+  assert.equal(await hasAccessibleAction(), true);
+  await card.getByRole('button', { name: 'View details' }).focus();
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await callbacks(page), ['view']);
+});
+
+test('a folded centered toast follows direction set by a root CSS class', async (t) => {
+  const { page, fold } = await foldablePage(t);
+  await fold({ orientation: 'vertical', offset: 300, maskLength: 28 });
+  await page.waitForFunction(
+    () => matchMedia('(horizontal-viewport-segments: 2)').matches
+  );
+  await page.addStyleTag({ content: 'html.rtl-fixture { direction: rtl; }' });
+  await page.evaluate(() => {
+    window.showStatus('success', { id: 'fixed', position: 'top-right' });
+    window.showStatus('success', { id: 'center', testID: 'center' });
+  });
+  const card = page.getByTestId('center');
+  assert.equal(await card.getAttribute('data-x-position'), 'left');
+
+  await page.evaluate(() =>
+    document.documentElement.classList.add('rtl-fixture')
+  );
+  assert.equal(await card.getAttribute('data-x-position'), 'right');
+  assert.equal(await card.locator('..').getAttribute('dir'), 'rtl');
+  assert.equal(
+    await card.locator('..').locator('[data-onekey-toast]').count(),
+    2
+  );
+
+  await page.evaluate(() =>
+    document.documentElement.classList.remove('rtl-fixture')
+  );
+  assert.equal(await card.getAttribute('data-x-position'), 'left');
+  assert.equal(await card.locator('..').getAttribute('dir'), 'ltr');
+});
