@@ -140,19 +140,21 @@ test("Docs skip native jobs, while shared, unknown, and unregistered inputs run 
 });
 
 test("iOS changes to Android-only registered modules fall back to the full suite", () => {
-  for (const path of [
-    "native-modules/react-native-app-update/ios/ReactNativeAppUpdate.swift",
-    "native-modules/react-native-network-throttle/ios/OneKeyNetworkThrottle.m",
-  ]) {
-    const plan = planFor(path);
-    assert.equal(plan.mode, "full", path);
-    assert.equal(plan.reason, "unregistered-platform", path);
-    assert.deepEqual(plan.changedModules, [path.split("/")[1]]);
-    assert.deepEqual(scheduledJobs(plan), ["native-overlay-package", "ios-native", "device-utils-store", "android-unit"]);
-  }
-  const android = planFor("native-modules/react-native-network-throttle/android/src/main/AndroidManifest.xml");
-  assert.equal(android.mode, "affected");
-  assert.deepEqual(scheduledJobs(android), ["android-unit"]);
+  const plan = planFor("native-modules/react-native-app-update/ios/ReactNativeAppUpdate.swift");
+  assert.equal(plan.mode, "full");
+  assert.equal(plan.reason, "unregistered-platform");
+  assert.deepEqual(plan.changedModules, ["react-native-app-update"]);
+  assert.deepEqual(scheduledJobs(plan), ["native-overlay-package", "ios-native", "device-utils-store", "android-unit"]);
+});
+
+test("Network Throttle changes build the iOS pod and run the Android tests", () => {
+  const plan = planFor("native-modules/react-native-network-throttle/ios/OneKeyNetworkThrottle.m");
+  assert.equal(plan.mode, "affected");
+  assert.deepEqual(plan.affectedModules, ["react-native-network-throttle"]);
+  assert.deepEqual(scheduledJobs(plan), ["device-utils-store", "android-unit"]);
+  assert.deepEqual(plan.ios.services, { buildTargets: ["ReactNativeNetworkThrottle"], testSchemes: [] });
+  assert.deepEqual(plan.android.gradleTasks, [":onekeyfe_react-native-network-throttle:testDebugUnitTest"]);
+  assert.deepEqual(planFor("native-modules/react-native-network-throttle/android/src/main/AndroidManifest.xml"), plan);
 });
 
 test("shared changes trigger full coverage and report every changed native module regardless of path order", () => {
@@ -179,7 +181,9 @@ test("full CI retains the registered native suites and Android test reports", ()
   assert.equal(full.mode, "full");
   assert.deepEqual(scheduledJobs(full), ["native-overlay-package", "ios-native", "device-utils-store", "android-unit"]);
   assert.equal(full.ios.ui.testSchemes.length + full.ios.services.testSchemes.length, 13);
-  assert.deepEqual(full.ios.services.buildTargets, ["ReactNativeLiteCard", "NativeOverlay", "AutoSizeInput"]);
+  assert.deepEqual(full.ios.services.buildTargets, [
+    "ReactNativeLiteCard", "NativeOverlay", "AutoSizeInput", "ReactNativeNetworkThrottle",
+  ]);
   assert.deepEqual(full.ios.host, [
     "react-native-device-utils", "react-native-lite-card", "react-native-jpush", "react-native-sni-connect",
   ]);
@@ -259,7 +263,7 @@ test("a depth-two PR merge checkout selects every PR commit and both sides of a 
     git(source, "add", "--all");
     git(source, "commit", "-qm", message);
   };
-  git(source, "init", "-q", "--initial-branch=base");
+  git(source, "init", "-q", "--initial-branch=base", "--object-format=sha1");
   git(source, "config", "user.name", "Native CI fixture");
   git(source, "config", "user.email", "native-ci@example.invalid");
   git(source, "config", "commit.gpgsign", "false");

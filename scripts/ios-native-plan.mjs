@@ -15,6 +15,7 @@ const plans = {
       "react-native-lite-card": "ReactNativeLiteCard",
       "react-native-native-overlay": "NativeOverlay",
       "react-native-auto-size-input": "AutoSizeInput",
+      "react-native-network-throttle": "ReactNativeNetworkThrottle",
     },
     testSchemes: {
       "react-native-text-input": "OneKeyTextInput-Unit-Tests",

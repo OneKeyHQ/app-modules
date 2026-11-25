@@ -46,6 +46,10 @@ target 'example' do
   # QrScanner is a Swift pod over zxing-cpp; same static-library rule.
   pod 'zxing-cpp', '2.2.0', :modular_headers => true
 
+  # Network Throttle is not an example workspace dependency. Include its iOS
+  # pod directly, like the manual Gradle project registration on Android.
+  pod 'ReactNativeNetworkThrottle', :path => '../../../native-modules/react-native-network-throttle'
+
   # CocoaPods does not install test specs unless they are requested explicitly.
   pod 'ReactNativeDeviceUtils', :path => '../../../node_modules/@onekeyfe/react-native-device-utils', :testspecs => ['Tests']
   pod 'OneKeyImage', :path => '../../../node_modules/@onekeyfe/react-native-image', :testspecs => ['Tests']

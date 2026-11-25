@@ -2949,6 +2949,29 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - ReactNativeNetworkThrottle (6.8.0-1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-bridging
+    - React-Core
+    - React-Core-prebuilt
+    - React-cxxstableapi
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - ReactNativePerfMemory (6.8.0-1):
     - hermes-engine
     - NitroModules
@@ -3479,6 +3502,7 @@ DEPENDENCIES:
   - "ReactNativeJpush/Tests (from `../../../node_modules/@onekeyfe/react-native-jpush`)"
   - "ReactNativeLiteCard (from `../../../node_modules/@onekeyfe/react-native-lite-card`)"
   - "ReactNativeNativeLogger (from `../../../node_modules/@onekeyfe/react-native-native-logger`)"
+  - ReactNativeNetworkThrottle (from `../../../native-modules/react-native-network-throttle`)
   - "ReactNativePerfMemory (from `../../../node_modules/@onekeyfe/react-native-perf-memory`)"
   - "ReactNativePerfStats (from `../../../node_modules/@onekeyfe/react-native-perf-stats`)"
   - "ReactNativePhotoLibrary (from `../../../node_modules/@onekeyfe/react-native-photo-library`)"
@@ -3752,6 +3776,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/@onekeyfe/react-native-lite-card"
   ReactNativeNativeLogger:
     :path: "../../../node_modules/@onekeyfe/react-native-native-logger"
+  ReactNativeNetworkThrottle:
+    :path: "../../../native-modules/react-native-network-throttle"
   ReactNativePerfMemory:
     :path: "../../../node_modules/@onekeyfe/react-native-perf-memory"
   ReactNativePerfStats:
@@ -3907,6 +3933,7 @@ SPEC CHECKSUMS:
   ReactNativeJpush: 7e7958e03c904e0bcc1f45b38688f4ec3bfb823f
   ReactNativeLiteCard: f561312412c43c158cfa9b1ad93934c7c1b6a080
   ReactNativeNativeLogger: 1aa249dd2f78218e49097cc6b839491d8a8709ea
+  ReactNativeNetworkThrottle: 50a487d4031e306842f6c80201377cc6a3536ced
   ReactNativePerfMemory: 53decef49c1e35b8ccba670e108949eee20f155f
   ReactNativePerfStats: 7e149ada7eaaad6d1eb9352c2cf2cfd511bee39e
   ReactNativePhotoLibrary: 0ff4a20e446f71fa2ec32105b006047ce9a86b7f
@@ -3928,6 +3955,6 @@ SPEC CHECKSUMS:
   Yoga: d1c536142c5ff8ec8cd856ab2a7c227a1d875c8e
   zxing-cpp: 7486c8459df40d8f6a5453cc1ec35e67b10cd25a
 
-PODFILE CHECKSUM: e45190958c75ef8b6dd9bee802b31d8b3d64d0f8
+PODFILE CHECKSUM: 1b9c035b74368d143188f527cb0f164f3f271ea3
 
 COCOAPODS: 1.16.2
