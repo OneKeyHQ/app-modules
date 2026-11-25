@@ -6127,6 +6127,94 @@ describe('Web migration layout and table regressions', () => {
     }
   });
 
+  it('dispatches both table column icons independently and preserves focus on quote updates', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    const actions = [
+      { name: 'Copy3Outline', actionKey: 'copy', accessibilityLabel: 'Copy' },
+      {
+        name: 'OpenOutline',
+        actionKey: 'open',
+        accessibilityLabel: 'Explorer',
+      },
+    ];
+    const cols = [
+      {
+        key: 'address',
+        text: 'abc',
+        actions,
+        actionPlacement: 'below' as const,
+      },
+      { key: 'value', text: '$1' },
+    ];
+    const row = {
+      key: 'holder',
+      type: 'dataRow' as const,
+      columns: cols.map(({ key, text }) => ({ key, text })),
+      tableColumns: cols,
+    };
+    const onRowAction = jest.fn();
+    const engine = new NativeListWebEngine(
+      document.body,
+      snapshot({ kind: 'sectioned' }, [row]),
+      { onRowAction },
+      false
+    );
+    try {
+      const copy = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Copy"]'
+      )!;
+      const open = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Explorer"]'
+      )!;
+      copy.click();
+      open.focus();
+      open.click();
+      engine.applyPatches([
+        {
+          key: row.key,
+          type: 'dataRow',
+          changes: { tableColumns: [cols[0], { key: 'value', text: '$2' }] },
+        },
+      ]);
+      expect(document.activeElement).toBe(open);
+      expect(
+        onRowAction.mock.calls.map(([event]) => [
+          event.actionKey,
+          event.anchor.slot,
+        ])
+      ).toEqual([
+        ['copy', 0],
+        ['open', 0],
+      ]);
+      engine.applyPatches([
+        { key: row.key, type: 'dataRow', changes: { disabled: true } },
+      ]);
+      expect(
+        document.querySelector<HTMLButtonElement>('button[aria-label="Copy"]')
+          ?.disabled
+      ).toBe(true);
+      engine.applyPatches([
+        {
+          key: row.key,
+          type: 'dataRow',
+          changes: { tableColumns: row.columns },
+        },
+      ]);
+      expect(
+        document.querySelector('button[aria-label="Explorer"]')
+      ).toBeNull();
+    } finally {
+      engine.destroy();
+      if (original) Object.defineProperty(globalThis, 'Element', original);
+      else Reflect.deleteProperty(globalThis, 'Element');
+    }
+  });
+
   it('keeps an inline table action independent of the row and updates the recycled cell', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');

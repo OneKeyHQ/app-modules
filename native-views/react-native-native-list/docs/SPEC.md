@@ -2838,6 +2838,19 @@ label clears the override and restores the generated label. Activating a cell
 delivers the existing row action event with `anchor.source = "leadingAction"`
 and `anchor.slot` equal to its zero-based column index, including right-hand cells.
 
+A passive column can instead present up to two independent icon buttons in
+`actions`. Each has a glyph `name`, a nonblank `actionKey` unique within the
+column, and a nonblank `accessibilityLabel`. The default `actionPlacement`
+is `inline` after the labels. With `below`, both buttons appear side by side
+under the labels. Each emits its own key with the column index as the anchor
+slot. On iOS and Android, touches up to 8 logical units outside the glyph
+can activate the button within its cell. The nearest button owns overlapping
+touch regions. Glyph layout and action anchor rectangles stay unchanged.
+A disabled row disables both buttons. Development rejects whole-cell actions
+combined with icon buttons. Production keeps the whole-cell action in that
+case and discards malformed or duplicate buttons. An invalid placement in a
+production snapshot or patch falls back to inline and preserves other updates.
+
 In production, snapshots and patches discard unknown column and visual fields,
 drop incomplete cell actions, and truncate each text line to 4096 characters
 and each formatted line to 64 segments and 4096 characters in total.

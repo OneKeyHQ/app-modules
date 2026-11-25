@@ -1,7 +1,11 @@
 package com.margelo.nitro.nativelist
 
+import android.app.Activity
 import android.content.Intent
+import android.graphics.Rect
+import android.os.SystemClock
 import android.test.InstrumentationTestCase
+import android.view.MotionEvent
 import android.view.View
 import com.facebook.react.bridge.BridgeReactContext
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
@@ -193,6 +197,60 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     row.dispose()
   }
 
+  fun testBoundedCellIconActionsAndReuse() = withMarketActivity { activity, context ->
+    lateinit var row: NativeListBoundedTableView
+    val received = mutableListOf<String>()
+    val column = JSONObject().put("key", "address").put("text", "Address")
+    val data = item().json.put("tableColumns", JSONArray().put(column).put(JSONObject().put("key", "value").put("text", "42")))
+    val icons = JSONArray()
+    for ((key, icon) in listOf("copy" to "Copy3Outline", "open" to "OpenOutline"))
+      icons.put(JSONObject().put("name", icon).put("actionKey", key).put("accessibilityLabel", key))
+    column.put("actions", icons)
+    fun bind() = row.bind(NativeListItem.parse(data), null, "linear", "vertical", null, false, { _, _, fallback -> fallback })
+    fun find(key: String) = ArrayList<View>().also {
+      row.findViewsWithText(it, key, View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
+    }
+    fun bounds(key: String): Rect {
+      val icon = find(key).single()
+      return Rect(0, 0, icon.width, icon.height).also { row.offsetDescendantRectToMyCoords(icon, it) }
+    }
+    fun tap(x: Float, y: Float) {
+      val now = SystemClock.uptimeMillis()
+      for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+        val event = MotionEvent.obtain(now, now, action, x, y, 0)
+        try { row.dispatchTouchEvent(event) } finally { event.recycle() }
+      }
+    }
+    instrumentation.runOnMainSync {
+      row = NativeListBoundedTableView(context, NativeListFonts())
+      row.onAction = { _, key, _, _ -> received.add(key) }
+      activity.setContentView(row)
+    }
+    for (placement in listOf("inline", "below")) {
+      instrumentation.runOnMainSync {
+        column.put("actionPlacement", placement)
+        bind()
+      }
+      instrumentation.waitForIdleSync()
+      instrumentation.runOnMainSync {
+        val copy = bounds("copy")
+        val open = bounds("open")
+        tap(copy.right + 1f, copy.exactCenterY())
+        tap(open.left - 1f, open.exactCenterY())
+        tap(copy.exactCenterX(), copy.top - 3 * context.resources.displayMetrics.density)
+      }
+      instrumentation.waitForIdleSync()
+      assertEquals(listOf("copy", "open", "copy"), received)
+      received.clear()
+    }
+    instrumentation.runOnMainSync {
+      column.remove("actions")
+      bind()
+      assertTrue(find("copy").isEmpty())
+      row.dispose()
+    }
+  }
+
   fun testBoundedStyledTextFitsFixedAndFlexibleCells() = withMarketRow { host ->
     val row = NativeListBoundedTableView(host.context as ThemedReactContext, NativeListFonts())
     val width = (240 * row.resources.displayMetrics.density).toInt()
@@ -223,22 +281,34 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     row.bind(item, null, "linear", "vertical", null, false, { _, _, fallback -> fallback }, true)
   }
 
-  private fun withMarketRow(action: (NativeListMarketRowView) -> Unit) {
-    val activity = instrumentation.startActivitySync(
-      Intent(instrumentation.context, NativeListReorderTestActivity::class.java)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    )
+  private fun withMarketRow(action: (NativeListMarketRowView) -> Unit) = withMarketActivity { activity, context ->
     instrumentation.runOnMainSync {
-      SoLoader.init(activity, OpenSourceMergedSoMapping)
-      OneKeyLog.init(activity)
-      val context = ThemedReactContext(BridgeReactContext(activity), activity, "MarketMetricsTest", 1)
       val row = NativeListMarketRowView(context, NativeListFonts())
       try {
         activity.setContentView(row)
         action(row)
       } finally {
-        activity.setContentView(View(activity))
         row.dispose()
+      }
+    }
+  }
+
+  private fun withMarketActivity(action: (Activity, ThemedReactContext) -> Unit) {
+    val activity = instrumentation.startActivitySync(
+      Intent(instrumentation.context, NativeListReorderTestActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
+    try {
+      lateinit var context: ThemedReactContext
+      instrumentation.runOnMainSync {
+        SoLoader.init(activity, OpenSourceMergedSoMapping)
+        OneKeyLog.init(activity)
+        context = ThemedReactContext(BridgeReactContext(activity), activity, "MarketMetricsTest", 1)
+      }
+      action(activity, context)
+    } finally {
+      instrumentation.runOnMainSync {
+        activity.setContentView(View(activity))
         activity.finish()
       }
     }

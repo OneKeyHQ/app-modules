@@ -13,8 +13,11 @@ type Cell = {
   element: HTMLElement;
   content: HTMLElement;
   labels: HTMLElement;
+  labelGroup: HTMLElement;
   visual?: HTMLElement;
   visualKey?: string;
+  actions?: HTMLElement;
+  actionsKey?: string;
 };
 const states = new WeakMap<
   HTMLElement,
@@ -84,9 +87,13 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
       const content = body.ownerDocument.createElement('span');
       content.style.cssText =
         'display:flex;align-items:center;min-width:0;max-width:100%';
-      content.appendChild(labels);
+      const labelGroup = body.ownerDocument.createElement('span');
+      labelGroup.style.cssText =
+        'display:flex;align-items:center;min-width:0;max-width:100%';
+      labelGroup.appendChild(labels);
+      content.appendChild(labelGroup);
       element.appendChild(content);
-      cell = { element, content, labels };
+      cell = { element, content, labelGroup, labels };
       state.cells[index] = cell;
     }
     const { element, labels } = cell;
@@ -155,6 +162,45 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
           primitives
         )
       );
+    const actionsKey = JSON.stringify([column.actions, row.disabled, index]);
+    if (cell.actionsKey !== actionsKey) {
+      cell.actions?.remove();
+      cell.actions = undefined;
+      if (column.actions?.length) {
+        const actions = body.ownerDocument.createElement('span');
+        actions.style.cssText =
+          'display:flex;align-items:center;flex:none;gap:6px';
+        for (const action of column.actions) {
+          const icon = primitives.iconAction(
+            action.name,
+            action.actionKey,
+            row.disabled,
+            undefined,
+            action.accessibilityLabel
+          );
+          icon.style.cssText =
+            'width:16px;min-width:16px;height:16px;padding:0;color:var(--nl-icon-subdued)';
+          const glyph = icon.querySelector('svg');
+          if (glyph) {
+            glyph.style.width = '16px';
+            glyph.style.height = '16px';
+          }
+          markActionAnchorSource(icon, 'leadingAction', index);
+          actions.appendChild(icon);
+        }
+        cell.actions = actions;
+      }
+      cell.actionsKey = actionsKey;
+    }
+    if (cell.actions) {
+      const below = column.actionPlacement === 'below';
+      cell.actions.style.marginInlineStart = below ? '0' : '6px';
+      cell.actions.style.marginTop = below ? '6px' : '0';
+      cell.labelGroup.style.flexDirection = below ? 'column' : 'row';
+      cell.labelGroup.style.alignItems = below ? 'flex-start' : 'center';
+      if (cell.actions.parentElement !== cell.labelGroup)
+        cell.labelGroup.appendChild(cell.actions);
+    }
   });
 }
 

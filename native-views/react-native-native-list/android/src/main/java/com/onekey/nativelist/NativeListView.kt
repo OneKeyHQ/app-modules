@@ -2311,6 +2311,11 @@ class NativeListView(
     if (!view.isShown) return null
     val bounds = Rect()
     if (!view.getGlobalVisibleRect(bounds) || !bounds.contains(rawX, rawY)) return null
+    if (view is NativeListBoundedTableView.Cell) {
+      val origin = IntArray(2)
+      view.getLocationOnScreen(origin)
+      view.actionAt(rawX - origin[0], rawY - origin[1], bounds)?.let { return it }
+    }
     if (view is ViewGroup) {
       for (index in view.childCount - 1 downTo 0) {
         clickableDescendantAt(view.getChildAt(index), rawX, rawY)?.let { return it }

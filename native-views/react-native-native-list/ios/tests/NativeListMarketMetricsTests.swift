@@ -72,6 +72,46 @@ final class NativeListMarketMetricsTests: XCTestCase {
     XCTAssertEqual(actions, ["favorite"])
   }
 
+  func testBoundedTableInlineActionsAndReuse() throws {
+    let cell = NativeListBoundedTableCell(frame: CGRect(x: 0, y: 0, width: 320, height: 56))
+    var data = try item().data
+    let actions = [["name": "Copy3Outline", "actionKey": "copy", "accessibilityLabel": "Copy"],
+                   ["name": "OpenOutline", "actionKey": "open", "accessibilityLabel": "Explorer"]]
+    var received: [String] = []
+    cell.onAction = { _, key, _, _ in received.append(key) }
+    func bind(_ placement: String, _ actions: [[String: String]]) throws {
+      data["tableColumns"] = [["key":"address", "text":"Address", "actions": actions, "actionPlacement":placement], ["key":"value","text":"42"]]
+      cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      cell.layoutIfNeeded()
+    }
+    for placement in ["inline", "below"] {
+      try bind(placement, actions)
+      let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
+      column.layoutIfNeeded()
+      let labels = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListTableColumnView }.first)
+      let buttons = column.subviews.compactMap { $0 as? NativeListIconButton }
+      XCTAssertEqual(buttons.compactMap { $0.accessibilityLabel }, ["Copy","Explorer"])
+      let first = try XCTUnwrap(buttons.first)
+      if placement == "below" { XCTAssertGreaterThan(first.frame.minY, labels.frame.maxY) }
+      else { XCTAssertGreaterThan(first.frame.minX, labels.frame.maxX) }
+      let second = try XCTUnwrap(buttons.last)
+      let nearCopy = CGPoint(x: first.frame.maxX + 1, y: first.frame.midY)
+      let nearOpen = CGPoint(x: second.frame.minX - 1, y: second.frame.midY)
+      XCTAssertTrue(column.hitTest(nearCopy, with: nil) === first)
+      XCTAssertTrue(column.hitTest(nearOpen, with: nil) === second)
+      XCTAssertTrue(column.hitTest(CGPoint(x: first.center.x, y: first.frame.minY - 3), with: nil) === first)
+      for button in buttons {
+        let target = try XCTUnwrap(button.allTargets.first as? NSObject)
+        let selector = try XCTUnwrap(button.actions(forTarget: target, forControlEvent: .touchUpInside)?.first)
+        _ = target.perform(NSSelectorFromString(selector), with: button)
+      }
+    }
+    XCTAssertEqual(received, ["copy","open","copy","open"])
+    try bind("inline", [])
+    XCTAssertFalse(cell.root.arrangedSubviews.first!.subviews[0].subviews.contains { $0 is NativeListIconButton })
+  }
+
   func testBoundedTableAnnouncesCompleteSubscriptAmountsAndExplicitLabel() throws {
     var data = try item().data
     data["tableColumns"] = [

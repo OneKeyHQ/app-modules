@@ -4547,6 +4547,57 @@ describe.each([true, false])(
 
     it.each([
       {
+        scenario: 'array-valued icon placement',
+        extra: {
+          actions: [
+            {
+              name: 'Copy3Outline',
+              actionKey: 'copy',
+              accessibilityLabel: 'Copy',
+            },
+          ],
+          // Malformed input from a JSON snapshot or wire patch.
+          actionPlacement: ['inline'] as unknown as 'inline',
+        },
+        retained: {
+          actions: [
+            {
+              name: 'Copy3Outline',
+              actionKey: 'copy',
+              accessibilityLabel: 'Copy',
+            },
+          ],
+        },
+        devError: /actionPlacement/,
+      },
+      {
+        scenario: 'duplicate icon actions',
+        extra: {
+          actions: [
+            {
+              name: 'Copy3Outline',
+              actionKey: 'copy',
+              accessibilityLabel: 'Copy',
+            },
+            {
+              name: 'OpenOutline',
+              actionKey: 'copy',
+              accessibilityLabel: 'Open',
+            },
+          ],
+        },
+        retained: {
+          actions: [
+            {
+              name: 'Copy3Outline',
+              actionKey: 'copy',
+              accessibilityLabel: 'Copy',
+            },
+          ],
+        },
+        devError: /duplicate action key/,
+      },
+      {
         scenario: 'image-like column metadata',
         extra: {
           uri: '',
