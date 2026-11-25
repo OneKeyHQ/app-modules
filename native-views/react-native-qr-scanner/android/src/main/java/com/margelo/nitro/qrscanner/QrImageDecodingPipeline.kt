@@ -168,6 +168,7 @@ class QrImageDecodingPipeline(private val engines: List<QrImageEngine>) {
   }
 
   fun decodeBitmapSymbols(image: Bitmap, maxPixels: Long = 50_000_000): QrImageSymbolsHit {
+    val maxImageSymbols = 8
     val passes: List<Pair<String, () -> Bitmap>> = listOf(
       "original" to { image },
       "padded" to { padded(image, maxPixels) },
@@ -176,10 +177,17 @@ class QrImageDecodingPipeline(private val engines: List<QrImageEngine>) {
     )
     var attempted = false
     var decoded = false
+    val merged = mutableListOf<QrPipelineSymbol>()
+    val seen = LinkedHashSet<String>()
+    var firstEngine: String? = null
+    var firstPass: String? = null
+
     for ((pass, make) in passes) {
+      if (merged.size >= maxImageSymbols) break
       val variant = make()
       try {
         for (engine in engines) {
+          if (merged.size >= maxImageSymbols) break
           attempted = true
           try {
             val symbols = engine.decodeSymbols(variant)
@@ -190,13 +198,15 @@ class QrImageDecodingPipeline(private val engines: List<QrImageEngine>) {
               } else {
                 symbols
               }
-              return QrImageSymbolsHit(
-                width = image.width,
-                height = image.height,
-                symbols = mapped,
-                engine = engine.name,
-                pass = pass,
-              )
+              for (sym in mapped) {
+                if (sym.text.isEmpty() || !seen.add(sym.text)) continue
+                merged.add(sym)
+                if (firstEngine == null) {
+                  firstEngine = engine.name
+                  firstPass = pass
+                }
+                if (merged.size >= maxImageSymbols) break
+              }
             }
           } catch (error: InterruptedException) {
             Thread.currentThread().interrupt()
@@ -208,6 +218,15 @@ class QrImageDecodingPipeline(private val engines: List<QrImageEngine>) {
       } finally {
         if (variant !== image) variant.recycle()
       }
+    }
+    if (merged.isNotEmpty()) {
+      return QrImageSymbolsHit(
+        width = image.width,
+        height = image.height,
+        symbols = merged,
+        engine = firstEngine,
+        pass = firstPass,
+      )
     }
     if (attempted && !decoded) throw QrImageDecodeException("decoder-unavailable", "A QR decoder failed")
     return QrImageSymbolsHit(width = image.width, height = image.height, symbols = emptyList())

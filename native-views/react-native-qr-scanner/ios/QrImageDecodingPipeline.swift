@@ -153,6 +153,8 @@ final class QrImageDecodingPipeline {
     return nil
   }
 
+  static let maxImageSymbols = 8
+
   func decodeSymbols(url: URL, maxPixels: Int) throws -> QrImageSymbolsHit {
     let image = try loadOriented(url: url, maxPixels: maxPixels)
     let passes: [(String, () -> CGImage?)] = [
@@ -163,10 +165,17 @@ final class QrImageDecodingPipeline {
     ]
     var attempted = false
     var decoded = false
+    var merged: [QrPipelineSymbol] = []
+    var seen = Set<String>()
+    var firstEngine: String?
+    var firstPass: String?
+
     for (pass, makeVariant) in passes {
-      let hit: QrImageSymbolsHit? = autoreleasepool {
-        guard let variant = makeVariant() else { return nil }
+      if merged.count >= Self.maxImageSymbols { break }
+      autoreleasepool {
+        guard let variant = makeVariant() else { return }
         for engine in engines {
+          if merged.count >= Self.maxImageSymbols { break }
           attempted = true
           do {
             let symbols = try engine.decodeSymbols(variant)
@@ -176,20 +185,30 @@ final class QrImageDecodingPipeline {
                 pass == "padded"
                 ? symbols.map { self.unpadSymbol($0, original: image, padded: variant) }
                 : symbols
-              return QrImageSymbolsHit(
-                width: image.width,
-                height: image.height,
-                symbols: mapped,
-                engine: engine.name,
-                pass: pass)
+              for sym in mapped {
+                if sym.text.isEmpty || seen.contains(sym.text) { continue }
+                seen.insert(sym.text)
+                merged.append(sym)
+                if firstEngine == nil {
+                  firstEngine = engine.name
+                  firstPass = pass
+                }
+                if merged.count >= Self.maxImageSymbols { break }
+              }
             }
           } catch {
             // A failed pass leaves the remaining engines and passes available.
           }
         }
-        return nil
       }
-      if let hit { return hit }
+    }
+    if !merged.isEmpty {
+      return QrImageSymbolsHit(
+        width: image.width,
+        height: image.height,
+        symbols: merged,
+        engine: firstEngine,
+        pass: firstPass)
     }
     if attempted && !decoded { throw QrImageDecodeError.decoderUnavailable }
     return QrImageSymbolsHit(

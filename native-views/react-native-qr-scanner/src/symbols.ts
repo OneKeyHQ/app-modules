@@ -150,6 +150,11 @@ export type MultiSymbolPhase =
   | 'ur-streaming'
   | 'resolved';
 
+export type MultiSymbolCommitResult =
+  | void
+  | boolean
+  | { status: 'progress' | 'complete' | 'ignored' | 'rejected'; reason?: string };
+
 export interface MultiSymbolCoordinatorOptions {
   /** Short anti-race window after a single non-UR symbol (default 140 ms). */
   aggregationWindowMs?: number;
@@ -158,7 +163,13 @@ export interface MultiSymbolCoordinatorOptions {
   onFrozenChange: (frozen: boolean) => void;
   onMultiSymbolChange: (enabled: boolean) => void;
   onSelectingChange: (symbols: QrDetectedSymbol[]) => void;
-  onCommitText: (text: string, mode: 'static' | 'ur') => void;
+  /**
+   * Called when a static QR or UR fragment is committed. Returning a
+   * `ScanReceiveResult`-like object (or `false`) lets the coordinator keep
+   * selection open if a selected UR fails to bind, stop streaming on
+   * completion, and re-enable `multiSymbol` if a foreign UR is seen.
+   */
+  onCommitText: (text: string, mode: 'static' | 'ur') => MultiSymbolCommitResult;
 }
 
 export interface MultiSymbolCoordinator {
@@ -182,6 +193,18 @@ function extractMultipartUrKey(text: string): string | null {
     return null;
   }
   return `${type.toLowerCase()}/${seqLen}`;
+}
+
+function classifyCommitResult(
+  result: MultiSymbolCommitResult
+): 'accepted' | 'complete' | 'rejected' {
+  if (result === false) return 'rejected';
+  if (result && typeof result === 'object') {
+    if (result.status === 'complete') return 'complete';
+    if (result.status === 'progress') return 'accepted';
+    return 'rejected';
+  }
+  return 'accepted';
 }
 
 /**
@@ -218,12 +241,22 @@ export function createMultiSymbolCoordinator(
   function enterUrStreaming(firstPart: string, keepMultiSymbol: boolean) {
     clearTimer();
     pendingSymbol = undefined;
+    const outcome = classifyCommitResult(options.onCommitText(firstPart, 'ur'));
+    if (outcome === 'rejected') {
+      // Do not latch into ur-streaming if the caller/session did not bind.
+      return;
+    }
+    if (outcome === 'complete') {
+      selectedUrKey = null;
+      phase = 'resolved';
+      options.onSelectingChange([]);
+      return;
+    }
     selectedUrKey = extractMultipartUrKey(firstPart);
     phase = 'ur-streaming';
     options.onSelectingChange([]);
     options.onFrozenChange(false);
     options.onMultiSymbolChange(keepMultiSymbol);
-    options.onCommitText(firstPart, 'ur');
   }
 
   function commitStatic(text: string) {
@@ -233,15 +266,6 @@ export function createMultiSymbolCoordinator(
     phase = 'resolved';
     options.onSelectingChange([]);
     options.onCommitText(text, 'static');
-  }
-
-  function commitSingleOrInvalidUr(text: string) {
-    clearTimer();
-    pendingSymbol = undefined;
-    selectedUrKey = null;
-    phase = 'resolved';
-    options.onSelectingChange([]);
-    options.onCommitText(text, 'ur');
   }
 
   function isVisible(symbol: QrDetectedSymbol): boolean {
@@ -269,16 +293,22 @@ export function createMultiSymbolCoordinator(
           if (selectedUrKey === null) return true;
           return extractMultipartUrKey(item.text) === selectedUrKey;
         });
-        if (urSymbols.length > 0) {
-          // Forward matching UR candidates so the bound UrAssembler/ScanSession
-          // receives fragments belonging to the selected message even when another
-          // UR appears earlier in the frame's symbol array.
-          for (const ur of urSymbols) {
-            options.onCommitText(ur.text, 'ur');
+        let anyAccepted = false;
+        for (const ur of urSymbols) {
+          const outcome = classifyCommitResult(options.onCommitText(ur.text, 'ur'));
+          if (outcome === 'complete') {
+            selectedUrKey = null;
+            phase = 'resolved';
+            return;
           }
-        } else {
-          // A simpler competing static QR can win maxNumberOfSymbols=1 and starve
-          // the animated UR; re-enable multiSymbol so the UR stays visible.
+          if (outcome === 'accepted') {
+            anyAccepted = true;
+          }
+        }
+        if (!anyAccepted) {
+          // Either a simpler static QR or a foreign competing UR won
+          // maxNumberOfSymbols=1 and starved the bound UR stream; re-enable
+          // multiSymbol so the bound UR remains visible.
           options.onMultiSymbolChange(true);
         }
         return;
@@ -330,13 +360,20 @@ export function createMultiSymbolCoordinator(
       if (phase !== 'selecting') return;
       if (isUrFrameText(symbol.text)) {
         if (extractMultipartUrKey(symbol.text) === null) {
-          // Single-part or malformed UR: commit once and do not stream other
-          // unselected URs from subsequent frames.
-          commitSingleOrInvalidUr(symbol.text);
+          // Single-part or malformed UR: attempt to commit; leave selection
+          // open if rejected/ignored so the user can pick another code.
+          const outcome = classifyCommitResult(options.onCommitText(symbol.text, 'ur'));
+          if (outcome === 'rejected') return;
+          clearTimer();
+          pendingSymbol = undefined;
+          selectedUrKey = null;
+          phase = 'resolved';
+          options.onSelectingChange([]);
           return;
         }
         // Competing static symbols are already in view; keep multiSymbol on so
         // an easier static QR cannot starve the denser animated UR frames.
+        // `enterUrStreaming` leaves selection open if the first part is rejected.
         enterUrStreaming(symbol.text, true);
       } else {
         commitStatic(symbol.text);

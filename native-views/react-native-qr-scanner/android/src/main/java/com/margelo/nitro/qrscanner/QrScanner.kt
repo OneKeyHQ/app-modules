@@ -316,18 +316,32 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     }
   }
 
+  private var pendingFreezeSnapshot = false
+  private var pendingBindLayoutListener: View.OnLayoutChangeListener? = null
+
+  private fun captureFrozenSnapshot(): Boolean {
+    val snapshot = previewView.bitmap ?: return false
+    frozenImageView.setImageBitmap(snapshot)
+    frozenImageView.visibility = View.VISIBLE
+    pendingFreezeSnapshot = false
+    return true
+  }
+
   private fun applyFrozen(nextFrozen: Boolean) {
-    if (isFrozenMain == nextFrozen) return
+    if (isFrozenMain == nextFrozen) {
+      if (nextFrozen && pendingFreezeSnapshot) captureFrozenSnapshot()
+      return
+    }
     isFrozenMain = nextFrozen
     if (nextFrozen) {
       focusIndicator.animate().cancel()
       focusIndicator.alpha = 0f
-      val snapshot = previewView.bitmap
-      if (snapshot != null) {
-        frozenImageView.setImageBitmap(snapshot)
-        frozenImageView.visibility = View.VISIBLE
+      if (!captureFrozenSnapshot()) {
+        // PreviewView is not streaming yet; retry once STREAMING arrives.
+        pendingFreezeSnapshot = true
       }
     } else {
+      pendingFreezeSnapshot = false
       frozenImageView.visibility = View.GONE
       frozenImageView.setImageBitmap(null)
     }
@@ -449,12 +463,51 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     }
     unbind()
     val oldPreview = previewView
-    previewView = newPreviewView()
+    val targetPreview = newPreviewView()
+    previewView = targetPreview
     container.removeView(oldPreview)
-    container.addView(previewView, 0, FrameLayout.LayoutParams(
+    container.addView(targetPreview, 0, FrameLayout.LayoutParams(
       FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
     ))
-    val preview = Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
+    // Wait until the replacement PreviewView has non-zero bounds so
+    // previewView.viewPort is non-null when binding UseCaseGroup (CameraX 1.6).
+    if (targetPreview.width > 0 && targetPreview.height > 0 && targetPreview.viewPort != null) {
+      bindLaidOutPreview(provider, selector, targetPreview, generation)
+      return
+    }
+    val listener = object : View.OnLayoutChangeListener {
+      override fun onLayoutChange(
+        v: View,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+        oldLeft: Int,
+        oldTop: Int,
+        oldRight: Int,
+        oldBottom: Int,
+      ) {
+        if (right - left <= 0 || bottom - top <= 0) return
+        v.removeOnLayoutChangeListener(this)
+        if (pendingBindLayoutListener === this) pendingBindLayoutListener = null
+        if (gate.currentGeneration != generation || !shouldRun || dropped || previewView !== targetPreview) {
+          return
+        }
+        bindLaidOutPreview(provider, selector, targetPreview, generation)
+      }
+    }
+    pendingBindLayoutListener = listener
+    targetPreview.addOnLayoutChangeListener(listener)
+    targetPreview.requestLayout()
+  }
+
+  private fun bindLaidOutPreview(
+    provider: ProcessCameraProvider,
+    selector: CameraSelector,
+    targetPreview: PreviewView,
+    generation: Int,
+  ) {
+    val preview = Preview.Builder().build().also { it.surfaceProvider = targetPreview.surfaceProvider }
     val analysis = ImageAnalysis.Builder()
       .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
       .setResolutionSelector(
@@ -471,7 +524,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       val groupBuilder = UseCaseGroup.Builder()
         .addUseCase(preview)
         .addUseCase(analysis)
-      previewView.viewPort?.let { groupBuilder.setViewPort(it) }
+      targetPreview.viewPort?.let { groupBuilder.setViewPort(it) }
       provider.bindToLifecycle(this, selector, groupBuilder.build())
     } catch (error: Exception) {
       analysis.clearAnalyzer()
@@ -489,12 +542,19 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     var ready = false
     var lastErrorCode: Int? = null
     val previewStateObserver = Observer<PreviewView.StreamState> { state ->
-      if (state == PreviewView.StreamState.STREAMING &&
-        gate.currentGeneration == generation && !ready
-      ) {
-        ready = true
-        gate.setCapturing(true)
-        callbacks.ready?.invoke(generation.toDouble(), activeCameraId)
+      if (state == PreviewView.StreamState.STREAMING && gate.currentGeneration == generation) {
+        if (!ready) {
+          ready = true
+          gate.setCapturing(true)
+          callbacks.ready?.invoke(generation.toDouble(), activeCameraId)
+        }
+        if (isFrozenMain && pendingFreezeSnapshot && !captureFrozenSnapshot()) {
+          targetPreview.post {
+            if (isFrozenMain && pendingFreezeSnapshot && gate.currentGeneration == generation) {
+              captureFrozenSnapshot()
+            }
+          }
+        }
       }
     }
     val cameraStateObserver = Observer<CameraState> { state ->
@@ -508,7 +568,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     }
     streamObserver = previewStateObserver
     cameraObserver = cameraStateObserver
-    previewView.previewStreamState.observeForever(previewStateObserver)
+    targetPreview.previewStreamState.observeForever(previewStateObserver)
     bound.cameraInfo.cameraState.observeForever(cameraStateObserver)
     syncLifecycle()
   }
@@ -522,6 +582,8 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
   private fun unbind() {
     gate.setCapturing(false)
+    pendingBindLayoutListener?.let { previewView.removeOnLayoutChangeListener(it) }
+    pendingBindLayoutListener = null
     // Preserve frozenImageView and isFrozenMain across temporary rebinds
     // (camera switch or host pause/resume) while `frozen` remains true;
     // `afterUpdate` and `dispose` clear the freeze explicitly.

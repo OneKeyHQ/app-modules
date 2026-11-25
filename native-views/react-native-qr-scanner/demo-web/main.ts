@@ -307,6 +307,7 @@ function createCoordinator() {
       } else if (outcome.status === 'rejected') {
         log(`UR 拒绝: ${outcome.error.code} - ${outcome.error.message}`);
       }
+      return outcome;
     },
   });
 }

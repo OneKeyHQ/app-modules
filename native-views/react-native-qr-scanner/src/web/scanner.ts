@@ -439,11 +439,16 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       superseded?.getTracks().forEach((track) => track.stop());
       if (preview !== video) {
         preview.srcObject = null;
-        void video.play().catch((error: unknown) => {
-          if (stream === candidateStream) {
-            fail(cameraErrorCode(error), error instanceof Error ? error.message : String(error));
-          }
-        });
+        if (!frozen) {
+          void video.play().catch((error: unknown) => {
+            if (stream === candidateStream) {
+              fail(cameraErrorCode(error), error instanceof Error ? error.message : String(error));
+            }
+          });
+        }
+      }
+      if (frozen) {
+        video.pause();
       }
       startAnalysis(nextEngines);
     } catch (error) {

@@ -222,21 +222,60 @@ describe('createMultiSymbolCoordinator', () => {
     expect(onCommitText).toHaveBeenCalledWith(urB2.text, 'ur');
   });
 
-  test('selecting an invalid or single-part UR does not forward another UR in the same frame', () => {
-    const { coordinator, onCommitText } = setup(140);
-    const badUr = { text: 'UR:BYTES/invalid-payload', centerX: 0.25, centerY: 0.5 };
-    const otherUr = { text: 'UR:CRYPTO-PSBT/1-2/LPADAO', centerX: 0.75, centerY: 0.5 };
+  test('selecting a malformed UR whose session rejects it keeps selection open', () => {
+    const onFrozenChange = jest.fn();
+    const onMultiSymbolChange = jest.fn();
+    const onSelectingChange = jest.fn();
+    const onCommitText = jest.fn(() => ({ status: 'ignored' as const, reason: 'malformed' }));
+    const coordinator = createMultiSymbolCoordinator({
+      aggregationWindowMs: 140,
+      onFrozenChange,
+      onMultiSymbolChange,
+      onSelectingChange,
+      onCommitText,
+    });
 
+    const badUr = { text: 'UR:BYTES/1-2/LPADAO', centerX: 0.25, centerY: 0.5 };
+    const otherUr = { text: 'UR:BYTES/1-2/LPAEAO', centerX: 0.75, centerY: 0.5 };
     coordinator.receiveFrame([badUr, otherUr]);
     expect(coordinator.phase).toBe('selecting');
 
     coordinator.selectSymbol(badUr);
-    expect(coordinator.phase).toBe('resolved');
+    // Must stay in selecting/frozen so a different UR cannot bind on the next frame
+    expect(coordinator.phase).toBe('selecting');
+    expect(onFrozenChange).toHaveBeenLastCalledWith(true);
     expect(onCommitText).toHaveBeenCalledTimes(1);
-    expect(onCommitText).toHaveBeenCalledWith(badUr.text, 'ur');
 
-    // Later frames containing another valid UR must not be forwarded
     coordinator.receiveFrame([badUr, otherUr]);
     expect(onCommitText).toHaveBeenCalledTimes(1);
+  });
+
+  test('foreign UR in single-symbol ur-streaming triggers multiSymbol recovery', () => {
+    const onFrozenChange = jest.fn();
+    const onMultiSymbolChange = jest.fn();
+    const onSelectingChange = jest.fn();
+    const onCommitText = jest.fn((text: string) => {
+      if (text.includes('CRYPTO-PSBT')) return { status: 'progress' as const };
+      return { status: 'ignored' as const, reason: 'foreign' };
+    });
+    const coordinator = createMultiSymbolCoordinator({
+      aggregationWindowMs: 140,
+      onFrozenChange,
+      onMultiSymbolChange,
+      onSelectingChange,
+      onCommitText,
+    });
+
+    coordinator.receiveFrame([
+      { text: 'UR:CRYPTO-PSBT/1-3/LPADAO', centerX: 0.5, centerY: 0.5 },
+    ]);
+    expect(coordinator.phase).toBe('ur-streaming');
+    expect(onMultiSymbolChange).toHaveBeenLastCalledWith(false);
+
+    // Single-symbol detector later returns a foreign UR instead
+    coordinator.receiveFrame([
+      { text: 'UR:BYTES/1-2/LPADAO', centerX: 0.5, centerY: 0.5 },
+    ]);
+    expect(onMultiSymbolChange).toHaveBeenLastCalledWith(true);
   });
 });

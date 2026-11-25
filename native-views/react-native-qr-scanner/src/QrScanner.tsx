@@ -40,6 +40,8 @@ export interface QrScannerComponentProps {
   sessionKey?: string | number;
   style?: StyleProp<ViewStyle>;
   onReady?: (cameraId: string) => void;
+  /** Raw single-symbol text stream (useful when toggling `multiSymbol` off after a UR latch). */
+  onFrameText?: (text: string) => void;
   /** Whole-frame symbols in normalized visible view coordinates (`[0, 1]`). */
   onFrameSymbols?: (symbols: QrDetectedSymbol[]) => void;
   /** UR assembly progress, 0..1 (below 1 until complete). */
@@ -65,13 +67,16 @@ export function QrScanner({
   sessionKey,
   style,
   onReady,
+  onFrameText,
   onFrameSymbols,
   onProgress,
   onResult,
   onError,
 }: QrScannerComponentProps) {
+  const hasOnFrameSymbols = typeof onFrameSymbols === 'function';
   const handlers = useRef({
     onReady,
+    onFrameText,
     onFrameSymbols,
     onProgress,
     onResult,
@@ -80,12 +85,13 @@ export function QrScanner({
   useLayoutEffect(() => {
     handlers.current = {
       onReady,
+      onFrameText,
       onFrameSymbols,
       onProgress,
       onResult,
       onError,
     };
-  }, [onReady, onFrameSymbols, onProgress, onResult, onError]);
+  }, [onReady, onFrameText, onFrameSymbols, onProgress, onResult, onError]);
 
   // Limits are read once per session; callers pass a constant object.
   const limitsRef = useRef(limits);
@@ -130,6 +136,12 @@ export function QrScanner({
     return {
       onFrameText: callback((text: string, generation: number) => {
         if (!accept(generation)) return;
+        handlers.current.onFrameText?.(text);
+        const usesBuiltInSession =
+          !handlers.current.onFrameText ||
+          !!handlers.current.onResult ||
+          !!handlers.current.onProgress;
+        if (!usesBuiltInSession) return;
         const outcome = session.receive(text);
         if (outcome.status === 'progress') {
           handlers.current.onProgress?.(outcome.progress);
@@ -140,10 +152,12 @@ export function QrScanner({
           handlers.current.onError?.(outcome.error);
         }
       }),
-      onFrameSymbols: callback((symbols: QrDetectedSymbol[], generation: number) => {
-        if (!accept(generation)) return;
-        handlers.current.onFrameSymbols?.(symbols);
-      }),
+      onFrameSymbols: hasOnFrameSymbols
+        ? callback((symbols: QrDetectedSymbol[], generation: number) => {
+            if (!accept(generation)) return;
+            handlers.current.onFrameSymbols?.(symbols);
+          })
+        : undefined,
       onError: callback((code: string, message: string, generation: number) => {
         if (!accept(generation)) return;
         handlers.current.onError?.(
@@ -154,7 +168,7 @@ export function QrScanner({
         );
       }),
     };
-  }, [acceptGeneration, session, sessionIdentity]);
+  }, [acceptGeneration, hasOnFrameSymbols, session, sessionIdentity]);
 
   return (
     <QrScannerView

@@ -79,6 +79,7 @@ function createCapture(options) {
   }
   let activeGeneration;
   let disposed = false;
+  let paused = false;
   const native = new (binding().NativeCapture)(
     source.kind,
     source.kind === "file" ? source.path : source.deviceId,
@@ -117,10 +118,10 @@ function createCapture(options) {
           onReady?.(event.generation, event.deviceId);
           break;
         case "text":
-          onText?.(event.text, event.generation);
+          if (!paused) onText?.(event.text, event.generation);
           break;
         case "symbols": {
-          if (typeof onSymbols === "function" && event.text) {
+          if (!paused && typeof onSymbols === "function" && event.text) {
             const payload = JSON.parse(event.text);
             onSymbols(payload.symbols, payload.frameWidth, payload.frameHeight, event.generation);
           }
@@ -153,15 +154,17 @@ function createCapture(options) {
     stop() {
       if (disposed) return;
       activeGeneration = undefined;
+      paused = false;
       native.stop();
     },
     setMultiSymbol(enabled) {
       if (disposed) return;
       native.setMultiSymbol(Boolean(enabled));
     },
-    setPaused(paused) {
+    setPaused(nextPaused) {
       if (disposed) return;
-      native.setPaused(Boolean(paused));
+      paused = Boolean(nextPaused);
+      native.setPaused(paused);
     },
     /** Preview frames currently held by the consumer (at most 3). */
     lentFrames() {
