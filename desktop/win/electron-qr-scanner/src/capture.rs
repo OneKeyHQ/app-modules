@@ -144,12 +144,14 @@ pub enum CaptureEvent {
     Text {
         text: String,
         generation: i64,
+        analysis_revision: u64,
     },
     Symbols {
         symbols: Vec<DecodedSymbol>,
         frame_width: u32,
         frame_height: u32,
         generation: i64,
+        analysis_revision: u64,
     },
     Error {
         code: &'static str,
@@ -165,6 +167,7 @@ pub enum CaptureEvent {
         width: u32,
         height: u32,
         generation: i64,
+        analysis_revision: u64,
     },
 }
 
@@ -849,6 +852,7 @@ struct PendingFrame {
     width: u32,
     height: u32,
     generation: i64,
+    analysis_revision: u64,
 }
 
 enum DecodeWork {
@@ -1007,6 +1011,7 @@ struct AsyncCameraShared {
     emitter: Arc<Mutex<Option<EventEmitter>>>,
     stats: Arc<CaptureStats>,
     current_gen: Arc<AtomicI64>,
+    analysis_revision: Arc<AtomicU64>,
 }
 
 impl AsyncCameraShared {
@@ -1124,6 +1129,7 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
         }
 
         if let Some(sample) = psample.as_ref() {
+            let analysis_revision = self.shared.analysis_revision.load(Ordering::Acquire);
             let layout = self.shared.layout.lock().ok().map(|l| *l);
             if let Some(layout) = layout {
                 let need_bgra = self.shared.preview.is_some();
@@ -1165,6 +1171,7 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
                                     width: lent.width,
                                     height: lent.height,
                                     generation: self.shared.generation,
+                                    analysis_revision,
                                 });
                             }
                             Ok(None) => {
@@ -1197,6 +1204,7 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
                         width: layout.width,
                         height: layout.height,
                         generation: self.shared.generation,
+                        analysis_revision,
                     });
                 }
             }
@@ -1255,6 +1263,7 @@ struct SessionContext {
     focus_control: Arc<Mutex<Option<FocusControlHandle>>>,
     stats: Arc<CaptureStats>,
     current_gen: Arc<AtomicI64>,
+    analysis_revision: Arc<AtomicU64>,
 }
 
 struct CameraSessionOptions {
@@ -1274,6 +1283,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
         focus_control,
         stats,
         current_gen,
+        analysis_revision,
     } = ctx;
     let _stop_guard = SessionStopGuard(Arc::clone(&stop_signal));
     let emit_err = |code: &'static str, message: String| {
@@ -1404,6 +1414,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
         emitter: Arc::clone(&emitter),
         stats,
         current_gen: Arc::clone(&current_gen),
+        analysis_revision,
     });
 
     let callback: IMFSourceReaderCallback = AsyncCameraCallback {
@@ -1568,6 +1579,7 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
         emitter,
         stats,
         current_gen,
+        analysis_revision,
         ..
     } = ctx;
     let emit = |event: CaptureEvent| {
@@ -1747,6 +1759,7 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
                 }
             }
 
+            let frame_revision = analysis_revision.load(Ordering::Acquire);
             let need_bgra = preview.is_some();
             if let Some((luma, bgra)) = extract_rgb32_frame(&sample, layout, need_bgra) {
                 stats.frames_captured.fetch_add(1, Ordering::Relaxed);
@@ -1781,6 +1794,7 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
                                 width: lent.width,
                                 height: lent.height,
                                 generation,
+                                analysis_revision: frame_revision,
                             });
                         }
                         Ok(None) => {
@@ -1815,6 +1829,7 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
                     width: layout.width,
                     height: layout.height,
                     generation,
+                    analysis_revision: frame_revision,
                 });
             }
         }
@@ -1866,7 +1881,9 @@ pub struct CaptureController {
     generation: Arc<AtomicI64>,
     disposed: AtomicBool,
     multi_symbol: Arc<AtomicBool>,
-    paused: Arc<AtomicBool>,
+    // Even revisions run analysis and odd revisions pause it. One atomic
+    // change invalidates in-flight work and updates the pause state.
+    analysis_revision: Arc<AtomicU64>,
     preview: Option<Arc<PreviewPool>>,
     mailbox: Arc<DecodeMailbox>,
     emitter: Arc<Mutex<Option<EventEmitter>>>,
@@ -1885,7 +1902,7 @@ impl CaptureController {
     ) -> Self {
         let generation = Arc::new(AtomicI64::new(0));
         let multi_symbol_flag = Arc::new(AtomicBool::new(multi_symbol));
-        let paused_flag = Arc::new(AtomicBool::new(false));
+        let analysis_revision = Arc::new(AtomicU64::new(0));
         let preview = if with_preview {
             Some(Arc::new(PreviewPool::new()))
         } else {
@@ -1902,13 +1919,14 @@ impl CaptureController {
         let decode_stats = Arc::clone(&stats);
         let decode_gen = Arc::clone(&generation);
         let decode_multi = Arc::clone(&multi_symbol_flag);
-        let decode_paused = Arc::clone(&paused_flag);
+        let decode_revision = Arc::clone(&analysis_revision);
         let decode_thread = thread::Builder::new()
             .name("qr-decode".to_owned())
             .spawn(move || {
                 // COM MTA so optional IAMCameraControl focus lock calls are safe.
                 let _com = ComMtaGuard::init().ok();
                 let mut gate = FrameTextGate::default_gate();
+                let mut gate_revision = 0;
                 while let Some(work) = decode_mailbox.take() {
                     let frame = match work {
                         DecodeWork::Frame(frame) => frame,
@@ -1922,10 +1940,15 @@ impl CaptureController {
                             continue;
                         }
                     };
-                    if decode_gen.load(Ordering::Acquire) != frame.generation
-                        || decode_paused.load(Ordering::Acquire)
+                    if frame.analysis_revision & 1 != 0
+                        || decode_gen.load(Ordering::Acquire) != frame.generation
+                        || decode_revision.load(Ordering::Acquire) != frame.analysis_revision
                     {
                         continue;
+                    }
+                    if gate_revision != frame.analysis_revision {
+                        gate = FrameTextGate::default_gate();
+                        gate_revision = frame.analysis_revision;
                     }
                     decode_stats.decode_attempts.fetch_add(1, Ordering::Relaxed);
                     let now = Instant::now();
@@ -1938,7 +1961,7 @@ impl CaptureController {
                             8,
                         );
                         if decode_gen.load(Ordering::Acquire) != frame.generation
-                            || decode_paused.load(Ordering::Acquire)
+                            || decode_revision.load(Ordering::Acquire) != frame.analysis_revision
                         {
                             continue;
                         }
@@ -1956,6 +1979,7 @@ impl CaptureController {
                                     frame_width: frame.width,
                                     frame_height: frame.height,
                                     generation: frame.generation,
+                                    analysis_revision: frame.analysis_revision,
                                 });
                             }
                         } else if let Ok(mut fc) = decode_focus.lock() {
@@ -1970,7 +1994,7 @@ impl CaptureController {
                         decode_qr_luma(&frame.luma, frame.width as i32, frame.height as i32, true)
                     {
                         if decode_gen.load(Ordering::Acquire) != frame.generation
-                            || decode_paused.load(Ordering::Acquire)
+                            || decode_revision.load(Ordering::Acquire) != frame.analysis_revision
                         {
                             continue;
                         }
@@ -1986,6 +2010,7 @@ impl CaptureController {
                                 cb(CaptureEvent::Text {
                                     text,
                                     generation: frame.generation,
+                                    analysis_revision: frame.analysis_revision,
                                 });
                             }
                         }
@@ -2003,7 +2028,7 @@ impl CaptureController {
             generation,
             disposed: AtomicBool::new(false),
             multi_symbol: multi_symbol_flag,
-            paused: paused_flag,
+            analysis_revision,
             preview,
             mailbox,
             emitter: emitter_arc,
@@ -2018,8 +2043,12 @@ impl CaptureController {
         self.multi_symbol.store(enabled, Ordering::Release);
     }
 
-    pub fn set_paused(&self, paused: bool) {
-        self.paused.store(paused, Ordering::Release);
+    pub fn set_paused(&self, paused: bool) -> u64 {
+        self.analysis_revision
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |revision| {
+                ((revision & 1 != 0) != paused).then_some(revision + 1)
+            })
+            .map_or_else(|revision| revision, |previous| previous + 1)
     }
 
     pub fn start(&self) -> Result<i64, String> {
@@ -2049,6 +2078,7 @@ impl CaptureController {
             focus_control: Arc::clone(&self.focus_control),
             stats: Arc::clone(&self.stats),
             current_gen: Arc::clone(&self.generation),
+            analysis_revision: Arc::clone(&self.analysis_revision),
         };
 
         let session_running = Arc::clone(&running);
@@ -2228,6 +2258,7 @@ mod tests {
                 width: 1,
                 height: 1,
                 generation: 3,
+                analysis_revision: 0,
             });
         }
         mailbox.finish(3);

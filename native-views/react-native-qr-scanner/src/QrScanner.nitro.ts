@@ -5,6 +5,13 @@ import type {
 } from 'react-native-nitro-modules';
 import type { QrDetectedSymbol } from './symbols';
 
+/** A one-shot focus request in normalized, visible preview coordinates. */
+export interface QrFocusRequest {
+  id: number;
+  x: number;
+  y: number;
+}
+
 /**
  * Camera preview plus live QR detection. Native code only reports raw frame
  * text (or whole-frame symbols when `multiSymbol` is enabled); mode handling
@@ -36,6 +43,10 @@ export interface QrScannerProps extends HybridViewProps {
    * alive for zero-black-flash resume. Default false.
    */
   frozen?: boolean;
+  /** Apply a new request after the live view resumes. IDs increase per view. */
+  focusRequest?: QrFocusRequest;
+  /** A live native tap, whether or not camera focus is supported. */
+  onPreviewTap?: (generation: number) => void;
   /** The capture is ready. The ID identifies the device actually opened. */
   onReady?: (generation: number, cameraId: string) => void;
   /**

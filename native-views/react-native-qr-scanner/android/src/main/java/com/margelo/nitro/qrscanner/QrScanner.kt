@@ -178,6 +178,8 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   override var cameraId: String? = null
   override var multiSymbol: Boolean? = null
   override var frozen: Boolean? = null
+  override var focusRequest: QrFocusRequest? = null
+  override var onPreviewTap: ((generation: Double) -> Unit)? = null
   override var onReady: ((generation: Double, cameraId: String) -> Unit)? = null
   override var onFrameText: ((text: String, generation: Double) -> Unit)? = null
   override var onFrameSymbols: ((symbols: Array<QrDetectedSymbol>, generation: Double) -> Unit)? = null
@@ -186,6 +188,8 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   private data class CaptureCallbacks(
     val multiSymbol: Boolean = false,
     val frozen: Boolean = false,
+    val freezeRevision: Long = 0L,
+    val previewTap: ((Double) -> Unit)? = null,
     val ready: ((Double, String) -> Unit)? = null,
     val frame: ((String, Double) -> Unit)? = null,
     val symbols: ((Array<QrDetectedSymbol>, Double) -> Unit)? = null,
@@ -194,6 +198,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   @Volatile private var callbacks = CaptureCallbacks()
   @Volatile private var boundLensFacing: Int = CameraSelector.LENS_FACING_BACK
   private var isFrozenMain = false
+  private var lastFocusRequestId = Double.NEGATIVE_INFINITY
 
   // The camera follows this lifecycle: RESUMED only while capturing and the
   // host activity is resumed. Touched on the main thread only.
@@ -302,7 +307,10 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       override fun onDown(event: MotionEvent): Boolean = true
 
       override fun onSingleTapUp(event: MotionEvent): Boolean {
-        focusAt(event.x, event.y)
+        if (canFocusPreview()) {
+          callbacks.previewTap?.invoke(gate.currentGeneration.toDouble())
+          focusAt(event.x, event.y)
+        }
         return true
       }
     }).apply { setOnDoubleTapListener(null) }
@@ -329,6 +337,10 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       true
     }
   }
+
+  private fun canFocusPreview(): Boolean =
+    shouldRun && running && !isFrozenMain &&
+      previewView.previewStreamState.value == PreviewView.StreamState.STREAMING
 
   private fun focusAt(x: Float, y: Float) {
     val camera = camera ?: return
@@ -366,9 +378,11 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     val shouldRun = active
     val requested = cameraId
     val nextFrozen = frozen == true
+    val nextFocus = focusRequest
     val nextCallbacks = CaptureCallbacks(
       multiSymbol = multiSymbol == true,
       frozen = nextFrozen,
+      previewTap = onPreviewTap,
       ready = onReady,
       frame = onFrameText,
       symbols = onFrameSymbols,
@@ -376,7 +390,10 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     )
     main.post {
       if (dropped) return@post
-      callbacks = nextCallbacks
+      val previous = callbacks
+      callbacks = nextCallbacks.copy(
+        freezeRevision = previous.freezeRevision + if (previous.frozen == nextFrozen) 0L else 1L,
+      )
       applyFrozen(if (shouldRun) nextFrozen else false)
       val changed = requested != requestedCameraId || shouldRun != this.shouldRun
       requestedCameraId = requested
@@ -389,6 +406,12 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
         }
         running -> switchCameraIfNeeded()
         changed -> start()
+      }
+      if (nextFocus != null && nextFocus.id.isFinite() && nextFocus.id > lastFocusRequestId) {
+        lastFocusRequestId = nextFocus.id
+        if (!changed && canFocusPreview() && nextFocus.x in 0.0..1.0 && nextFocus.y in 0.0..1.0) {
+          focusAt((nextFocus.x * previewView.width).toFloat(), (nextFocus.y * previewView.height).toFloat())
+        }
       }
     }
   }
@@ -771,7 +794,8 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     }
     task
       .addOnSuccessListener(analysisExecutor) { barcodes ->
-        if (callbacks.frozen) return@addOnSuccessListener
+        val current = callbacks
+        if (current.frozen || current.freezeRevision != frameCallbacks.freezeRevision) return@addOnSuccessListener
 
         val symbolsCallback = frameCallbacks.symbols
         if (frameCallbacks.multiSymbol && symbolsCallback != null) {
@@ -779,7 +803,10 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
           if (nonEmpty.isEmpty()) return@addOnSuccessListener
           val isMirrored = boundLensFacing == CameraSelector.LENS_FACING_FRONT
           main.post {
-            if (gate.currentGeneration != generation || isFrozenMain) return@post
+            if (
+              gate.currentGeneration != generation || isFrozenMain ||
+              callbacks.freezeRevision != frameCallbacks.freezeRevision
+            ) return@post
             val viewW = previewView.width.toDouble()
             val viewH = previewView.height.toDouble()
             if (viewW <= 0 || viewH <= 0 || rotatedWidth <= 0 || rotatedHeight <= 0) return@post
@@ -846,7 +873,10 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
         if (texts.isEmpty()) return@addOnSuccessListener
         val reports = gate.filter(texts, SystemClock.elapsedRealtime(), generation)
         if (reports.isNotEmpty()) main.post {
-          if (gate.currentGeneration != generation || isFrozenMain) return@post
+          if (
+            gate.currentGeneration != generation || isFrozenMain ||
+            callbacks.freezeRevision != frameCallbacks.freezeRevision
+          ) return@post
           for (report in reports) frameCallbacks.frame?.invoke(report.text, report.generation.toDouble())
         }
       }

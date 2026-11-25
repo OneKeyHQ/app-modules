@@ -464,13 +464,31 @@ interface QrImageSymbolsResult {
     the last rendered preview frame on screen, pauses detection dispatch,
     disables tap-to-focus and pinch-zoom gestures, and keeps the camera session
     warm so `frozen=false` resumes with zero black flash.
+  - `focusRequest?: { id: number; x: number; y: number }` requests the same
+    focus and exposure operation as a native single tap. Coordinates are
+    normalized within the visible preview, with the origin at its top left.
+    The caller supplies a new monotonically increasing ID for each request.
+    Coordinates outside the view and non-finite values are ignored. A request
+    committed with `frozen=false` runs after the view processes the unfreeze.
+    Requests received while inactive, frozen, switching capture, or before
+    readiness are discarded. Unavailable focus does not interrupt decoding.
+  - `onPreviewTap?(generation: number)` reports a native tap on the live,
+    ready preview even if the device does not support programmatic focus.
+    It does not report programmatic requests, frozen taps, or pinch gestures.
+    The caller owns QR selection and the interpretation of a live tap.
+  - Both paths use the platform's existing preview-to-camera transform.
+    Focus work and its indicator are scoped to the active camera, and queued
+    decoding work already dispatched before a freeze is retired on unfreeze.
+    Host verification for programmatic focus on physical iOS and Android
+    cameras is pending.
 - **Web (`./web`)**:
   - `WebQrScannerOptions` adds `multiSymbol?: boolean` (default `false`) and
     `onFrameSymbols?: (event: Omit<QrFrameSymbolsEvent, 'generation'>) => void`.
   - `WebQrScanner` adds `setMultiSymbol(enabled: boolean): void` and
     `setFrozen(frozen: boolean): void` (`video.pause()` + cancel frame
     scheduling while keeping `MediaStream` live; `video.play()` + reschedule on
-    unfreeze).
+    unfreeze). Results and errors from analysis started before a freeze are
+    discarded even when the decode settles after unfreeze.
   - `ZXingWorkerRequest` (`decode`) carries `multiSymbol?: boolean`.
     `ZXING_READER_OPTIONS` uses `maxNumberOfSymbols: 8` when `multiSymbol` is
     `true` and stays at `maxNumberOfSymbols: 1` when `false`.

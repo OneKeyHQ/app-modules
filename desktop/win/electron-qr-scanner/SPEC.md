@@ -143,6 +143,11 @@ createCapture(options?: {
     `setPaused(paused: boolean): void` (pauses decode worker evaluation without
     closing the Media Foundation camera handle or D3D11 pool; Electron preload
     freezes `<canvas>` while still releasing every `importedSharedTexture`).
+  - Every change to `setPaused` retires pending analysis and queued callbacks
+    from the previous pause state, including callbacks delivered by N-API
+    after a rapid pause and resume. A repeated call with the same value is
+    idempotent. The capture generation remains stable. Preview callbacks
+    from a retired pause state release their texture without delivery.
   - When `multiSymbol` is `true`, `src/zxing_text.cpp` switches from
     `ZXing::ReadBarcode` (`maxNumberOfSymbols(1)`) to `ZXing::ReadBarcodes`
     (`maxNumberOfSymbols(8)`) and emits top-left normalized `[0, 1]` `frame`

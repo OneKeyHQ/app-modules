@@ -12,8 +12,8 @@ use napi_derive::napi;
 const MAX_PIXELS_CEILING: i64 = 50_000_000;
 const DEFAULT_MAX_PIXELS: i64 = 12_000_000;
 
-type EventCallback = extern "C" fn(*mut c_void, i32, *const u8, usize, *const c_char, i64);
-type FrameCallback = extern "C" fn(*mut c_void, i64, *mut c_void, i32, i32, i64);
+type EventCallback = extern "C" fn(*mut c_void, i32, *const u8, usize, *const c_char, i64, i64);
+type FrameCallback = extern "C" fn(*mut c_void, i64, *mut c_void, i32, i32, i64, i64);
 
 extern "C" {
     fn oqs_decode_image(
@@ -48,7 +48,7 @@ extern "C" {
     fn oqs_capture_start(handle: *mut c_void) -> i64;
     fn oqs_capture_stop(handle: *mut c_void);
     fn oqs_capture_set_multi_symbol(handle: *mut c_void, enabled: bool);
-    fn oqs_capture_set_paused(handle: *mut c_void, paused: bool);
+    fn oqs_capture_set_paused(handle: *mut c_void, paused: bool) -> i64;
     fn oqs_capture_focus(handle: *mut c_void, x: f64, y: f64) -> bool;
     fn oqs_capture_destroy(handle: *mut c_void);
 }
@@ -403,6 +403,7 @@ pub struct CaptureEvent {
     pub code: Option<String>,
     pub message: Option<String>,
     pub generation: f64,
+    pub analysis_revision: f64,
     /// `frame`: pass to `releaseFrame` once the consumer is done with it.
     pub token: Option<f64>,
     /// `frame`: the IOSurfaceRef as the 8-byte buffer Electron's
@@ -414,7 +415,7 @@ pub struct CaptureEvent {
 
 type EventTsfn = ThreadsafeFunction<CaptureEvent, (), CaptureEvent, Status, false>;
 
-fn event(kind: &str, generation: i64) -> CaptureEvent {
+fn event(kind: &str, generation: i64, analysis_revision: i64) -> CaptureEvent {
     CaptureEvent {
         kind: kind.into(),
         text: None,
@@ -422,6 +423,7 @@ fn event(kind: &str, generation: i64) -> CaptureEvent {
         code: None,
         message: None,
         generation: generation as f64,
+        analysis_revision: analysis_revision as f64,
         token: None,
         io_surface: None,
         width: None,
@@ -436,6 +438,7 @@ extern "C" fn on_frame(
     width: i32,
     height: i32,
     generation: i64,
+    analysis_revision: i64,
 ) {
     if context.is_null() {
         return;
@@ -446,7 +449,7 @@ extern "C" fn on_frame(
         io_surface: Some(Buffer::from((surface as usize).to_ne_bytes().to_vec())),
         width: Some(width as u32),
         height: Some(height as u32),
-        ..event("frame", generation)
+        ..event("frame", generation, analysis_revision)
     };
     tsfn.call(payload, ThreadsafeFunctionCallMode::NonBlocking);
 }
@@ -458,6 +461,7 @@ extern "C" fn on_event(
     first_length: usize,
     second: *const c_char,
     generation: i64,
+    analysis_revision: i64,
 ) {
     if context.is_null() {
         return;
@@ -476,22 +480,22 @@ extern "C" fn on_event(
     let payload = match kind {
         0 => CaptureEvent {
             device_id: (!first.is_empty()).then_some(first),
-            ..event("ready", generation)
+            ..event("ready", generation, analysis_revision)
         },
         1 => CaptureEvent {
             text: Some(first),
-            ..event("text", generation)
+            ..event("text", generation, analysis_revision)
         },
         2 => CaptureEvent {
             code: Some(first),
             message: Some(second),
-            ..event("error", generation)
+            ..event("error", generation, analysis_revision)
         },
         4 => CaptureEvent {
             text: Some(first),
-            ..event("symbols", generation)
+            ..event("symbols", generation, analysis_revision)
         },
-        _ => event("ended", generation),
+        _ => event("ended", generation, analysis_revision),
     };
     tsfn.call(payload, ThreadsafeFunctionCallMode::NonBlocking);
 }
@@ -587,10 +591,9 @@ impl NativeCapture {
     }
 
     #[napi]
-    pub fn set_paused(&self, paused: bool) -> Result<()> {
+    pub fn set_paused(&self, paused: bool) -> Result<f64> {
         self.live()?;
-        unsafe { oqs_capture_set_paused(self.handle, paused) };
-        Ok(())
+        Ok(unsafe { oqs_capture_set_paused(self.handle, paused) } as f64)
     }
 
     #[napi]

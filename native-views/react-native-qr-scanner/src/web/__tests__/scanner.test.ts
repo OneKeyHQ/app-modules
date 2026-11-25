@@ -984,3 +984,48 @@ describe('createWebQrScanner camera start', () => {
     cameraScanner.dispose();
   });
 });
+
+it('drops an in-flight frame across freeze and resume and delivers a new frame', async () => {
+  jest.useFakeTimers();
+  const oldFrame = deferred<{ rawValue: string }[]>();
+  const detect = jest.fn()
+    .mockReturnValueOnce(oldFrame.promise)
+    .mockResolvedValue([{ rawValue: 'fresh' }]);
+  (globalThis as { BarcodeDetector?: unknown }).BarcodeDetector = Object.assign(
+    class { detect = detect; },
+    nativeEngine
+  );
+  const video = Object.assign(fakeVideo(async () => {}), {
+    readyState: 2, currentTime: 1, videoWidth: 80, videoHeight: 60, pause: jest.fn(),
+  });
+  const canvas = {
+    getContext: () => ({
+      drawImage: jest.fn(),
+      getImageData: () => ({ data: new Uint8ClampedArray(80 * 60 * 4) }),
+    }),
+  };
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: { createElement: jest.fn(() => canvas) },
+  });
+  const onFrameSymbols = jest.fn();
+  const scanner = createWebQrScanner({ video, source: { kind: 'element' }, mode: 'static', onFrameSymbols });
+  await scanner.start();
+  await jest.advanceTimersByTimeAsync(100);
+  expect(detect).toHaveBeenCalledTimes(1);
+
+  scanner.setFrozen(true);
+  scanner.setFrozen(false);
+  oldFrame.resolve([{ rawValue: 'stale' }]);
+  await jest.advanceTimersByTimeAsync(100);
+  expect(onFrameSymbols).not.toHaveBeenCalled();
+  expect(detect).toHaveBeenCalledTimes(1);
+
+  video.currentTime = 2;
+  await jest.advanceTimersByTimeAsync(100);
+  expect(onFrameSymbols).toHaveBeenCalledTimes(1);
+  expect(onFrameSymbols).toHaveBeenCalledWith(
+    expect.objectContaining({ symbols: [expect.objectContaining({ text: 'fresh' })] })
+  );
+  scanner.dispose();
+});

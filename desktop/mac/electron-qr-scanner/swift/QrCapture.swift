@@ -360,15 +360,16 @@ final class QrPreviewPool {
 /// One capture: a frame source, Vision QR detection per frame and the shared
 /// text gate. Every callback goes through `emit`, which stops after `destroy`.
 final class QrCaptureController {
-  typealias Emit = (QrCaptureEventKind, String, String, Int) -> Void
-  /// token, IOSurfaceRef, width, height, generation
-  typealias EmitFrame = (Int64, UnsafeMutableRawPointer, Int, Int, Int) -> Void
+  typealias Emit = (QrCaptureEventKind, String, String, Int, Int64) -> Void
+  /// token, IOSurfaceRef, width, height, generation, analysis revision
+  typealias EmitFrame = (Int64, UnsafeMutableRawPointer, Int, Int, Int, Int64) -> Void
 
   let previewPool = QrPreviewPool()
   private var frameEmitter: EmitFrame?
   private var previewing = false
   private var multiSymbol = false
   private var paused = false
+  private var analysisRevision: Int64 = 0
 
   private let sessionQueue = DispatchQueue(label: "so.onekey.qrscanner.desktop.session")
   private let analysisQueue = DispatchQueue(label: "so.onekey.qrscanner.desktop.analysis")
@@ -397,21 +398,25 @@ final class QrCaptureController {
 
   /// Runs on the analysis queue, before Vision, so preview latency does not
   /// include detection time.
-  private func preview(_ buffer: CVPixelBuffer, generation: Int) {
+  private func preview(_ buffer: CVPixelBuffer, generation: Int, revision: Int64) {
     emitLock.lock()
     defer { emitLock.unlock() }
-    guard previewing, gate.currentGeneration == generation,
+    guard previewing, gate.currentGeneration == generation, revision == analysisRevision,
       let frameEmitter, let lent = previewPool.lend(buffer) else { return }
     frameEmitter(
       lent.token, Unmanaged.passUnretained(lent.surface).toOpaque(),
-      CVPixelBufferGetWidth(buffer), CVPixelBufferGetHeight(buffer), generation)
+      CVPixelBufferGetWidth(buffer), CVPixelBufferGetHeight(buffer), generation, revision)
   }
 
-  private func emit(_ kind: QrCaptureEventKind, _ a: String, _ b: String, _ generation: Int) {
+  private func emit(
+    _ kind: QrCaptureEventKind, _ a: String, _ b: String, _ generation: Int,
+    revision: Int64? = nil
+  ) {
     emitLock.lock()
     defer { emitLock.unlock() }
     guard gate.currentGeneration == generation else { return }
-    emitter?(kind, a, b, generation)
+    if let revision, paused || revision != analysisRevision { return }
+    emitter?(kind, a, b, generation, revision ?? analysisRevision)
   }
 
   func setMultiSymbol(_ enabled: Bool) {
@@ -420,10 +425,15 @@ final class QrCaptureController {
     emitLock.unlock()
   }
 
-  func setPaused(_ value: Bool) {
+  func setPaused(_ value: Bool) -> Int64 {
     emitLock.lock()
-    paused = value
-    emitLock.unlock()
+    defer { emitLock.unlock() }
+    if paused != value {
+      paused = value
+      analysisRevision += 1
+      gate.resetRepeatFilter()
+    }
+    return analysisRevision
   }
 
   func start() -> Int {
@@ -486,8 +496,7 @@ final class QrCaptureController {
     }
     if let failure = source.start(
       deliver: { [weak self] buffer in
-        self?.preview(buffer, generation: generation)
-        self?.analyze(buffer, generation: generation)
+        self?.processFrame(buffer, generation: generation)
       },
       terminated: { [weak self] outcome in
         self?.sessionQueue.async { [weak self] in
@@ -523,12 +532,14 @@ final class QrCaptureController {
   }
 
   /// Runs on the analysis queue.
-  private func analyze(_ buffer: CVPixelBuffer, generation: Int) {
+  private func processFrame(_ buffer: CVPixelBuffer, generation: Int) {
     guard gate.currentGeneration == generation else { return }
     emitLock.lock()
     let isMulti = multiSymbol
     let isPaused = paused
+    let revision = analysisRevision
     emitLock.unlock()
+    preview(buffer, generation: generation, revision: revision)
     if isPaused { return }
 
     let request = VNDetectBarcodesRequest()
@@ -563,14 +574,22 @@ final class QrCaptureController {
       guard let data = try? JSONSerialization.data(withJSONObject: payload),
         let json = String(data: data, encoding: .utf8)
       else { return }
-      emit(.symbols, json, "", generation)
+      emit(.symbols, json, "", generation, revision: revision)
       return
     }
 
     let texts = results.compactMap { $0.payloadStringValue }
     guard !texts.isEmpty else { return }
-    for report in gate.filter(texts, now: ProcessInfo.processInfo.systemUptime, generation: generation) {
-      emit(.text, report.text, "", report.generation)
+    // Do not let a retired frame update the single-symbol repeat filter.
+    emitLock.lock()
+    guard !paused, revision == analysisRevision, gate.currentGeneration == generation else {
+      emitLock.unlock()
+      return
+    }
+    let reports = gate.filter(texts, now: ProcessInfo.processInfo.systemUptime, generation: generation)
+    emitLock.unlock()
+    for report in reports {
+      emit(.text, report.text, "", report.generation, revision: revision)
     }
   }
 }

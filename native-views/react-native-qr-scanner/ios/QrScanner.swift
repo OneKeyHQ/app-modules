@@ -235,6 +235,8 @@ class HybridQrScanner: HybridQrScannerSpec {
   var cameraId: String?
   var multiSymbol: Bool?
   var frozen: Bool?
+  var focusRequest: QrFocusRequest?
+  var onPreviewTap: ((Double) -> Void)?
   var onReady: ((Double, String) -> Void)?
   var onFrameText: ((String, Double) -> Void)?
   var onFrameSymbols: (([QrDetectedSymbol], Double) -> Void)?
@@ -248,6 +250,7 @@ class HybridQrScanner: HybridQrScannerSpec {
     var active = false
     var multiSymbol = false
     var frozen = false
+    var previewTap: ((Double) -> Void)?
     var ready: ((Double, String) -> Void)?
     var text: ((String, Double) -> Void)?
     var symbols: (([QrDetectedSymbol], Double) -> Void)?
@@ -255,6 +258,21 @@ class HybridQrScanner: HybridQrScannerSpec {
   }
 
   private var captureProps = CaptureProps()
+  private var lastFocusRequestId = -Double.infinity
+  private let frameRevisionLock = NSLock()
+  private var frameRevision = 0
+
+  private func updateFrameRevision() {
+    frameRevisionLock.lock()
+    defer { frameRevisionLock.unlock() }
+    frameRevision += 1
+  }
+
+  private func currentFrameRevision() -> Int {
+    frameRevisionLock.lock()
+    defer { frameRevisionLock.unlock() }
+    return frameRevision
+  }
   /// Mirrors `captureProps.frozen` for main-thread gesture checks.
   private var isFrozenMain = false
   private var disposed = false
@@ -302,11 +320,13 @@ class HybridQrScanner: HybridQrScannerSpec {
       active: active,
       multiSymbol: multiSymbol ?? false,
       frozen: frozen ?? false,
+      previewTap: onPreviewTap,
       ready: onReady,
       text: onFrameText,
       symbols: onFrameSymbols,
       error: onError)
     let cameraId = cameraId
+    let focusRequest = focusRequest
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
       self.isFrozenMain = props.frozen
@@ -318,6 +338,13 @@ class HybridQrScanner: HybridQrScannerSpec {
       guard let self, !self.disposed else { return }
       let previous = self.captureProps
       let previousCamera = self.requestedCameraId
+      let newFocus = focusRequest.flatMap { request -> QrFocusRequest? in
+        guard request.id.isFinite, request.id > self.lastFocusRequestId else { return nil }
+        self.lastFocusRequestId = request.id
+        return request
+      }
+      if previous.frozen != props.frozen { self.updateFrameRevision() }
+      let canFocus = self.running && props.active && !props.frozen && cameraId == previousCamera
       self.captureProps = props
       self.requestedCameraId = cameraId
       if !props.active {
@@ -326,6 +353,18 @@ class HybridQrScanner: HybridQrScannerSpec {
         self.switchCameraIfNeeded()
       } else if !previous.active || cameraId != previousCamera {
         self.start()
+      }
+      if canFocus, let request = newFocus, (0...1).contains(request.x), (0...1).contains(request.y) {
+        let generation = self.currentGeneration()
+        let revision = self.currentFrameRevision()
+        DispatchQueue.main.async { [weak self] in
+          guard let self, !self.isFrozenMain else { return }
+          let bounds = self.previewView.bounds
+          guard bounds.width > 0, bounds.height > 0 else { return }
+          self.focusAt(
+            CGPoint(x: CGFloat(request.x) * bounds.width, y: CGFloat(request.y) * bounds.height),
+            generation: generation, revision: revision, fromGesture: false)
+        }
       }
     }
   }
@@ -534,10 +573,20 @@ class HybridQrScanner: HybridQrScannerSpec {
 
   fileprivate func handleTap(_ recognizer: UITapGestureRecognizer) {
     guard !isFrozenMain else { return }
-    let layerPoint = recognizer.location(in: previewView)
+    focusAt(
+      recognizer.location(in: previewView), generation: currentGeneration(),
+      revision: currentFrameRevision(), fromGesture: true)
+  }
+
+  private func focusAt(_ layerPoint: CGPoint, generation: Int, revision: Int, fromGesture: Bool) {
     let devicePoint = previewView.previewLayer.captureDevicePointConverted(fromLayerPoint: layerPoint)
     sessionQueue.async { [weak self] in
-      guard let self, self.running, !self.captureProps.frozen, let device = self.device,
+      guard let self, self.running, !self.captureProps.frozen,
+        self.currentGeneration() == generation, self.currentFrameRevision() == revision,
+        let device = self.device
+      else { return }
+      if fromGesture { self.captureProps.previewTap?(Double(generation)) }
+      guard
         QrCameraControl.supportsTapToFocus(device),
         (try? device.lockForConfiguration()) != nil
       else { return }
@@ -566,7 +615,10 @@ class HybridQrScanner: HybridQrScannerSpec {
       // Moving the camera afterwards hands focus back to continuous mode.
       device.isSubjectAreaChangeMonitoringEnabled = true
       DispatchQueue.main.async { [weak self] in
-        self?.previewView.showFocusIndicator(at: layerPoint)
+        guard let self, !self.isFrozenMain, self.currentGeneration() == generation,
+          self.currentFrameRevision() == revision
+        else { return }
+        self.previewView.showFocusIndicator(at: layerPoint)
       }
     }
   }
@@ -675,14 +727,15 @@ class HybridQrScanner: HybridQrScannerSpec {
   /// Called on `metadataQueue`.
   fileprivate func handle(codes: [AVMetadataMachineReadableCodeObject], generation: Int) {
     guard !codes.isEmpty else { return }
+    let revision = currentFrameRevision()
     sessionQueue.async { [weak self] in
       guard let self, self.running, !self.captureProps.frozen,
-        self.currentGeneration() == generation
+        self.currentGeneration() == generation, self.currentFrameRevision() == revision
       else { return }
 
       if self.captureProps.multiSymbol, let symbolsCallback = self.captureProps.symbols {
         DispatchQueue.main.async { [weak self] in
-          guard let self, !self.isFrozenMain else { return }
+          guard let self, !self.isFrozenMain, self.currentFrameRevision() == revision else { return }
           let layer = self.previewView.previewLayer
           let layerBounds = layer.bounds
           guard layerBounds.width > 0, layerBounds.height > 0 else { return }
@@ -705,7 +758,7 @@ class HybridQrScanner: HybridQrScannerSpec {
           guard !symbols.isEmpty else { return }
           self.sessionQueue.async { [weak self] in
             guard let self, self.running, !self.captureProps.frozen,
-              self.currentGeneration() == generation
+              self.currentGeneration() == generation, self.currentFrameRevision() == revision
             else { return }
             symbolsCallback(symbols, Double(generation))
           }

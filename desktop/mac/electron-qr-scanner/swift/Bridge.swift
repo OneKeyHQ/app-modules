@@ -4,12 +4,12 @@ import Foundation
 // are malloc'd and must be freed with oqs_free_string.
 
 public typealias OqsEventCallback = @convention(c) (
-  UnsafeMutableRawPointer?, Int32, UnsafePointer<UInt8>?, Int, UnsafePointer<CChar>, Int64
+  UnsafeMutableRawPointer?, Int32, UnsafePointer<UInt8>?, Int, UnsafePointer<CChar>, Int64, Int64
 ) -> Void
 
-/// (context, token, IOSurfaceRef, width, height, generation)
+/// (context, token, IOSurfaceRef, width, height, generation, analysis revision)
 public typealias OqsFrameCallback = @convention(c) (
-  UnsafeMutableRawPointer?, Int64, UnsafeMutableRawPointer, Int32, Int32, Int64
+  UnsafeMutableRawPointer?, Int64, UnsafeMutableRawPointer, Int32, Int32, Int64, Int64
 ) -> Void
 
 /// Engine bitmask shared with src/lib.rs: 1 Vision, 2 ZXing-C++.
@@ -154,17 +154,17 @@ public func oqs_capture_create(
       // For a camera, `path` carries the optional device id.
       return QrCameraSource(queue: queue, deviceId: filePath)
     },
-    emit: { kind, a, b, generation in
+    emit: { kind, a, b, generation, revision in
       Array(a.utf8).withUnsafeBufferPointer { first in
         b.withCString { second in
-          callback(context, kind.rawValue, first.baseAddress, first.count, second, Int64(generation))
+          callback(context, kind.rawValue, first.baseAddress, first.count, second, Int64(generation), revision)
         }
       }
     },
     emitFrame: frameCallback.map { frameCallback in
-      { token, surface, width, height, generation in
+      { token, surface, width, height, generation, revision in
         frameCallback(
-          context, token, surface, Int32(width), Int32(height), Int64(generation))
+          context, token, surface, Int32(width), Int32(height), Int64(generation), revision)
       }
     })
   return Unmanaged.passRetained(controller).toOpaque()
@@ -199,7 +199,7 @@ public func oqs_capture_set_multi_symbol(_ handle: UnsafeMutableRawPointer, _ en
 }
 
 @_cdecl("oqs_capture_set_paused")
-public func oqs_capture_set_paused(_ handle: UnsafeMutableRawPointer, _ paused: Bool) {
+public func oqs_capture_set_paused(_ handle: UnsafeMutableRawPointer, _ paused: Bool) -> Int64 {
   Unmanaged<QrCaptureController>.fromOpaque(handle).takeUnretainedValue().setPaused(paused)
 }
 
