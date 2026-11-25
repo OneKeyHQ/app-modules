@@ -1044,9 +1044,11 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
              aliasOrAttributesType:(NSString *)aliasOrAttributesType
                        isPushToken:(BOOL)isPushToken
                         completion:(JCORETcpResponseHandler)completion {
+    NSString *savedTokenHex = [tokenHex copy];
+    NSString *savedIdentifier = [aliasOrAttributesType copy];
     [self enqueueCommand:JCOREWireCommandLiveActivity version:1 bodyData:nil buildBody:^NSData *{
-        return [JCOREWireProtocol buildLiveActivityPayloadWithTokenHex:tokenHex
-                                                 aliasOrAttributesType:aliasOrAttributesType
+        return [JCOREWireProtocol buildLiveActivityPayloadWithTokenHex:savedTokenHex
+                                                 aliasOrAttributesType:savedIdentifier
                                                            isPushToken:isPushToken];
     } completion:completion];
 }

@@ -2191,6 +2191,7 @@ static void testIosUpgradeSessionAndTokenReports(void) {
     config.appKey = nil;
     config.collectionAuthorized = YES;
     config.pushStopped = NO;
+    [config configureWithAppKey:@"" channel:@"test" isProduction:YES advertisingIdentifier:nil];
     config.deviceTokenHex = @"0102";
     config.voipTokenHex = nil;
     for (NSUInteger scenario = 0; scenario < 3; scenario++) {
@@ -2247,6 +2248,11 @@ static void testIosUpgradeSessionAndTokenReports(void) {
                     sawApns = YES;
                 } else if (frame.command == JCOREWireCommandLiveActivity) {
                     assertEnvironment(frame.bodyData, skipWireStrings(frame.bodyData, 2) + 1, 2);
+                    NSUInteger aliasOffset = skipWireStrings(frame.bodyData, 1);
+                    NSUInteger aliasLength = skipWireStrings(frame.bodyData, 2) - aliasOffset - 2;
+                    NSString *alias = [[NSString alloc] initWithData:[frame.bodyData subdataWithRange:NSMakeRange(aliasOffset + 2, aliasLength)]
+                                                           encoding:NSUTF8StringEncoding];
+                    ASSERT_TRUE([alias isEqualToString:@"upgrade-activity"], "Queued Live Activity must retain its original ID");
                     body = [JCOREWireProtocol buildLiveActivityResponsePayloadWithStatusCode:0 alias:@"upgrade-activity"];
                     sawActivity = YES;
                 }
@@ -2263,13 +2269,19 @@ static void testIosUpgradeSessionAndTokenReports(void) {
         [config configureWithAppKey:@"" channel:@"test" isProduction:NO advertisingIdentifier:nil];
         [session startIfNeeded];
         __block BOOL activityAcknowledged = NO;
-        [JPUSHService registerLiveActivity:@"upgrade-activity" pushToken:[@"token" dataUsingEncoding:NSUTF8StringEncoding]
+        NSMutableString *activity = [NSMutableString stringWithString:@"upgrade-activity"];
+        [JPUSHService registerLiveActivity:activity pushToken:[@"token" dataUsingEncoding:NSUTF8StringEncoding]
             completion:^(NSInteger code, NSString *activityID, NSData *token, NSInteger sequence) {
                 ASSERT_TRUE(code == 0, "Live Activity queued before setup must complete with the server ACK");
                 activityAcknowledged = YES;
             } seq:1];
+        [activity setString:@"different-activity"];
         [JPUSHService setupWithOption:nil appKey:appKey.uppercaseString channel:@"test" apsForProduction:YES];
         ASSERT_TRUE([[JPUSHService registrationID] isEqualToString:expectedRID], "Upgrade changed the Registration ID");
+        for (NSString *obsoleteKey in @[@"com.onekey.jcore.uid", @"com.onekey.jcore.password",
+                                        @"com.onekey.jcore.registration_id", @"com.onekey.jcore.device_id"]) {
+            ASSERT_TRUE([defaults objectForKey:obsoleteKey] == nil, "Scoped migration left a stale unscoped value");
+        }
         runUntil(^BOOL{ return activityAcknowledged; }, 4, @"Upgrade Live Activity report not acknowledged");
         runUntil(^BOOL{ return dispatch_semaphore_wait(reports, DISPATCH_TIME_NOW) == 0; }, 2, @"Upgrade reports were not observed");
         JCOREConfiguration *coldStart = [JCOREConfiguration new];
@@ -2310,6 +2322,37 @@ static void testIosUpgradeSessionAndTokenReports(void) {
     printf("[PASS] Suite 11: Legacy and earlier-source upgrade fast-login, APNs re-report, pre-setup Live Activity report, and AppKey isolation verified\n");
 }
 
+static void testIosTokenEnvironmentIsolation(void) {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *deviceKey = @"com.onekey.jcore.device_token";
+    NSString *voipKey = @"com.onekey.jcore.voip_token";
+    id savedDevice = [defaults objectForKey:deviceKey];
+    id savedVoip = [defaults objectForKey:voipKey];
+    id savedAppKey = [defaults objectForKey:@"com.onekey.jcore.last_configured_app_key"];
+    [defaults setObject:@"1234" forKey:deviceKey];
+    [defaults setObject:@"5678" forKey:voipKey];
+    JCOREConfiguration *config = [JCOREConfiguration new];
+    [config configureWithAppKey:@"token-environment-test" channel:@"test" isProduction:NO advertisingIdentifier:nil];
+    ASSERT_TRUE([config.deviceTokenHex isEqualToString:@"1234"] && [config.voipTokenHex isEqualToString:@"5678"],
+                "First setup must adopt unscoped tokens for the configured environment");
+    [config configureWithAppKey:@"token-environment-test" channel:@"test" isProduction:YES advertisingIdentifier:nil];
+    ASSERT_TRUE(config.deviceTokenHex == nil && config.voipTokenHex == nil,
+                "Changing the environment must hide cached tokens from Register and re-report");
+    config.deviceTokenHex = @"abcd";
+    JCOREConfiguration *coldStart = [JCOREConfiguration new];
+    [coldStart configureWithAppKey:@"token-environment-test" channel:@"test" isProduction:YES advertisingIdentifier:nil];
+    ASSERT_TRUE([coldStart.deviceTokenHex isEqualToString:@"abcd"] && coldStart.voipTokenHex == nil,
+                "Cold start must respect the independent saved APNs and VoIP environments");
+    [coldStart configureWithAppKey:@"token-environment-test" channel:@"test" isProduction:NO advertisingIdentifier:nil];
+    ASSERT_TRUE(coldStart.deviceTokenHex == nil && [coldStart.voipTokenHex isEqualToString:@"5678"],
+                "Development may reuse only its own saved token");
+    if (savedDevice != nil) [defaults setObject:savedDevice forKey:deviceKey]; else [defaults removeObjectForKey:deviceKey];
+    if (savedVoip != nil) [defaults setObject:savedVoip forKey:voipKey]; else [defaults removeObjectForKey:voipKey];
+    if (savedAppKey != nil) [defaults setObject:savedAppKey forKey:@"com.onekey.jcore.last_configured_app_key"];
+    else [defaults removeObjectForKey:@"com.onekey.jcore.last_configured_app_key"];
+    printf("[PASS] Suite 12: APNs and VoIP tokens stay scoped to their saved environment\n");
+}
+
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         testCryptoPrimitives();
@@ -2323,6 +2366,7 @@ int main(int argc, const char * argv[]) {
         testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume();
         testSisSetupAndAppKeyReplacement();
         testIosUpgradeSessionAndTokenReports();
+        testIosTokenEnvironmentIsolation();
     }
     return 0;
 }

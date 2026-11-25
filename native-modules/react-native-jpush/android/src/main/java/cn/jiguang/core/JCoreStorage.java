@@ -37,6 +37,7 @@ public final class JCoreStorage {
     private static final String KEY_DEVICE_ID = "device_id";
     private static final String KEY_SERVER_REGISTERED = "server_registered";
     private static final String KEY_RETIRED_LEGACY_REGISTRATION_PREFIX = "legacy_registration_retired.";
+    private static final String KEY_INACTIVE_REGISTRATION_PREFIX = "inactive_registration.";
     private static final String LEGACY_USER_PREFS = "cn.jiguang.sdk.user.profile";
     private static final String LEGACY_CONFIG_PREFS = "cn.jpush.preferences.v2";
     // JCore 5.2.0 uses this fixed format constant for both the AES key and IV.
@@ -476,7 +477,8 @@ public final class JCoreStorage {
         long uid = getUid(context);
         String password = getPassword(context);
         String id = getRegistrationId(context);
-        return isCompleteRegistration(uid, password, id) ? new Registration(uid, password, id, null) : null;
+        return isCompleteRegistration(uid, password, id)
+            ? new Registration(uid, password, id, getStringPref(context, KEY_DEVICE_ID, "")) : null;
     }
 
     private static boolean isCompleteRegistration(long uid, String password, String id) {
@@ -520,7 +522,38 @@ public final class JCoreStorage {
         return KEY_RETIRED_LEGACY_REGISTRATION_PREFIX + appKey.toLowerCase(Locale.ROOT);
     }
 
+    private static String inactiveRegistrationKey(String appKey) {
+        return KEY_INACTIVE_REGISTRATION_PREFIX + appKey.toLowerCase(Locale.ROOT);
+    }
+
+    private static Registration readInactiveRegistration(Context context, String key) {
+        String saved = getStringPref(context, key, "");
+        if (saved.isEmpty()) return null;
+        try {
+            JSONArray fields = new JSONArray(saved);
+            long uid = fields.optLong(0);
+            String password = fields.optString(1);
+            String id = fields.optString(2);
+            return isCompleteRegistration(uid, password, id) ? new Registration(uid, password, id, fields.optString(3)) : null;
+        } catch (JSONException invalidRegistration) {
+            return null;
+        }
+    }
+
     private static void persistRegistration(Context context, Registration registration, String retiredAppKey, String nextAppKey) {
+        String outgoingKey = null;
+        String outgoingSnapshot = null;
+        String incomingKey = null;
+        if (nextAppKey != null) {
+            outgoingKey = inactiveRegistrationKey(getAppKey(context));
+            incomingKey = inactiveRegistrationKey(nextAppKey);
+            Registration outgoing = isServerRegistered(context) ? readSourceRegistration(context) : null;
+            if (outgoing != null) {
+                outgoingSnapshot = new JSONArray().put(outgoing.uid).put(outgoing.password)
+                    .put(outgoing.id).put(outgoing.deviceId).toString();
+            }
+            registration = readInactiveRegistration(context, incomingKey);
+        }
         long uid = registration != null ? registration.uid : 0L;
         String password = registration != null ? registration.password : "";
         String id = registration != null ? registration.id : "";
@@ -535,11 +568,13 @@ public final class JCoreStorage {
             editor.putBoolean(KEY_SERVER_REGISTERED, registration != null);
             editor.putString(KEY_FCM_BOUND_IDENTITY, "");
             if (nextAppKey != null) {
-                editor.remove(KEY_DEVICE_ID);
+                if (outgoingSnapshot != null) editor.putString(outgoingKey, outgoingSnapshot);
+                else editor.remove(outgoingKey);
+                editor.remove(incomingKey);
+                if (isEmpty(deviceId)) editor.remove(KEY_DEVICE_ID);
                 editor.putString(KEY_APP_KEY, nextAppKey);
-            } else if (!isEmpty(deviceId)) {
-                editor.putString(KEY_DEVICE_ID, deviceId);
             }
+            if (!isEmpty(deviceId)) editor.putString(KEY_DEVICE_ID, deviceId);
             if (retiredKey != null) editor.putBoolean(retiredKey, true);
             editor.apply();
         }
@@ -549,11 +584,13 @@ public final class JCoreStorage {
         MEMORY_FALLBACK.put(KEY_SERVER_REGISTERED, registration != null);
         MEMORY_FALLBACK.put(KEY_FCM_BOUND_IDENTITY, "");
         if (nextAppKey != null) {
-            MEMORY_FALLBACK.remove(KEY_DEVICE_ID);
+            if (outgoingSnapshot != null) MEMORY_FALLBACK.put(outgoingKey, outgoingSnapshot);
+            else MEMORY_FALLBACK.remove(outgoingKey);
+            MEMORY_FALLBACK.remove(incomingKey);
+            if (isEmpty(deviceId)) MEMORY_FALLBACK.remove(KEY_DEVICE_ID);
             MEMORY_FALLBACK.put(KEY_APP_KEY, nextAppKey);
-        } else if (!isEmpty(deviceId)) {
-            MEMORY_FALLBACK.put(KEY_DEVICE_ID, deviceId);
         }
+        if (!isEmpty(deviceId)) MEMORY_FALLBACK.put(KEY_DEVICE_ID, deviceId);
         if (retiredKey != null) MEMORY_FALLBACK.put(retiredKey, true);
     }
 

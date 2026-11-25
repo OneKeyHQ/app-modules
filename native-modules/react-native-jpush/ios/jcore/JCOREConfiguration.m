@@ -59,6 +59,25 @@ static NSString *JCorePreSetupRegistrationID(NSUserDefaults *defaults) {
     return registrations == nil ? [defaults stringForKey:kJCoreKeyRegistrationId] : nil;
 }
 
+static NSDictionary *JCoreTokenRecord(id storedToken) {
+    if ([storedToken isKindOfClass:NSDictionary.class]) {
+        return storedToken;
+    }
+    NSString *token = JCoreNonEmptyString(storedToken);
+    return token != nil ? @{@"hex": token} : nil;
+}
+
+static NSDictionary *JCorePersistToken(NSString *key, NSString *token, NSNumber *production) {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if (token.length == 0) {
+        [defaults removeObjectForKey:key];
+        return nil;
+    }
+    NSDictionary *record = production != nil ? @{@"hex": token, @"production": production} : @{@"hex": token};
+    [defaults setObject:record forKey:key];
+    return record;
+}
+
 static uint64_t JCoreRegistrationUID(id value) {
     if ([value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID()) {
         value = [value stringValue];
@@ -151,6 +170,9 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
     uint16_t _requestCounter;
     NSUInteger _policyGeneration;
     NSString *_preSetupRegistrationID;
+    BOOL _hasAPNsEnvironment;
+    NSDictionary *_deviceTokenRecord;
+    NSDictionary *_voipTokenRecord;
     NSArray<NSString *> *_ips;
     NSArray<NSString *> *_sslIps;
     BOOL _cachedSslIpsRequireTls;
@@ -212,8 +234,8 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
         NSNumber *savedAuth = [defaults objectForKey:kJCoreKeyAuth];
         _collectionAuthorized = savedAuth != nil ? savedAuth.boolValue : YES;
         _pushStopped = [defaults boolForKey:kJCoreKeyPushStopped];
-        _deviceTokenHex = [defaults stringForKey:kJCoreKeyDeviceToken];
-        _voipTokenHex = [defaults stringForKey:kJCoreKeyVoipToken];
+        _deviceTokenRecord = JCoreTokenRecord([defaults objectForKey:kJCoreKeyDeviceToken]);
+        _voipTokenRecord = JCoreTokenRecord([defaults objectForKey:kJCoreKeyVoipToken]);
         _isNewDevice = YES;
 
         NSInteger encType = [defaults integerForKey:@"kJIGUANGEncryptType"];
@@ -259,6 +281,17 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
             self->_buildType = isProduction ? 2 : 1;
             self->_apsType = isProduction ? 2 : 1;
             self->_advertisingIdentifier = [advertisingId copy];
+            if (appKey.length > 0 && !self->_hasAPNsEnvironment) {
+                self->_hasAPNsEnvironment = YES;
+                if (self->_deviceTokenRecord != nil && self->_deviceTokenRecord[@"production"] == nil) {
+                    self->_deviceTokenRecord = JCorePersistToken(kJCoreKeyDeviceToken,
+                        JCoreNonEmptyString(self->_deviceTokenRecord[@"hex"]), @(isProduction));
+                }
+                if (self->_voipTokenRecord != nil && self->_voipTokenRecord[@"production"] == nil) {
+                    self->_voipTokenRecord = JCorePersistToken(kJCoreKeyVoipToken,
+                        JCoreNonEmptyString(self->_voipTokenRecord[@"hex"]), @(isProduction));
+                }
+            }
         }
     });
     [self notifyConfigurationInvalidated:invalidatedGeneration];
@@ -339,6 +372,10 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
     }
     if (storageKey.length > 0) {
         [defaults setObject:storageKey forKey:kJCoreKeyLastConfiguredAppKey];
+        [defaults removeObjectForKey:kJCoreKeyUid];
+        [defaults removeObjectForKey:kJCoreKeyPassword];
+        [defaults removeObjectForKey:kJCoreKeyRegistrationId];
+        [defaults removeObjectForKey:kJCoreKeyDeviceId];
     }
 }
 
@@ -441,21 +478,33 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
 }
 
 - (void)setDeviceTokenHex:(NSString *)deviceTokenHex {
-    _deviceTokenHex = [deviceTokenHex copy];
-    if (deviceTokenHex.length > 0) {
-        [[NSUserDefaults standardUserDefaults] setObject:deviceTokenHex forKey:kJCoreKeyDeviceToken];
-    } else {
-        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kJCoreKeyDeviceToken];
+    @synchronized (self) {
+        _deviceTokenRecord = JCorePersistToken(kJCoreKeyDeviceToken, [deviceTokenHex copy],
+            _hasAPNsEnvironment ? @(_isProduction) : nil);
     }
 }
 
+- (NSString *)deviceTokenHex {
+    @synchronized (self) { return [self tokenForCurrentEnvironment:_deviceTokenRecord]; }
+}
+
 - (void)setVoipTokenHex:(NSString *)voipTokenHex {
-    _voipTokenHex = [voipTokenHex copy];
-    if (voipTokenHex.length > 0) {
-        [[NSUserDefaults standardUserDefaults] setObject:voipTokenHex forKey:kJCoreKeyVoipToken];
-    } else {
-        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kJCoreKeyVoipToken];
+    @synchronized (self) {
+        _voipTokenRecord = JCorePersistToken(kJCoreKeyVoipToken, [voipTokenHex copy],
+            _hasAPNsEnvironment ? @(_isProduction) : nil);
     }
+}
+
+- (NSString *)voipTokenHex {
+    @synchronized (self) { return [self tokenForCurrentEnvironment:_voipTokenRecord]; }
+}
+
+- (NSString *)tokenForCurrentEnvironment:(NSDictionary *)record {
+    id production = record[@"production"];
+    if (_hasAPNsEnvironment && ![production isEqual:@(_isProduction)]) {
+        return nil;
+    }
+    return JCoreNonEmptyString(record[@"hex"]);
 }
 
 - (void)updateRegistrationWithUid:(uint64_t)uid

@@ -3105,7 +3105,16 @@ public final class SdkHostRegressionTest {
                                 pending.put((String) fields[0], fields[1]);
                                 return editor;
                             }
-                            if ("apply".equals(operation.getName())) values.putAll(pending);
+                            if ("remove".equals(operation.getName())) {
+                                pending.put((String) fields[0], null);
+                                return editor;
+                            }
+                            if ("apply".equals(operation.getName())) {
+                                pending.forEach((key, value) -> {
+                                    if (value == null) values.remove(key);
+                                    else values.put(key, value);
+                                });
+                            }
                             return null;
                         });
                 }
@@ -3221,6 +3230,21 @@ public final class SdkHostRegressionTest {
                         check(expectedId.equals(source.get("registration_id")) && Boolean.TRUE.equals(source.get("server_registered")),
                             scenario + " must persist the selected ID and registered flag");
                         check(profile.equals(originalProfile), "Legacy profile must be read-only");
+                        if ("both".equals(scenario)) {
+                            engine.stop(context);
+                            String oldDeviceId = JCoreStorage.getDeviceId(context);
+                            JCoreStorage.setAppKey(context, "f00000000000000000000002");
+                            check(JPushInterface.getRegistrationID(context).isEmpty()
+                                && !oldDeviceId.equals(JCoreStorage.getDeviceId(context)), "AppKey B must start with its own device identity");
+                            JCoreStorage.setAppKey(context, appKey);
+                            cache.clear();
+                            JCoreStorage.migrateLegacyRegistrationIfNeeded(context);
+                            check(JCoreStorage.isServerRegistered(context) && JCoreStorage.getUid(context) == legacyUid
+                                && legacyPassword.equals(JCoreStorage.getPassword(context))
+                                && legacyId.equals(JPushInterface.getRegistrationID(context))
+                                && oldDeviceId.equals(JCoreStorage.getDeviceId(context)),
+                                "Switching back after imported Login must restore the complete registration and device ID from disk");
+                        }
                         if (rejected) {
                             engine.stop(context);
                             cache.clear();
