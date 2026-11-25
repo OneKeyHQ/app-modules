@@ -126,5 +126,6 @@ export async function decodeQrImageSymbols(
     width: pixels.width,
     height: pixels.height,
     symbols: hit?.symbols ?? [],
+    ...(hit?.partial ? { partial: true } : {}),
   };
 }

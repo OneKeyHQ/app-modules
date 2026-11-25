@@ -101,6 +101,8 @@ export interface QrImageSymbolsHit {
   symbols: QrDetectedSymbol[];
   engine: string;
   pass: DecodePass;
+  /** True when remaining optional passes stopped early due to the post-hit deadline. */
+  partial?: boolean;
 }
 
 function unpadSymbol(
@@ -145,7 +147,7 @@ function unpadSymbol(
 }
 
 const MAX_IMAGE_SYMBOLS = 8;
-const DEFAULT_POST_HIT_DEADLINE_MS = 1500;
+const DEFAULT_POST_HIT_DEADLINE_MS = 3000;
 
 function raceWithDeadline<T>(
   promise: Promise<T>,
@@ -207,14 +209,21 @@ export async function decodePixelsSymbols(
   let firstEngine: string | undefined;
   let firstPass: DecodePass | undefined;
   let postHitDeadline: number | undefined;
+  let partial = false;
 
   for (const [pass, make] of passes) {
     if (merged.length >= MAX_IMAGE_SYMBOLS) break;
-    if (postHitDeadline !== undefined && Date.now() >= postHitDeadline) break;
+    if (postHitDeadline !== undefined && Date.now() >= postHitDeadline) {
+      partial = true;
+      break;
+    }
     const variant = make();
     for (const engine of engines) {
       if (merged.length >= MAX_IMAGE_SYMBOLS) break;
-      if (postHitDeadline !== undefined && Date.now() >= postHitDeadline) break;
+      if (postHitDeadline !== undefined && Date.now() >= postHitDeadline) {
+        partial = true;
+        break;
+      }
       attempted = true;
       try {
         const work = engine.decodeSymbols
@@ -225,7 +234,10 @@ export async function decodePixelsSymbols(
         let symbols: QrDetectedSymbol[];
         if (postHitDeadline !== undefined) {
           const raced = await raceWithDeadline(work, postHitDeadline - Date.now());
-          if (raced.timedOut) break;
+          if (raced.timedOut) {
+            partial = true;
+            break;
+          }
           symbols = raced.value;
         } else {
           symbols = await work;
@@ -254,7 +266,12 @@ export async function decodePixelsSymbols(
     }
   }
   if (merged.length > 0 && firstEngine && firstPass) {
-    return { symbols: merged, engine: firstEngine, pass: firstPass };
+    return {
+      symbols: merged,
+      engine: firstEngine,
+      pass: firstPass,
+      ...(partial ? { partial: true } : {}),
+    };
   }
   if (attempted && !decoded) throw new QrScannerError('decoder-unavailable', 'A QR decoder failed');
   return null;

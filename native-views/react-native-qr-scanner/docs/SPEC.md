@@ -426,6 +426,8 @@ interface QrImageSymbolsResult {
   width: number;
   height: number;
   symbols: QrDetectedSymbol[];
+  /** True when optional fallback passes stopped early (e.g. deadline reached). */
+  partial?: boolean;
 }
 ```
 

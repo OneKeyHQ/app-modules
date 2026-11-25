@@ -205,7 +205,12 @@ function renderAnchors(symbols: QrDetectedSymbol[]) {
     btn.addEventListener('click', (event) => {
       event.stopPropagation();
       log(`点击圆点 #${idx + 1}: [${classifyLabel(sym.text)}]`);
-      coordinator?.selectSymbol(sym);
+      if (coordinator?.phase === 'selecting') {
+        coordinator.selectSymbol(sym);
+      } else {
+        overlayEl.classList.add('hidden');
+        coordinator?.receiveFrame([sym]);
+      }
     });
     anchorsEl.appendChild(btn);
   });
@@ -354,8 +359,12 @@ async function runImageCase(fixturePath: string, title: string) {
     resultBoxEl.textContent = 'null';
     return;
   }
-  if (mapped.length === 1) {
-    coordinator.receiveFrame(mapped);
+  if (decoded.partial && mapped.length === 1) {
+    // Fallback passes timed out after the first hit; keep selection open so the
+    // user can confirm the detected code or retry instead of auto-committing.
+    renderAnchors(mapped);
+    setStatus('部分识别结果（可点击确认或重试）', 'select');
+    setFooter('selecting');
     return;
   }
   coordinator.receiveFrame(mapped);

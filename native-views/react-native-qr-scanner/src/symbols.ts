@@ -35,6 +35,12 @@ export interface QrImageSymbolsResult {
   width: number;
   height: number;
   symbols: QrDetectedSymbol[];
+  /**
+   * True when optional fallback passes stopped early (e.g. post-hit deadline
+   * expired), so additional codes may exist in the image. Callers should avoid
+   * auto-committing a single symbol without user confirmation or retry.
+   */
+  partial?: boolean;
 }
 
 export interface NormalizedPoint {

@@ -130,6 +130,7 @@ describe('decodePixels', () => {
       'edge-qr',
       'inverted-qr',
     ]);
+    expect(hit?.partial).toBeUndefined();
   });
 
   it('bounds fallback work with a shared deadline after first hit in decodePixelsSymbols', async () => {
@@ -146,5 +147,6 @@ describe('decodePixels', () => {
     const hit = await decodePixelsSymbols(solid(32, 32, [0, 0, 0]), [fast, stalled], undefined, 25);
     expect(hit?.symbols.map((s) => s.text)).toEqual(['fast-qr']);
     expect(hit?.engine).toBe('native');
+    expect(hit?.partial).toBe(true);
   });
 });
