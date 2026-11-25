@@ -25,15 +25,19 @@ const androidUnitModules = {
 const androidBuildTasks = {
   "react-native-bundle-update": "compileDebugKotlin",
   "react-native-bottom-tabs": "compileReleaseKotlin",
+  "react-native-pager-view": "compileDebugKotlin",
+  "react-native-perp-depth-bar": "compileDebugKotlin",
   "react-native-capture-protection": "assembleDebug",
   "react-native-device-utils": "assembleDebug",
   "react-native-photo-library": "assembleDebug",
 };
 const androidHostModules = [
   "react-native-device-utils", "react-native-bundle-update", "react-native-pager-view",
-  "react-native-image-crop-picker", "react-native-lite-card", "react-native-jpush",
+  "react-native-image-crop-picker", "react-native-lite-card", "react-native-jpush", "react-native-sni-connect",
 ];
-const iosHostModules = ["react-native-device-utils", "react-native-lite-card", "react-native-jpush"];
+const iosHostModules = [
+  "react-native-device-utils", "react-native-lite-card", "react-native-jpush", "react-native-sni-connect",
+];
 const swiftPackages = {
   "react-native-sni-connect": "native-modules/react-native-sni-connect",
   "react-native-bundle-update": "native-modules/react-native-bundle-update",
@@ -47,7 +51,25 @@ const androidModules = new Set([
 
 // Changes to these inputs can affect shared configuration and the dependency graph itself.
 const buildInput = /(?:^|\/)(?:package\.json|react-native\.config\.[cm]?js|nitro\.json|CMakeLists\.txt|Package\.swift|Podfile(?:\.lock)?|gradle\.properties|project\.pbxproj|[^/]+\.(?:podspec|gradle(?:\.kts)?|lock|cmake|xcconfig))$/;
-const docsOnly = /^(?:docs\/.*\.md|(?:README|CHANGELOG|CONTRIBUTING)\.md|native-(?:modules|views)\/[^/]+\/(?:docs\/.*\.md|(?:README|CHANGELOG)\.md))$/;
+const docsOnly = /^(?:docs\/.*\.md|(?:README|CHANGELOG|CONTRIBUTING)\.md)$/;
+
+// Runtime lookups can cross workspace boundaries without a link dependency.
+// List the consumer and its providers. Keep these optional at runtime.
+const runtimeDependencies = {
+  "react-native-native-overlay": ["react-native-image", "native-logger"], // Toast icons and window diagnostics
+  "react-native-native-list": ["react-native-native-overlay"], // Reorder dismiss suppression
+  "react-native-pager-view": [
+    "react-native-native-overlay", "react-native-native-list", "react-native-image", "native-logger",
+  ], // Overlay ancestry, nested list, named SVG bridge and diagnostics
+  "react-native-bottom-tabs": [
+    "react-native-pager-view", "react-native-native-list", "react-native-image", "native-logger",
+  ], // Scroll-to-top delegation, named SVG bridge and diagnostics
+  "react-native-sni-connect": ["native-logger"],
+  "react-native-jpush": ["native-logger"],
+  "react-native-lite-card": ["native-logger"],
+  "react-native-split-bundle-loader": ["react-native-bundle-update", "native-logger"],
+  "react-native-background-thread": ["react-native-bundle-update", "native-logger"],
+};
 
 function optionalRead(path) {
   try {
@@ -98,6 +120,13 @@ export function readNativeDependents(directory = root) {
       if (dependency && dependency !== name) dependents.get(dependency).add(name);
     }
   }
+  for (const [consumer, dependencies] of Object.entries(runtimeDependencies)) {
+    if (!dependents.has(consumer)) throw new Error("unknown runtime consumer");
+    for (const dependency of dependencies) {
+      if (!dependents.has(dependency)) throw new Error("unknown runtime dependency");
+      dependents.get(dependency).add(consumer);
+    }
+  }
   return dependents;
 }
 
@@ -144,40 +173,26 @@ function fullPlan(reason, changedModules = new Set()) {
 
 export function planNativeCI(paths, dependents) {
   const changedModules = new Set();
-  const changes = [];
   for (const path of paths) {
     if (docsOnly.test(path)) continue;
-    const match = /^(native-modules|native-views)\/([^/]+)\/(.+)$/.exec(path);
+    const match = /^(native-modules|native-views)\/([^/]+)\/.+$/.exec(path);
     if (!match || buildInput.test(path)) return fullPlan("shared-or-unclassified-path", changedModules);
-    const [, , module, relative] = match;
-    changedModules.add(module);
-    if (!dependents.has(module) || (!iosModules.has(module) && !androidModules.has(module))) {
-      return fullPlan("unregistered-module", changedModules);
-    }
-    const iosOnly = /^(?:ios|tests\/ios)\//.test(relative);
-    const androidOnly = /^(?:android|tests\/android|tests\/kotlin)\//.test(relative);
-    changes.push({ module, iosOnly, androidOnly });
-    if ((iosOnly && !iosModules.has(module)) || (androidOnly && !androidModules.has(module))) {
-      return fullPlan("unregistered-platform", changedModules);
-    }
+    changedModules.add(match[2]);
   }
-  const ios = new Set();
-  const android = new Set();
-  let packageOverlay = false;
-  for (const { module, iosOnly, androidOnly } of changes) {
-    const affected = new Set([module]);
-    for (const name of affected) {
-      const consumers = dependents.get(name);
-      if (!consumers || (!iosModules.has(name) && !androidModules.has(name))) {
-        return fullPlan("unregistered-dependent", changedModules);
-      }
-      for (const dependent of consumers) affected.add(dependent);
-      if (!androidOnly && iosModules.has(name)) ios.add(name);
-      if (!iosOnly && androidModules.has(name)) android.add(name);
-      if (name === overlay) packageOverlay = true;
+
+  const affected = new Set(changedModules);
+  for (const module of affected) {
+    const consumers = dependents.get(module);
+    if (!consumers || (!iosModules.has(module) && !androidModules.has(module))) {
+      const reason = changedModules.has(module) ? "unregistered-module" : "unregistered-dependent";
+      return fullPlan(reason, changedModules);
     }
+    for (const dependent of consumers) affected.add(dependent);
   }
-  return assemblePlan("affected", changedModules, ios, android, packageOverlay);
+
+  const ios = new Set([...affected].filter((module) => iosModules.has(module)));
+  const android = new Set([...affected].filter((module) => androidModules.has(module)));
+  return assemblePlan("affected", changedModules, ios, android, affected.has(overlay));
 }
 
 function git(...args) {

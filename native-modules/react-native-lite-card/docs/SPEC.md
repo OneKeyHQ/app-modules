@@ -292,8 +292,8 @@ Command compatibility/preflight regressions:
   harness captures the actual preflight call; the C++ JNI harness captures the
   production JNI logger call, including unavailable/throwing loggers and pending
   exception preservation. These are adapter tests, not device log-file evidence.
-- `node tests/native-log-sanitization.cjs <jni-capture> <bridge-capture>` sends
-  those actual build messages through the complete unchanged production
+- `node scripts/native-log-tests/run.cjs lite <jni-capture> <bridge-capture>`
+  sends those actual build messages through the complete unchanged production
   OneKeyLog Swift/Kotlin formatting and sanitization code. Only external types
   are stubbed. A temporary same-file Swift test entry and Kotlin reflection
   access private formatting without logger configuration or file IO. The full

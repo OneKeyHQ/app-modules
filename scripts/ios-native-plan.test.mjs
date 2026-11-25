@@ -36,14 +36,16 @@ test("two independent macOS jobs run every iOS suite and both pod builds", () =>
     const build = job.steps.find((step) => step.name === "Build assigned pods and run assigned XCTest suites");
     assert.equal(build["timeout-minutes"], 30);
     assert.match(build.run, /No executed tests for \{name\}/);
-    assert.match(build.run, /_GPChannelSDKCoreVersionString/);
-    assert.match(build.run, /identity_phase.*show_env_vars_in_log/);
+    if (group === "services") {
+      assert.match(build.run, /_GPChannelSDKCoreVersionString/);
+      assert.match(build.run, /identity_phase.*show_env_vars_in_log/);
+    }
     return getIosNativePlan(group);
   });
   const schemes = plans.flatMap((plan) => plan.testSchemes);
   assert.deepEqual([...schemes].sort(), [...expectedSchemes].sort());
   assert.equal(new Set(schemes).size, schemes.length);
-  assert.deepEqual(plans.flatMap((plan) => plan.buildTargets), ["ReactNativeLiteCard", "NativeOverlay"]);
+  assert.deepEqual(plans.flatMap((plan) => plan.buildTargets), ["ReactNativeLiteCard", "NativeOverlay", "AutoSizeInput"]);
   assert.deepEqual(getIosNativePlan("ui").testSchemes, [
     "react-native-pager-view-Unit-Tests", "react-native-native-list-Unit-Tests", "OneKeyImage-Unit-Tests",
     "react-native-bottom-tabs-Unit-Tests",

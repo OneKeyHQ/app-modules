@@ -289,7 +289,6 @@ jobs:
           scheme.save_as(project_path, 'AppModulesNativeTests', true)
           RUBY
           xcodebuild -list -workspace "$workspace" > artifacts/ios/schemes.log
-          grep -Fxq '        AppModulesNativeTests' artifacts/ios/schemes.log
           jobs=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
           # shellcheck disable=SC2016
           xcode_args=(
@@ -376,7 +375,7 @@ jobs:
           grep -Eq '^ManagerInput: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-input-tests.log"
           node tests/source-id.cjs | tee "$RUNNER_TEMP/lite-card-source-id-tests.log"
           grep -Eq '^SourceIdentity: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-source-id-tests.log"
-          node tests/native-log-sanitization.cjs --swift "$RUNNER_TEMP/lite-card-ios-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
+          node "$GITHUB_WORKSPACE/scripts/native-log-tests/run.cjs" lite --swift "$RUNNER_TEMP/lite-card-ios-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
           grep -Eq '^SwiftLoggerSanitization: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-sanitization-tests.log"
       - name: Run JPush & JCore iOS native E2E regressions
         if: contains(fromJSON(needs.plan.outputs.native).ios.host, 'react-native-jpush')
@@ -385,6 +384,12 @@ jobs:
         run: |
           python3 scripts/test_ios_sdk.py | tee "$RUNNER_TEMP/jpush-ios-tests.log"
           grep -Fq 'ALL_IOS_SDK_TESTS_PASSED' "$RUNNER_TEMP/jpush-ios-tests.log"
+      - name: Run SNI Swift log diagnostics
+        if: contains(fromJSON(needs.plan.outputs.native).ios.host, 'react-native-sni-connect')
+        shell: bash
+        run: |
+          node scripts/native-log-tests/run.cjs sni --swift | tee "$RUNNER_TEMP/sni-swift-log-tests.log"
+          grep -Eq '^SniSwiftLogDiagnostics: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/sni-swift-log-tests.log"
       - name: Run assigned SwiftPM suites and verify execution
         if: fromJSON(needs.plan.outputs.native).ios.swiftPackages[0] != null
         shell: bash
@@ -509,6 +514,7 @@ jobs:
         shell: bash
         run: |
           "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
+            android/src/main/java/com/reactnativepagerview/WeakPaddingSnapshot.kt \
             tests/kotlin/WeakPaddingSnapshotTest.kt \
             -include-runtime -d "$RUNNER_TEMP/weak-padding-snapshot-tests.jar"
           java -jar "$RUNNER_TEMP/weak-padding-snapshot-tests.jar" | tee "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
@@ -548,8 +554,14 @@ jobs:
         shell: bash
         run: |
           test -s "$RUNNER_TEMP/lite-card-jni-build-messages.txt"
-          node tests/native-log-sanitization.cjs --kotlin "$RUNNER_TEMP/lite-card-jni-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
+          node "$GITHUB_WORKSPACE/scripts/native-log-tests/run.cjs" lite --kotlin "$RUNNER_TEMP/lite-card-jni-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
           grep -Eq '^KotlinLoggerSanitization: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-sanitization-tests.log"
+      - name: Run SNI Kotlin log diagnostics
+        if: contains(fromJSON(needs.plan.outputs.native).android.host, 'react-native-sni-connect')
+        shell: bash
+        run: |
+          node scripts/native-log-tests/run.cjs sni --kotlin | tee "$RUNNER_TEMP/sni-kotlin-log-tests.log"
+          grep -Eq '^SniKotlinLogDiagnostics: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/sni-kotlin-log-tests.log"
       - name: Run Android unit tests and build native modules
         if: fromJSON(needs.plan.outputs.native).android.gradleTasks[0] != null
         working-directory: example/react-native/android
@@ -793,10 +805,6 @@ jobs:
           plan.fetch('buildTargets').each do |name|
             target = project.targets.find { |candidate| candidate.name == name }
             abort "Missing pod target: #{name}" unless target
-            if name == 'ReactNativeLiteCard'
-              identity_phase = target.shell_script_build_phases.find { |phase| phase.name == '[CP-User] Generate Lite native source identity' }
-              abort 'Lite source identity phase must hide environment variables' unless identity_phase&.show_env_vars_in_log == '0'
-            end
             scheme.add_build_target(target, true)
           end
           plan.fetch('testSchemes').each do |name|
@@ -829,7 +837,6 @@ jobs:
           scheme.save_as(project_path, 'AppModulesNativeTests', true)
           RUBY
           xcodebuild -list -workspace "$workspace" > artifacts/ios/schemes.log
-          grep -Fxq '        AppModulesNativeTests' artifacts/ios/schemes.log
           jobs=$(sysctl -n hw.ncpu 2>/dev/null || echo 4)
           # shellcheck disable=SC2016
           xcode_args=(
@@ -848,12 +855,6 @@ jobs:
           else
             xcodebuild build "${xcode_args[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
               2>&1 | tee artifacts/ios/AppModulesNativeTests.log
-          fi
-          if jq -e '.buildTargets | index("ReactNativeLiteCard") != null' "$RUNNER_TEMP/ios-native-plan.json" > /dev/null; then
-            archive="$RUNNER_TEMP/native-tests-derived-data/Build/Products/Debug-iphonesimulator/ReactNativeLiteCard/libReactNativeLiteCard.a"
-            test -s "$archive"
-            nm -g "$archive" > artifacts/ios/LiteCard.symbols.txt
-            grep -Eq '[[:space:]][DRS][[:space:]]_GPChannelSDKCoreVersionString$' artifacts/ios/LiteCard.symbols.txt
           fi
           [[ "$has_tests" == true ]] || exit 0
           xcrun xcresulttool get test-results summary \

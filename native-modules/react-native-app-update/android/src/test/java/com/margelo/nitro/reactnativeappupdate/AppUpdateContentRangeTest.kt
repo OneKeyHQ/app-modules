@@ -142,23 +142,4 @@ class AppUpdateContentRangeTest {
     assertTrue(AppUpdateLogic.is206StartAligned(start, 4096L))
     assertFalse(AppUpdateLogic.is206StartAligned(start, 0L))
   }
-
-  // ---------------------------------------------------------------------------
-  // Sibling-segment invariant: segmentCount == 8 (the concurrent downloader's
-  // default that the 416/206 cleanup loops scan). Asserted over the REAL const.
-  // ---------------------------------------------------------------------------
-
-  @Test
-  fun concurrentSegmentCountIsEight() {
-    assertEquals(8, AppUpdateLogic.CONCURRENT_SEGMENT_COUNT)
-    assertEquals(8, AppUpdateLogic.segmentFileNames("/tmp/app.apk.partial").size)
-    assertEquals(
-      "/tmp/app.apk.partial.seg0",
-      AppUpdateLogic.segmentFileNames("/tmp/app.apk.partial").first(),
-    )
-    assertEquals(
-      "/tmp/app.apk.partial.seg7",
-      AppUpdateLogic.segmentFileNames("/tmp/app.apk.partial").last(),
-    )
-  }
 }

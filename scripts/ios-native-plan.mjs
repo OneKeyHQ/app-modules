@@ -14,6 +14,7 @@ const plans = {
     buildTargets: {
       "react-native-lite-card": "ReactNativeLiteCard",
       "react-native-native-overlay": "NativeOverlay",
+      "react-native-auto-size-input": "AutoSizeInput",
     },
     testSchemes: {
       "react-native-text-input": "OneKeyTextInput-Unit-Tests",

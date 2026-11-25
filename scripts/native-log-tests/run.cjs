@@ -3,8 +3,17 @@ const { mkdtempSync, writeFileSync, readFileSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 
-const logger = resolve(__dirname, '../../native-logger');
-const output = mkdtempSync(join(tmpdir(), 'lite-real-loggers-'));
+const modules = resolve(__dirname, '../../native-modules');
+const logger = join(modules, 'native-logger');
+const output = mkdtempSync(join(tmpdir(), 'native-log-tests-'));
+const suites = {
+  lite: { fixtures: join(modules, 'react-native-lite-card/tests/logger') },
+  sni: {
+    fixtures: join(modules, 'react-native-sni-connect/tests/logger'),
+    swiftSource: join(modules, 'react-native-sni-connect/ios/SniConnectLog.swift'),
+    kotlinSource: join(modules, 'react-native-sni-connect/android/src/main/java/com/sniconnect/SniConnectLogger.kt'),
+  },
+};
 function run(command, args) {
   const result = spawnSync(command, args, { encoding: 'utf8' });
   if (result.error) throw result.error;
@@ -50,24 +59,28 @@ class SizeAndTimeBasedRollingPolicy<T> {
 };
 try {
   const args = process.argv.slice(2);
+  const name = args.shift();
+  if (!Object.hasOwn(suites, name)) throw new Error("Select the lite or sni log test suite");
+  const suite = suites[name];
   const mode = args[0] === '--swift' || args[0] === '--kotlin' ? args.shift() : undefined;
-  if (args.length !== (mode ? 1 : 2) || args.some((arg) => !arg)) {
-    throw new Error('Actual JNI and bridge captures are required');
+  const expectedArguments = name === 'sni' ? 0 : mode ? 1 : 2;
+  if (args.length !== expectedArguments || args.some((arg) => !arg)) {
+    throw new Error(name === 'lite' ? 'Actual JNI and bridge captures are required' : 'SNI diagnostics take no capture files');
   }
-  const jniMessages = mode === '--swift' ? undefined : args[0];
-  const iosMessages = mode === '--kotlin' ? undefined : args[mode ? 0 : 1];
+  const jniMessages = name === 'lite' ? [args[0]] : [];
+  const iosMessages = name === 'lite' ? [args[mode ? 0 : 1]] : [];
   if (mode !== '--kotlin') {
     run('xcrun', ['swiftc', '-emit-library', '-emit-module', '-module-name', 'CocoaLumberjack',
-      join(__dirname, 'logger/CocoaLumberjack.swift'), '-o', join(output, 'libCocoaLumberjack.dylib'),
+      join(__dirname, 'CocoaLumberjack.swift'), '-o', join(output, 'libCocoaLumberjack.dylib'),
       '-emit-module-path', join(output, 'CocoaLumberjack.swiftmodule')]);
     // Private Swift access is appended to a temporary full copy; no production
     // function body is extracted, rewritten or duplicated, and configured is not called.
     const swift = join(output, 'main.swift');
-    writeFileSync(swift, readFileSync(join(logger, 'ios/OneKeyLog.swift'), 'utf8') + readFileSync(join(__dirname, 'logger/Format.swift'), 'utf8'));
+    writeFileSync(swift, readFileSync(join(logger, 'ios/OneKeyLog.swift'), 'utf8') + readFileSync(join(suite.fixtures, 'Format.swift'), 'utf8'));
     run('xcrun', ['swiftc', '-I', output, '-L', output, '-lCocoaLumberjack', '-Xlinker', '-rpath', '-Xlinker', output,
-      swift, join(logger, '../react-native-sni-connect/ios/SniConnectLog.swift'),
+      swift, ...(suite.swiftSource ? [suite.swiftSource] : []),
       '-o', join(output, 'swift-format')]);
-    console.log(run(join(output, 'swift-format'), [iosMessages]));
+    console.log(run(join(output, 'swift-format'), iosMessages));
   }
   if (mode !== '--swift') {
     const declarations = Object.entries(stubs).map(([name, source]) => {
@@ -75,8 +88,8 @@ try {
     });
     const jar = join(output, 'kotlin-format.jar');
     run('kotlinc', [...declarations, join(logger, 'android/src/main/java/com/margelo/nitro/nativelogger/OneKeyLog.kt'),
-      join(logger, '../react-native-sni-connect/android/src/main/java/com/sniconnect/SniConnectLogger.kt'),
-      join(__dirname, 'logger/Format.kt'), '-nowarn', '-include-runtime', '-d', jar]);
+      ...(suite.kotlinSource ? [suite.kotlinSource] : []),
+      join(suite.fixtures, 'Format.kt'), '-nowarn', '-include-runtime', '-d', jar]);
     console.log(run('java', ['-jar', jar, jniMessages]));
   }
 } finally {
