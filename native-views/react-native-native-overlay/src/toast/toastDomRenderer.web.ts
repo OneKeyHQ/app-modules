@@ -20,8 +20,11 @@ const VISIBLE_TOASTS = 3;
 const VIEWPORT_OFFSET = 32;
 const TOAST_WIDTH = 356;
 const GAP = TOAST_GEOMETRY.stackGap;
-const SWIPE_THRESHOLD = 20;
-const SWIPE_VELOCITY = 0.11; // px per ms
+const SWIPE_DISTANCE = 64;
+const SWIPE_FLICK_DISTANCE = 20;
+const SWIPE_FLICK_VELOCITY = 0.5; // px per ms (500 px/s)
+const SWIPE_OPACITY_RANGE = 260;
+const SWIPE_MIN_OPACITY = 0.35;
 const TOUCH_START_THRESHOLD = 10;
 const POINTER_START_THRESHOLD = 2;
 const TIME_BEFORE_UNMOUNT = TOAST_MOTION.cardExitMs;
@@ -372,6 +375,7 @@ export function createToastDomRenderer(
       node.swiping = false;
       node.li.setAttribute('data-swiping', 'false');
       node.li.style.setProperty('--swipe-amount', '0px');
+      node.li.style.removeProperty('--swipe-opacity');
       if (node.li.hasPointerCapture?.(pointerId)) {
         node.li.releasePointerCapture(pointerId);
       }
@@ -387,10 +391,27 @@ export function createToastDomRenderer(
     });
   }
 
-  function swipeAmount(node: IToastNode, deltaY: number): number {
-    return node.position.startsWith('top')
-      ? Math.min(0, deltaY)
-      : Math.max(0, deltaY);
+  function swipeOpacityFor(deltaX: number): number {
+    return Math.max(
+      SWIPE_MIN_OPACITY,
+      1 - Math.abs(deltaX) / SWIPE_OPACITY_RANGE
+    );
+  }
+
+  function canSwipeNode(node: IToastNode): boolean {
+    if (node.removed) {
+      return false;
+    }
+    const group = groups.get(node.position);
+    if (!group) {
+      return false;
+    }
+    const active = group.toasts.filter((entry) => !entry.removed);
+    const index = active.indexOf(node);
+    if (index < 0 || index >= VISIBLE_TOASTS) {
+      return false;
+    }
+    return isExpanded() || index === 0;
   }
 
   function onGlobalPointerMove(event: PointerEvent) {
@@ -399,26 +420,31 @@ export function createToastDomRenderer(
       return;
     }
     const { node } = press;
-    const dx = Math.abs(event.clientX - press.x);
-    const dy = event.clientY - press.y;
+    const dx = event.clientX - press.x;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(event.clientY - press.y);
     const threshold =
       event.pointerType === 'touch'
         ? TOUCH_START_THRESHOLD
         : POINTER_START_THRESHOLD;
-    press.moved ||= Math.max(dx, Math.abs(dy)) > threshold;
+    press.moved ||= Math.max(absDx, absDy) > threshold;
     if (node.swipePointerId !== event.pointerId) {
       return;
     }
-    const amount = swipeAmount(node, dy);
+    if (!canSwipeNode(node)) {
+      clearPress(event.pointerId, press);
+      return;
+    }
     if (!node.swiping) {
-      if (Math.abs(amount) <= threshold || Math.abs(amount) < dx) {
+      if (absDx <= threshold || absDx <= absDy) {
         return;
       }
       node.li.setPointerCapture?.(event.pointerId);
       node.swiping = true;
       node.li.setAttribute('data-swiping', 'true');
     }
-    node.li.style.setProperty('--swipe-amount', `${amount}px`);
+    node.li.style.setProperty('--swipe-amount', `${dx}px`);
+    node.li.style.setProperty('--swipe-opacity', String(swipeOpacityFor(dx)));
   }
 
   function onGlobalPointerEnd(event: PointerEvent) {
@@ -429,14 +455,16 @@ export function createToastDomRenderer(
     }
     const { node } = press;
     const released = event.type === 'pointerup';
-    const amount =
-      released && node.swipePointerId === pointerId && node.swiping
-        ? swipeAmount(node, event.clientY - press.y)
-        : 0;
-    const velocity =
-      Math.abs(amount) / Math.max(1, Date.now() - press.startedAt);
+    const rawDx = event.clientX - press.x;
+    const swiped = released && node.swipePointerId === pointerId && node.swiping;
+    const amount = swiped ? rawDx : 0;
+    const absAmount = Math.abs(amount);
+    const velocity = absAmount / Math.max(1, Date.now() - press.startedAt);
     const dismissed =
-      Math.abs(amount) >= SWIPE_THRESHOLD || velocity > SWIPE_VELOCITY;
+      swiped &&
+      (absAmount >= SWIPE_DISTANCE ||
+        (absAmount >= SWIPE_FLICK_DISTANCE &&
+          velocity >= SWIPE_FLICK_VELOCITY));
     clearPress(pointerId, press);
 
     const hit = released ? groupContaining(pointerHit(event)) : undefined;
@@ -462,6 +490,11 @@ export function createToastDomRenderer(
     if (dismissed) {
       node.swipeOut = true;
       node.li.style.setProperty('--swipe-amount', `${amount}px`);
+      node.li.style.setProperty(
+        '--swipe-opacity',
+        String(swipeOpacityFor(amount))
+      );
+      node.li.style.setProperty('--swipe-exit-sign', amount >= 0 ? '1' : '-1');
       deleteToast(node, 'swipe', true);
     } else {
       update();

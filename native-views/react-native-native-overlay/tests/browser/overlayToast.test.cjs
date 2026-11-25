@@ -414,7 +414,7 @@ for (const [position, direction] of [
   ['top-center', -1],
   ['bottom-right', 1],
 ]) {
-  test(`a ${position} swipe stays vertical after sideways drift`, async (t) => {
+  test(`a ${position} swipe stays horizontal after vertical drift`, async (t) => {
     const { context, page, card } = await showToast(t, {
       touch: true,
       position,
@@ -424,22 +424,22 @@ for (const [position, direction] of [
     const x = Math.round(box.x + box.width / 2);
     const y = Math.round(box.y + box.height / 2);
     await send('touchStart', [{ x, y }]);
-    await send('touchMove', [{ x, y: y + 28 * direction }]);
+    await send('touchMove', [{ x: x + 48 * direction, y }]);
     await page.waitForFunction(
       (amount) =>
         document
           .querySelector('[data-onekey-toast]')
           .style.getPropertyValue('--swipe-amount') === amount,
-      `${28 * direction}px`,
+      `${48 * direction}px`,
       { timeout: 1000 }
     );
-    await send('touchMove', [{ x: x + 41, y: y + 30 * direction }]);
+    await send('touchMove', [{ x: x + 72 * direction, y: y + 41 }]);
     await page.waitForFunction(
       (amount) =>
         document
           .querySelector('[data-onekey-toast]')
           .style.getPropertyValue('--swipe-amount') === amount,
-      `${30 * direction}px`,
+      `${72 * direction}px`,
       { timeout: 1000 }
     );
     await send('touchEnd');

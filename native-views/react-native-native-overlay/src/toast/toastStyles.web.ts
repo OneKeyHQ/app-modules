@@ -20,6 +20,7 @@ function buildOverlayToastCss(): string {
   const settleDrawDelayMs =
     TOAST_MOTION.glyphLeaveMs + TOAST_MOTION.strokeDelayOffsetMs;
   const cardExitEase = cubic(TOAST_MOTION.cardExitEase);
+  const cardAutoExitEase = cubic(TOAST_MOTION.cardAutoExitEase);
   const strokeEase = cubic(TOAST_MOTION.strokeEase);
   const leaveEase = cubic(TOAST_MOTION.glyphLeaveEase);
   const bumpEase = cubic(TOAST_MOTION.tileBumpEase);
@@ -38,6 +39,8 @@ function buildOverlayToastCss(): string {
   --okt-card-spring-ease:cubic-bezier(.22,1,.36,1);
   --okt-card-exit-duration:${TOAST_MOTION.cardExitMs}ms;
   --okt-card-exit-ease:${cardExitEase};
+  --okt-card-auto-exit-duration:${TOAST_MOTION.cardAutoExitMs}ms;
+  --okt-card-auto-exit-ease:${cardAutoExitEase};
   box-sizing:border-box;
   padding:0;
   margin:0;
@@ -80,17 +83,17 @@ function buildOverlayToastCss(): string {
 :where([data-onekey-toast][data-visible="false"]){opacity:0;pointer-events:none}
 :where([data-onekey-toast][data-mounted="true"][data-expanded="true"]){--y:translateY(calc(var(--lift) * var(--offset))) scale(1);height:var(--initial-height)}
 :where([data-onekey-toast][data-removed="true"][data-swipe-out="false"]){
-  transition:transform var(--okt-card-exit-duration) var(--okt-card-exit-ease),opacity var(--okt-card-exit-duration) var(--okt-card-exit-ease),height var(--okt-card-exit-duration) var(--okt-card-exit-ease);
+  transition:transform var(--okt-card-auto-exit-duration) var(--okt-card-auto-exit-ease),opacity var(--okt-card-auto-exit-duration) var(--okt-card-auto-exit-ease),height var(--okt-card-auto-exit-duration) var(--okt-card-auto-exit-ease);
 }
-:where([data-onekey-toast][data-removed="true"][data-front="true"][data-swipe-out="false"]){--y:translateY(calc(var(--lift) * -100%)) scale(.96);opacity:0}
-:where([data-onekey-toast][data-removed="true"][data-front="false"][data-swipe-out="false"][data-expanded="true"]){--y:translateY(calc(var(--lift) * var(--offset) + var(--lift) * -100%)) scale(.96);opacity:0}
-:where([data-onekey-toast][data-removed="true"][data-front="false"][data-swipe-out="false"][data-expanded="false"]){--y:translateY(calc(var(--lift) * -40%)) scale(.92);opacity:0}
+:where([data-onekey-toast][data-removed="true"][data-front="true"][data-swipe-out="false"]){--y:translateY(calc(var(--lift) * -${TOAST_MOTION.cardAutoExitOffset}px)) scale(${TOAST_MOTION.cardAutoExitScale});opacity:0}
+:where([data-onekey-toast][data-removed="true"][data-front="false"][data-swipe-out="false"][data-expanded="true"]){--y:translateY(calc(var(--lift) * var(--offset) + var(--lift) * -${TOAST_MOTION.cardAutoExitOffset}px)) scale(${TOAST_MOTION.cardAutoExitScale});opacity:0}
+:where([data-onekey-toast][data-removed="true"][data-front="false"][data-swipe-out="false"][data-expanded="false"]){--y:translateY(calc(var(--lift-amount) * var(--toasts-before) + var(--lift) * -${TOAST_MOTION.collapsedBackExitOffset}px)) scale(${TOAST_MOTION.collapsedBackExitScale});opacity:0}
 :where([data-onekey-toast][data-removed="true"][data-front="false"]):before{height:calc(var(--initial-height) + 20%)}
-[data-onekey-toast][data-swiping="true"]{transform:var(--y) translateY(var(--swipe-amount,0px));transition:none}
+[data-onekey-toast][data-swiping="true"]{transform:var(--y) translateX(var(--swipe-amount,0px));opacity:var(--swipe-opacity,1);transition:none}
 [data-onekey-toast][data-swipe-out="true"][data-y-position="bottom"],[data-onekey-toast][data-swipe-out="true"][data-y-position="top"]{animation:onekey-toast-swipe-out ${TOAST_MOTION.cardExitMs}ms ${cardExitEase} forwards}
 @keyframes onekey-toast-swipe-out{
-  0%{transform:translateY(calc(var(--lift) * var(--offset) + var(--swipe-amount))) scale(1);opacity:1}
-  to{transform:translateY(calc(var(--lift) * var(--offset) + var(--swipe-amount) + var(--lift) * -100%)) scale(.96);opacity:0}
+  0%{transform:translateY(calc(var(--lift) * var(--offset))) translateX(var(--swipe-amount,0px)) scale(1);opacity:var(--swipe-opacity,1)}
+  to{transform:translateY(calc(var(--lift) * var(--offset))) translateX(calc(var(--swipe-exit-sign,1) * (100% + 48px))) scale(${TOAST_MOTION.swipeExitScale});opacity:0}
 }
 
 /* Raised concentric card with outer 1px ring + layered box-shadow (no clip-path/filter haze) */

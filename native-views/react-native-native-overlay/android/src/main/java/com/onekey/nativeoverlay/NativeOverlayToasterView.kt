@@ -39,19 +39,25 @@ private object ToasterMetrics {
   const val SPRING_MS = 407L
   const val ENTER_FADE_MS = 220L
   const val EXIT_MS = 200L
+  const val AUTO_EXIT_MS = 190L
   const val OBSTRUCTION_MS = 220L
   /** Keep leaving cards mounted long enough for the exit transition and close callback. */
   const val REMOVE_DELAY_MS = 220L
   const val ENTER_OVERSHOOT = 32f
   const val HIDDEN_SCALE = 0.96f
-  const val COLLAPSED_LEAVE_SCALE = 0.92f
+  const val SWIPE_EXIT_SCALE = 0.98f
+  const val SWIPE_EXIT_MARGIN = 48f
+  const val AUTO_EXIT_OFFSET = 16f
+  const val AUTO_EXIT_SCALE = 0.95f
+  const val COLLAPSED_BACK_EXIT_OFFSET = 12f
+  const val COLLAPSED_LEAVE_SCALE = 0.90f
   const val FALLBACK_HEIGHT = 56f
   const val SWIPE_START = 10f
-  const val SWIPE_DISTANCE = 32f
-  const val SWIPE_FLICK_DISTANCE = 12f
-  const val SWIPE_FLICK_VELOCITY = 600f
-  /** Dragging against the dismiss direction moves the card a quarter as far. */
-  const val SWIPE_RESISTANCE = 4f
+  const val SWIPE_DISTANCE = 64f
+  const val SWIPE_FLICK_DISTANCE = 20f
+  const val SWIPE_FLICK_VELOCITY = 500f
+  const val SWIPE_OPACITY_RANGE = 260f
+  const val SWIPE_MIN_OPACITY = 0.35f
   const val FALLBACK_MARGIN = 64f
   const val FALLBACK_MAX_PAGE_WIDTH = 640f
   const val LANE_MAX_WIDTH = 360f
@@ -70,8 +76,11 @@ private val toastSpringInterpolator = TimeInterpolator { input ->
 /** Smooth ease-out fade for card entrance and visibility transitions. */
 private val toastEnterFadeInterpolator = PathInterpolator(0f, 0f, 0.58f, 1f)
 
-/** Brisk ease-out curve for card exit and obstruction shifts. */
+/** Brisk ease-out curve for interactive swipe exit and obstruction shifts. */
 private val toastExitInterpolator = PathInterpolator(0.32f, 0.72f, 0f, 1f)
+
+/** Gentle ease-out curve for non-interactive timeout / programmatic exit. */
+private val toastAutoExitInterpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
 
 internal class NativeOverlayToastEvent(
   surfaceId: Int,
@@ -119,12 +128,12 @@ private class ToastStageLayout(context: Context) : FrameLayout(context) {
   }
 }
 
-/** Hosts one card: forwards presses and vertical drags to the presenter. */
+/** Hosts one card: forwards presses and horizontal drags to the presenter. */
 @SuppressLint("ViewConstructor")
 private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) : FrameLayout(context) {
   var onPressChanged: (() -> Unit)? = null
   var onDrag: ((Float) -> Unit)? = null
-  var onRelease: ((translationY: Float, translationX: Float, velocityY: Float, cancelled: Boolean) -> Unit)? = null
+  var onRelease: ((translationX: Float, translationY: Float, velocityX: Float, cancelled: Boolean) -> Unit)? = null
   var onTap: (() -> Unit)? = null
   var allowDrag = true
     set(value) {
@@ -205,7 +214,7 @@ private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) 
         track(event)
         val dy = event.rawY - downY
         val dx = event.rawX - downX
-        if (!dragging && abs(dy) > slop && abs(dy) > abs(dx)) {
+        if (!dragging && abs(dx) > slop && abs(dx) > abs(dy)) {
           dragging = true
           parent?.requestDisallowInterceptTouchEvent(true)
         }
@@ -224,8 +233,8 @@ private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) 
         if (abs(dy) > slop || abs(dx) > slop) moved = true
         if (allowDrag) {
           track(event)
-          if (!dragging && abs(dy) > slop && abs(dy) > abs(dx)) dragging = true
-          if (dragging) onDrag?.invoke(dy)
+          if (!dragging && abs(dx) > slop && abs(dx) > abs(dy)) dragging = true
+          if (dragging) onDrag?.invoke(dx)
         }
       }
       MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
@@ -233,7 +242,7 @@ private class ToastSlot(context: Context, val card: NativeOverlayToastCardView) 
         val cancelled = event.actionMasked == MotionEvent.ACTION_CANCEL
         if (dragging) {
           tracker?.computeCurrentVelocity(1000)
-          onRelease?.invoke(event.rawY - downY, event.rawX - downX, tracker?.yVelocity ?: 0f, cancelled)
+          onRelease?.invoke(event.rawX - downX, event.rawY - downY, tracker?.xVelocity ?: 0f, cancelled)
         } else if (!cancelled && !moved &&
           abs(event.rawX - downX) <= slop && abs(event.rawY - downY) <= slop
         ) {
@@ -264,6 +273,8 @@ private class ToastEntry(val id: String, var item: ToastItem, val slot: ToastSlo
   var alphaAnimator: ObjectAnimator? = null
   var entered = false
   var lastActiveIndex = 0
+  var swipeExitSign = 1f
+  var lastTargetY = Float.NaN
   var dragStart = 0f
 }
 
@@ -432,22 +443,29 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
     card.onLink = { link -> if (!entry.leaving) onEvent?.invoke(entry.id, entry.item.generation, "link", link) }
     card.apply(item.spec, config.cardColor, config.cardBorderColor)
     slot.onPressChanged = { syncTimers() }
-    slot.onDrag = { translation ->
+    slot.onDrag = { translationX ->
       if (!entry.leaving) {
         card.animate().cancel()
-        // Toasts land at the top, so the dismiss direction is up.
-        card.translationY =
-          if (translation <= 0) translation else translation / ToasterMetrics.SWIPE_RESISTANCE
+        card.translationX = translationX
+        card.alpha = max(
+          ToasterMetrics.SWIPE_MIN_OPACITY,
+          1f - abs(translationX / density) / ToasterMetrics.SWIPE_OPACITY_RANGE,
+        )
       }
     }
-    slot.onRelease = { translationY, translationX, velocityY, cancelled ->
+    slot.onRelease = { translationX, _, velocityX, cancelled ->
       if (!entry.leaving) {
-        val distance = -translationY / density
-        val velocity = -velocityY / density
-        val dismissed = !cancelled && translationY < 0 && abs(translationY) > abs(translationX) &&
+        val distance = abs(translationX) / density
+        val velocity = abs(velocityX) / density
+        val dismissed = !cancelled &&
           (distance >= ToasterMetrics.SWIPE_DISTANCE ||
             (distance >= ToasterMetrics.SWIPE_FLICK_DISTANCE && velocity >= ToasterMetrics.SWIPE_FLICK_VELOCITY))
-        if (dismissed) dismiss(entry, "swipe", report = true) else settle(card)
+        if (dismissed) {
+          entry.swipeExitSign = if (translationX >= 0f) 1f else -1f
+          dismiss(entry, "swipe", report = true)
+        } else {
+          settle(card)
+        }
       }
     }
     val press = {
@@ -480,10 +498,11 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
 
   private fun settle(card: View) {
     if (reduceMotion) {
-      card.translationY = 0f
+      card.translationX = 0f
+      card.alpha = 1f
       return
     }
-    card.animate().translationY(0f).setDuration(ToasterMetrics.SPRING_MS)
+    card.animate().translationX(0f).alpha(1f).setDuration(ToasterMetrics.SPRING_MS)
       .setInterpolator(toastSpringInterpolator).start()
   }
 
@@ -645,13 +664,29 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
       val interactive: Boolean
       val allowDrag: Boolean
 
+      val swipeExit = entry.leaving && entry.reason == "swipe"
+      var swipeExitTranslationX: Float? = null
+
       if (entry.leaving) {
         displayHeight = card.currentDisplayHeightPx.takeIf { it > 0 } ?: naturalHeight
-        val hidden = -(if (displayHeight > 0) displayHeight else dp(ToasterMetrics.FALLBACK_HEIGHT)) -
-          topInset - dp(ToasterMetrics.ENTER_OVERSHOOT)
-        val collapsedBackExit = !expanded && entry.lastActiveIndex > 0 && entry.reason != "swipe"
-        targetY = if (collapsedBackExit) top - displayHeight * 0.4f else (top + hidden).toFloat()
-        targetScale = if (collapsedBackExit) ToasterMetrics.COLLAPSED_LEAVE_SCALE else ToasterMetrics.HIDDEN_SCALE
+        val collapsedBackExit = !expanded && entry.lastActiveIndex > 0 && !swipeExit
+        val baseY = if (entry.lastTargetY.isNaN()) top.toFloat() else entry.lastTargetY
+        if (swipeExit) {
+          targetY = baseY
+          targetScale = ToasterMetrics.SWIPE_EXIT_SCALE
+          val cardWidthPx = slot.measuredWidth.takeIf { it > 0 }?.toFloat() ?: dp(ToasterMetrics.LANE_MAX_WIDTH).toFloat()
+          val exitDistance = max(
+            cardWidthPx + dp(ToasterMetrics.SWIPE_EXIT_MARGIN),
+            layer.width * 0.5f + cardWidthPx * 0.5f,
+          )
+          swipeExitTranslationX = entry.swipeExitSign * exitDistance
+        } else if (collapsedBackExit) {
+          targetY = baseY - dp(ToasterMetrics.COLLAPSED_BACK_EXIT_OFFSET)
+          targetScale = ToasterMetrics.COLLAPSED_LEAVE_SCALE
+        } else {
+          targetY = baseY - dp(ToasterMetrics.AUTO_EXIT_OFFSET)
+          targetScale = ToasterMetrics.AUTO_EXIT_SCALE
+        }
         targetAlpha = 0f
         hideBody = collapsedBackExit
         interactive = false
@@ -675,6 +710,7 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
           hideBody = false
           allowDrag = isVisible
         }
+        entry.lastTargetY = targetY
         if (isVisible) {
           expandedOffset += naturalHeight + gutterPx
         }
@@ -718,23 +754,35 @@ internal class NativeOverlayToastPresenter(private val hostView: View) {
       if (reduceMotion) card.cancelStatusMotion()
 
       if (animate) {
+        val exitDuration = if (swipeExit) ToasterMetrics.EXIT_MS else ToasterMetrics.AUTO_EXIT_MS
+        val exitInterpolator = if (swipeExit) toastExitInterpolator else toastAutoExitInterpolator
         slot.animate().translationY(targetY).scaleX(targetScale).scaleY(targetScale)
-          .setDuration(if (entry.leaving) ToasterMetrics.EXIT_MS else ToasterMetrics.SPRING_MS)
-          .setInterpolator(if (entry.leaving) toastExitInterpolator else toastSpringInterpolator)
+          .setDuration(if (entry.leaving) exitDuration else ToasterMetrics.SPRING_MS)
+          .setInterpolator(if (entry.leaving) exitInterpolator else toastSpringInterpolator)
           .start()
+        if (swipeExitTranslationX != null) {
+          card.animate().translationX(swipeExitTranslationX)
+            .setDuration(ToasterMetrics.EXIT_MS)
+            .setInterpolator(toastExitInterpolator)
+            .start()
+        }
         if (slot.alpha != targetAlpha || entry.alphaAnimator?.isRunning == true) {
           entry.alphaAnimator?.cancel()
           entry.alphaAnimator = ObjectAnimator.ofFloat(slot, View.ALPHA, targetAlpha).apply {
-            duration = if (entry.leaving) ToasterMetrics.EXIT_MS else ToasterMetrics.ENTER_FADE_MS
-            interpolator = if (entry.leaving) toastExitInterpolator else toastEnterFadeInterpolator
+            duration = if (entry.leaving) exitDuration else ToasterMetrics.ENTER_FADE_MS
+            interpolator = if (entry.leaving) exitInterpolator else toastEnterFadeInterpolator
             start()
           }
         }
       } else {
         slot.animate().cancel()
+        card.animate().cancel()
         entry.alphaAnimator?.cancel()
         entry.alphaAnimator = null
         slot.translationY = targetY
+        if (swipeExitTranslationX != null) {
+          card.translationX = swipeExitTranslationX
+        }
         slot.alpha = targetAlpha
         slot.scaleX = targetScale
         slot.scaleY = targetScale

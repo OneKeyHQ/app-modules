@@ -1465,18 +1465,19 @@ Web draws an SVG `<use>` of the `href` the caller supplies.
 All platforms adopt the shared RareUI-inspired concentric geometry (`10` card
 padding, `36` status tile, `11` tile/inline-action radius, `21` card radius)
 and unified spring motion (`card` stiffness/damping `460/36`, `tile` `620/50`,
-`glyph` `920/40`, exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`).
+`glyph` `920/40`; swipe exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`;
+non-interactive exit `190 ms` `cubic-bezier(0.2, 0, 0, 1)`).
 
 | Behaviour | Web | iOS / Android |
 | --- | --- | --- |
 | Position | Per toast or toaster; default bottom-right | Always top-centre |
 | Stack | Newest in front, 3 visible, `10 px` gap, depth scale `1 - 0.05 * i` with back bodies faded. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Newest in front, 3 visible, `10 pt/dp` peek, depth scale `1 - 0.05 * i` with collapsed back heights matched to front card and back bodies faded (`240 ms`). Tap stack to expand; an outside tap passes through and collapses the stack. |
 | Card | `356 px` wide, `10 px` padding, `21 px` concentric radius + `1 px` outer ring (`box-shadow`) + layered shadow, corner close button revealed by mouse/pen hover or keyboard focus | Content box from `contentWidth` plus `10 pt/dp` padding, `21 pt/dp` continuous radius + `1 px` hairline ring (`0.06` light / `0.09` dark), subtle shadow |
-| Enter / exit | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)` | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)` (collapsed back exit scales to `0.92`) |
+| Enter / exit | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; swipe exit slides horizontally off-side (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, scale `0.98`, opacity `0`); non-interactive exit (`timeout`, `programmatic`, `close`) dissolves gently (`190 ms` `cubic-bezier(0.2, 0, 0, 1)`: front/expanded drifts `16 px` toward the anchored edge and scales to `0.95`; collapsed back drifts `12 px` and scales to `0.90`) | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; swipe exit slides horizontally off-side (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, scale `0.98`, opacity `0`); non-interactive exit (`timeout`, `programmatic`) dissolves gently (`190 ms` `cubic-bezier(0.2, 0, 0, 1)`: front/expanded drifts `-16 pt/dp` and scales to `0.95`; collapsed back drifts `-12 pt/dp` and scales to `0.90`) |
 | Message status entrance & settle | Tile at `110 ms` (`620/50` spring), glyph pop at `155 ms` (`920/40` spring), `180 ms` stroke draw at `210 ms` (~`390 ms` total); settle crossfades text/actions over `160 ms` `cubic-bezier(0.2, 0, 0, 1)` (`translateY 3 -> 0`) | Same spring parameters, stroke draw, tile bump/tint, and `160 ms` content crossfade (`CASpringAnimation` on iOS, analytical spring step response on Android) |
 | `close` reported | `200 ms` after the exit starts | `220 ms` after the exit starts |
 | Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed or the stack is expanded; resuming continues the remaining time |
-| Swipe | Away from the anchored edge (down on bottom groups, up on top groups). Once a vertical swipe starts, only vertical displacement counts. Release dismisses at 20 px or above 0.11 px/ms. | Up on front card (or any card when expanded); 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far; settle-back uses the card spring |
+| Swipe | Horizontal (left or right) across all viewports (desktop and small screen). Once a horizontal swipe starts (`|dx| > |dy|`), only horizontal displacement counts and opacity attenuates down to `0.35`. Release dismisses at `64 px`, or `20 px` at `0.5 px/ms`, exiting to the dragged side while remaining cards promote vertically on the card spring. | Horizontal (left or right) on front card (collapsed) or any visible card (expanded); `64 pt/dp`, or `20 pt/dp` at `500 pt/dp/s`; card follows 1:1 on X with opacity attenuating down to `0.35`; exits to the dragged side (`200 ms`) while remaining cards promote vertically on the card spring; settle-back uses the card spring |
 | Top obstruction | Inline `top` on top groups, 220 ms | Cards translate within the full-window touch stage, 220 ms |
 | Reduced motion | Transitions off (media query) | Every animation is instant |
 

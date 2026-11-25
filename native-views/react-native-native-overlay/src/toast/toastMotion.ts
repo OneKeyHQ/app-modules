@@ -25,9 +25,17 @@ export const TOAST_GEOMETRY = {
 export const TOAST_MOTION = {
   /** Card entrance, stack expand/collapse and swipe settle-back spring. */
   cardSpring: { mass: 1, stiffness: 460, damping: 36 } as IOverlaySpring,
-  /** Decisive exit timing aligned with TIME_BEFORE_UNMOUNT (200 ms). */
+  /** Decisive horizontal swipe-out timing aligned with TIME_BEFORE_UNMOUNT (200 ms). */
   cardExitMs: 200,
   cardExitEase: [0.32, 0.72, 0, 1] as const,
+  swipeExitScale: 0.98,
+  /** Gentle non-interactive exit (timeout / programmatic / close button). */
+  cardAutoExitMs: 190,
+  cardAutoExitEase: [0.2, 0, 0, 1] as const,
+  cardAutoExitOffset: 16,
+  cardAutoExitScale: 0.95,
+  collapsedBackExitOffset: 12,
+  collapsedBackExitScale: 0.9,
   /** Critically damped tile entrance spring (zeta ~= 1.004, ~40% faster than raw RareUI). */
   tileSpring: { mass: 1, stiffness: 620, damping: 50 } as IOverlaySpring,
   /** Snappy glyph pop spring (same zeta ~= 0.659 / 1.0385 overshoot, ~35% faster). */

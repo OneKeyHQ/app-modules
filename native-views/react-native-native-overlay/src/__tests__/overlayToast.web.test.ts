@@ -160,11 +160,11 @@ test('hovering a single toast pauses its timer without fanning out', () => {
 test('pointercancel clears interaction state and resumes timers without swipe dismissal', () => {
   store.show(message('a', { duration: 1000 }));
   const card = cards()[0]!;
-  dispatchPointer(card, 'pointerdown');
-  dispatchPointer(card, 'pointermove', { clientY: 40 });
+  dispatchPointer(card, 'pointerdown', { clientX: 200, clientY: 200 });
+  dispatchPointer(card, 'pointermove', { clientX: 270, clientY: 200 });
   jest.advanceTimersByTime(2000);
   expect(card.getAttribute('data-removed')).toBe('false');
-  dispatchPointer(card, 'pointercancel');
+  dispatchPointer(card, 'pointercancel', { clientX: 270, clientY: 200 });
   expect(card.getAttribute('data-removed')).toBe('false');
   expect(card.getAttribute('data-swiping')).toBe('false');
   jest.advanceTimersByTime(999);
@@ -587,10 +587,10 @@ test('dragging out of a toast and releasing clears hover after resetting data-sw
 
   dispatchPointer(list, 'pointerenter');
   dispatchPointer(card, 'pointerdown', { clientX: 200, clientY: 200 });
-  dispatchPointer(card, 'pointermove', { clientX: 200, clientY: 215 });
+  dispatchPointer(card, 'pointermove', { clientX: 215, clientY: 200 });
   expect(card.getAttribute('data-swiping')).toBe('true');
   jest.advanceTimersByTime(200);
-  dispatchPointer(card, 'pointerup', { clientX: 200, clientY: 215 });
+  dispatchPointer(card, 'pointerup', { clientX: 215, clientY: 200 });
 
   expect(card.getAttribute('data-swiping')).toBe('false');
   expect(card.style.getPropertyValue('--swipe-amount')).toBe('0px');
@@ -601,28 +601,29 @@ test('dragging out of a toast and releasing clears hover after resetting data-sw
   expect(onClose).toHaveBeenCalledWith('timeout');
 });
 
-test('single-direction swipe dismisses away from the anchored edge on wide and narrow positions', () => {
+test('horizontal swipe dismisses left or right on wide and narrow positions while vertical drags do not', () => {
   const onWideClose = jest.fn();
   store.configure({ position: 'bottom-right' });
   store.show(message('wide', { duration: 5000 }), { onClose: onWideClose });
   const wideCard = cards()[0]!;
 
-  // Upward drag on bottom-right does not move or dismiss.
+  // Vertical drag on bottom-right does not start a swipe or dismiss.
   dispatchPointer(wideCard, 'pointerdown', { clientX: 200, clientY: 200 });
-  dispatchPointer(wideCard, 'pointermove', { clientX: 200, clientY: 150 });
+  dispatchPointer(wideCard, 'pointermove', { clientX: 200, clientY: 280 });
   expect(wideCard.getAttribute('data-swiping')).toBe('false');
-  dispatchPointer(wideCard, 'pointerup', { clientX: 200, clientY: 150 });
+  dispatchPointer(wideCard, 'pointerup', { clientX: 200, clientY: 280 });
   expect(wideCard.getAttribute('data-removed')).toBe('false');
 
-  // Downward swipe after initial horizontal jitter still dismisses.
+  // Horizontal swipe right after slight vertical jitter dismisses to the right.
   dispatchPointer(wideCard, 'pointerdown', { clientX: 200, clientY: 200 });
-  dispatchPointer(wideCard, 'pointermove', { clientX: 196, clientY: 201 });
+  dispatchPointer(wideCard, 'pointermove', { clientX: 201, clientY: 204 });
   expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('0px');
-  dispatchPointer(wideCard, 'pointermove', { clientX: 196, clientY: 228 });
-  expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('28px');
-  dispatchPointer(wideCard, 'pointermove', { clientX: 241, clientY: 230 });
-  expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('30px');
-  dispatchPointer(wideCard, 'pointerup', { clientX: 241, clientY: 230 });
+  dispatchPointer(wideCard, 'pointermove', { clientX: 268, clientY: 204 });
+  expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('68px');
+  dispatchPointer(wideCard, 'pointermove', { clientX: 272, clientY: 240 });
+  expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('72px');
+  dispatchPointer(wideCard, 'pointerup', { clientX: 272, clientY: 240 });
+  expect(wideCard.style.getPropertyValue('--swipe-exit-sign')).toBe('1');
   jest.advanceTimersByTime(200);
   expect(onWideClose).toHaveBeenCalledWith('swipe');
 
@@ -653,26 +654,27 @@ test('single-direction swipe dismisses away from the anchored edge on wide and n
   });
   expect(narrowFront.getAttribute('data-expanded')).toBe('false');
 
-  // Downward drag on top-center does not move or dismiss; upward swipe dismisses.
+  // Vertical upward drag on top-center does not move or dismiss.
   dispatchPointer(narrowFront, 'pointerdown', {
     pointerType: 'touch',
     clientX: 180,
-    clientY: 40,
+    clientY: 90,
   });
   dispatchPointer(narrowFront, 'pointermove', {
     pointerType: 'touch',
     clientX: 180,
-    clientY: 90,
+    clientY: 20,
   });
   expect(narrowFront.style.getPropertyValue('--swipe-amount')).toBe('0px');
   dispatchPointer(narrowFront, 'pointerup', {
     pointerType: 'touch',
     clientX: 180,
-    clientY: 90,
+    clientY: 20,
   });
   expect(narrowFront.getAttribute('data-removed')).toBe('false');
   expect(narrowFront.getAttribute('data-expanded')).toBe('false');
 
+  // Horizontal swipe left dismisses to the left.
   dispatchPointer(narrowFront, 'pointerdown', {
     pointerType: 'touch',
     clientX: 180,
@@ -680,15 +682,16 @@ test('single-direction swipe dismisses away from the anchored edge on wide and n
   });
   dispatchPointer(narrowFront, 'pointermove', {
     pointerType: 'touch',
-    clientX: 180,
-    clientY: 30,
+    clientX: 110,
+    clientY: 60,
   });
-  expect(narrowFront.style.getPropertyValue('--swipe-amount')).toBe('-30px');
+  expect(narrowFront.style.getPropertyValue('--swipe-amount')).toBe('-70px');
   dispatchPointer(narrowFront, 'pointerup', {
     pointerType: 'touch',
-    clientX: 180,
-    clientY: 30,
+    clientX: 110,
+    clientY: 60,
   });
+  expect(narrowFront.style.getPropertyValue('--swipe-exit-sign')).toBe('-1');
   jest.advanceTimersByTime(200);
   expect(onNarrowClose).toHaveBeenCalledWith('swipe');
 });
@@ -727,14 +730,16 @@ test('an unfinished touch drag does not pause a single toast after release', () 
   expect(onClose).toHaveBeenCalledWith('timeout');
 });
 
-test('dragging back past the anchor cancels a recognized swipe', () => {
+test('dragging back within threshold cancels a recognized horizontal swipe', () => {
   store.show(message('a', { position: 'top-center' }));
   const card = cards()[0]!;
-  dispatchPointer(card, 'pointerdown', { clientY: 100 });
-  dispatchPointer(card, 'pointermove', { clientY: 70 });
+  dispatchPointer(card, 'pointerdown', { clientX: 200, clientY: 100 });
+  dispatchPointer(card, 'pointermove', { clientX: 160, clientY: 100 });
   expect(card.getAttribute('data-swiping')).toBe('true');
-  dispatchPointer(card, 'pointermove', { clientY: 105 });
-  expect(card.style.getPropertyValue('--swipe-amount')).toBe('0px');
-  dispatchPointer(card, 'pointerup', { clientY: 105 });
+  jest.advanceTimersByTime(200);
+  dispatchPointer(card, 'pointermove', { clientX: 196, clientY: 100 });
+  expect(card.style.getPropertyValue('--swipe-amount')).toBe('-4px');
+  dispatchPointer(card, 'pointerup', { clientX: 196, clientY: 100 });
   expect(card.getAttribute('data-removed')).toBe('false');
+  expect(card.style.getPropertyValue('--swipe-amount')).toBe('0px');
 });
