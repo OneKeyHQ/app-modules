@@ -623,7 +623,9 @@ test('horizontal swipe dismisses left or right on wide and narrow positions whil
   dispatchPointer(wideCard, 'pointermove', { clientX: 272, clientY: 240 });
   expect(wideCard.style.getPropertyValue('--swipe-amount')).toBe('72px');
   dispatchPointer(wideCard, 'pointerup', { clientX: 272, clientY: 240 });
-  expect(wideCard.style.getPropertyValue('--swipe-exit-sign')).toBe('1');
+  expect(
+    parseFloat(wideCard.style.getPropertyValue('--swipe-exit-x'))
+  ).toBeGreaterThan(0);
   jest.advanceTimersByTime(200);
   expect(onWideClose).toHaveBeenCalledWith('swipe');
 
@@ -691,7 +693,9 @@ test('horizontal swipe dismisses left or right on wide and narrow positions whil
     clientX: 110,
     clientY: 60,
   });
-  expect(narrowFront.style.getPropertyValue('--swipe-exit-sign')).toBe('-1');
+  expect(
+    parseFloat(narrowFront.style.getPropertyValue('--swipe-exit-x'))
+  ).toBeLessThan(0);
   jest.advanceTimersByTime(200);
   expect(onNarrowClose).toHaveBeenCalledWith('swipe');
 });
@@ -812,4 +816,57 @@ test('short horizontal flick dismisses even after a stationary hold', () => {
 
   jest.advanceTimersByTime(200);
   expect(onClose).toHaveBeenCalledWith('swipe');
+});
+
+test('a leaving front card keeps its exit slot while survivors promote immediately', () => {
+  store.show(message('oldest'));
+  store.show(message('middle'));
+  store.show(message('front'));
+  const [front, middle, oldest] = cards();
+
+  dispatchPointer(front!, 'pointerdown', { clientX: 120 });
+  dispatchPointer(front!, 'pointermove', { clientX: 200 });
+  dispatchPointer(front!, 'pointerup', { clientX: 200 });
+
+  expect(front?.dataset.removed).toBe('true');
+  expect(front?.dataset.index).toBe('0');
+  expect(middle?.dataset.front).toBe('true');
+  expect(middle?.dataset.index).toBe('0');
+  expect(oldest?.dataset.index).toBe('1');
+  expect(events.map(({ type }) => type)).toEqual(['dismiss']);
+
+  jest.advanceTimersByTime(200);
+  expect(events.map(({ type }) => type)).toEqual(['dismiss', 'close']);
+});
+
+test('collapsing during a middle-card drag cancels dismissal on release', () => {
+  ['oldest', 'middle', 'front'].forEach((id) => store.show(message(id)));
+  document.dispatchEvent(
+    new KeyboardEvent('keydown', { altKey: true, code: 'KeyT' })
+  );
+
+  const middle = cards()[1]!;
+  dispatchPointer(middle, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 120,
+  });
+  dispatchPointer(middle, 'pointermove', {
+    pointerType: 'touch',
+    clientX: 200,
+  });
+  expect(middle.dataset.swiping).toBe('true');
+  dispatchPointer(document.body, 'pointerdown', {
+    pointerType: 'touch',
+    pointerId: 2,
+  });
+  expect(middle.dataset.expanded).toBe('false');
+  expect(middle.dataset.swiping).toBe('false');
+  dispatchPointer(middle, 'pointerup', {
+    pointerType: 'touch',
+    clientX: 200,
+  });
+
+  expect(middle.dataset.removed).toBe('false');
+  expect(middle.style.getPropertyValue('--swipe-amount')).toBe('0px');
+  expect(events).toEqual([]);
 });
