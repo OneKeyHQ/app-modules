@@ -63,7 +63,6 @@ interface IToastPress {
   node: IToastNode;
   x: number;
   y: number;
-  startedAt: number;
   moved: boolean;
   samples: { x: number; t: number }[];
 }
@@ -448,7 +447,7 @@ export function createToastDomRenderer(
   function recordSwipeSample(press: IToastPress, x: number, now: number) {
     press.samples.push({ x, t: now });
     while (
-      press.samples.length > 2 &&
+      press.samples.length > 1 &&
       now - press.samples[0]!.t > SWIPE_VELOCITY_WINDOW_MS
     ) {
       press.samples.shift();
@@ -456,7 +455,9 @@ export function createToastDomRenderer(
   }
 
   function swipeVelocity(press: IToastPress, x: number, now: number): number {
-    const oldest = press.samples[0];
+    const oldest = press.samples.find(
+      (sample) => now - sample.t <= SWIPE_VELOCITY_WINDOW_MS
+    );
     if (!oldest) {
       return 0;
     }
@@ -485,7 +486,7 @@ export function createToastDomRenderer(
       clearSwipe(node, event.pointerId);
       return;
     }
-    const now = Date.now();
+    recordSwipeSample(press, event.clientX, Date.now());
     if (!node.swiping) {
       if (absDx <= threshold || absDx <= absDy) {
         return;
@@ -493,11 +494,7 @@ export function createToastDomRenderer(
       node.li.setPointerCapture?.(event.pointerId);
       node.swiping = true;
       node.li.setAttribute('data-swiping', 'true');
-      if (now - press.startedAt > SWIPE_VELOCITY_WINDOW_MS) {
-        press.samples = [{ x: press.x, t: now }];
-      }
     }
-    recordSwipeSample(press, event.clientX, now);
     node.li.style.setProperty('--swipe-amount', `${dx}px`);
     node.li.style.setProperty('--swipe-opacity', String(swipeOpacityFor(dx)));
   }
@@ -630,14 +627,12 @@ export function createToastDomRenderer(
       ) {
         node.swipePointerId = event.pointerId;
       }
-      const startedAt = Date.now();
       presses.set(event.pointerId, {
         node,
         x: event.clientX,
         y: event.clientY,
-        startedAt,
         moved: false,
-        samples: [{ x: event.clientX, t: startedAt }],
+        samples: [{ x: event.clientX, t: Date.now() }],
       });
       update();
     });

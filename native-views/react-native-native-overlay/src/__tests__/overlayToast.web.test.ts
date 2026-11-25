@@ -818,6 +818,38 @@ test('short horizontal flick dismisses even after a stationary hold', () => {
   expect(onClose).toHaveBeenCalledWith('swipe');
 });
 
+test('a slow short drag after a stationary hold settles without dismissing', () => {
+  const onDismiss = jest.fn();
+  store.show(message('held-slow-drag'), { onDismiss });
+  const card = cards()[0]!;
+
+  dispatchPointer(card, 'pointerdown', {
+    pointerType: 'touch',
+    clientX: 200,
+    clientY: 60,
+  });
+  jest.advanceTimersByTime(600);
+  for (const clientX of [203, 206, 209, 230]) {
+    jest.advanceTimersByTime(80);
+    dispatchPointer(card, 'pointermove', {
+      pointerType: 'touch',
+      clientX,
+      clientY: 60,
+    });
+  }
+  expect(card.dataset.swiping).toBe('true');
+  jest.advanceTimersByTime(10);
+  dispatchPointer(card, 'pointerup', {
+    pointerType: 'touch',
+    clientX: 230,
+    clientY: 60,
+  });
+
+  expect(onDismiss).not.toHaveBeenCalled();
+  expect(card.dataset.removed).toBe('false');
+  expect(card.style.getPropertyValue('--swipe-amount')).toBe('0px');
+});
+
 test('mouse drag inside selectable text preserves text selection without swiping the toast away', () => {
   const onClose = jest.fn();
   store.configure({ position: 'bottom-right' });

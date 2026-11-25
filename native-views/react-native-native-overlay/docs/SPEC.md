@@ -1531,7 +1531,10 @@ the result tile bump (`[1, 1.07, 1]` over `260 ms`) use
 with `cubic-bezier(0.4, 0, 0.2, 1)`. The status loading ring completes one
 turn every `850 ms` on every platform.
 
-On Web, the card captures the pointer after recognizing a swipe. Ordinary
+On Web, the card captures the pointer after recognizing a swipe. Flick speed
+uses actual pointer samples from the last 80 ms, including movement before
+the swipe locks. Holding the card still and then moving it slowly below the
+distance threshold settles it back in place. Ordinary
 clicks and taps activate the pressable row, buttons, or links through their
 own handlers. Each press ends independently on release or cancellation.
 Card removal, reuse, or repositioning clears its presses, and window blur
