@@ -37,7 +37,7 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec() {
   override var resolvedColor: String? = null
   init { host.changed = { refresh() } }
 
-  override fun afterUpdate() { super.afterUpdate(); refresh() }
+  override fun afterUpdate() { super.afterUpdate(); host.changed?.invoke() }
 
   private fun clearImage() {
     displayed = null; displayedGeometry = null
@@ -52,7 +52,6 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec() {
     if (dropped) {
       // Keep the last frame while a transition still draws the dropped host.
       if (host.attached) return
-      dropped = false
       prepareForRecycle()
       return
     }
@@ -98,22 +97,31 @@ class HybridOneKeyIcon(context: ThemedReactContext) : HybridOneKeyIconSpec() {
 
   /** Clears immediately, for native owners that reuse the view themselves. */
   fun prepareForRecycle() {
+    dropped = false
     iconName = null
     resolvedColor = null
-    refresh()
+    identity = null
+    generation++
+    OneKeyNamedSVG.cancel(owner)
+    clearImage()
   }
 
-  private fun drop() {
-    if (dropped) return
-    if (host.attached && host.drawable != null) {
-      dropped = true
-      generation++
-      OneKeyNamedSVG.cancel(owner)
-    } else {
-      prepareForRecycle()
+  override fun onDropView() {
+    if (!dropped) {
+      if (host.attached && host.drawable != null) {
+        dropped = true
+        generation++
+        OneKeyNamedSVG.cancel(owner)
+      } else {
+        prepareForRecycle()
+      }
     }
+    super.onDropView()
   }
 
-  override fun onDropView() { drop(); super.onDropView() }
-  override fun dispose() { drop(); super.dispose() }
+  override fun dispose() {
+    host.changed = null
+    prepareForRecycle()
+    super.dispose()
+  }
 }

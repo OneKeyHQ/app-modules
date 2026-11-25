@@ -2,7 +2,6 @@ package com.margelo.nitro.onekeyimage
 
 import android.app.Activity
 import android.graphics.Bitmap
-import android.os.Looper
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -17,6 +16,8 @@ import com.margelo.nitro.onekeyimage.views.HybridOneKeyIconManager
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -25,7 +26,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -38,21 +38,42 @@ class OneKeyIconLifecycleTest {
   @Before
   fun setUp() {
     ReactNativeFeatureFlagsForTests.setUp()
-    // The app keeps React Native's default: Fabric view recycling disabled.
     ReactNativeFeatureFlags.override(object : ReactNativeFeatureFlagsDefaults() {
-      override fun enableViewRecycling() = false
+      override fun enableViewRecycling() = true
     })
     val activity = controller.setup().visible().get()
     DisplayMetricsHolder.initDisplayMetrics(activity)
     container = FrameLayout(activity)
     activity.setContentView(container)
     context = ThemedReactContext(BridgeReactContext(activity.application), activity, "test", 1)
+
+    // Seed a decoded tintable icon so binding exercises the actual view without worker timing.
+    OneKeyNamedSVG.resetStartupForTesting(cacheDir = activity.cacheDir)
+    OneKeyNamedSVG.setManifestFallbackForTesting(mapOf(
+      "TestIcon" to OneKeyNamedSVG.ManifestEntry(
+        digest = "test-digest",
+        mode = OneKeyNamedSVG.RecolorMode.SINGLE,
+      ),
+    ))
+    OneKeyNamedSVG.diskPngDecoderOverrideForTesting = { _, width, height ->
+      Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    }
+    val scale = context.resources.displayMetrics.density
+    val raster = requireNotNull(OneKeyNamedSVG.diskRasterFile("TestIcon|test-digest|32|32|$scale|SINGLE|"))
+    raster.parentFile?.mkdirs()
+    raster.writeBytes(byteArrayOf(1))
+    assertNotNull(OneKeyNamedSVG.diskRender(activity.assets, "TestIcon", "rgba(0,0,0,1)", 32, 32, scale))
   }
 
   @After
   fun tearDown() {
     controller.pause().stop().destroy()
     ReactNativeFeatureFlags.dangerouslyReset()
+    OneKeyNamedSVG.diskPngDecoderOverrideForTesting = null
+    OneKeyNamedSVG.setManifestFallbackForTesting(null)
+    OneKeyNamedSVG.clearMemoryCacheForTesting()
+    OneKeyNamedSVG.resetStartupForTesting()
+    OneKeyMainThreadDecode.resetForTesting()
   }
 
   @Test
@@ -72,6 +93,7 @@ class OneKeyIconLifecycleTest {
     assertEquals(32, outgoing.width)
     assertEquals(32, outgoing.height)
     assertSame(drawable, outgoing.drawable)
+    assertNotSame(outgoing, manager.createView(2, context, null, null, null))
 
     container.endViewTransition(outgoing)
     assertFalse(outgoing.isAttachedToWindow)
@@ -91,18 +113,59 @@ class OneKeyIconLifecycleTest {
     assertNull(view.drawable)
   }
 
-  /** Binds props like Fabric, then stands in for the decoded frame. */
-  private fun bind(view: ImageView) {
+  @Test
+  fun explicitRecycleClearsAnAttachedDroppedIconAndAllowsImmediateRebind() {
+    val manager = HybridOneKeyIconManager()
+    val view = manager.createView(1, context, null, null, null) as ImageView
+    attach(view)
+    bind(view)
     val icon = hybridIcon(view)
+    manager.onDropViewInstance(view)
+    assertNotNull(view.drawable)
+
+    icon.prepareForRecycle()
+
+    assertTrue(view.isAttachedToWindow)
+    assertNull(icon.iconName)
+    assertNull(icon.resolvedColor)
+    assertNull(view.drawable)
+    assertNull(view.colorFilter)
+
+    bind(view, color = "rgba(255,0,0,1)")
+    assertNotNull(view.colorFilter)
+  }
+
+  @Test
+  fun disposeClearsAnAttachedDroppedIconAndDisablesLaterUpdates() {
+    val manager = HybridOneKeyIconManager()
+    val view = manager.createView(1, context, null, null, null) as ImageView
+    attach(view)
+    bind(view)
+    val icon = hybridIcon(view)
+    manager.onDropViewInstance(view)
+    assertNotNull(view.drawable)
+
+    icon.dispose()
+
+    assertTrue(view.isAttachedToWindow)
+    assertNull(view.drawable)
+    assertNull(view.colorFilter)
+
     icon.iconName = "TestIcon"
     icon.resolvedColor = "rgba(0,0,0,1)"
+    view.layout(0, 0, 0, 0)
+    view.layout(0, 0, 32, 32)
+    assertNull(view.drawable)
     icon.afterUpdate()
-    // Let the asset-less render settle before painting the stand-in frame.
-    repeat(20) {
-      shadowOf(Looper.getMainLooper()).idle()
-      Thread.sleep(10)
-    }
-    view.setImageBitmap(Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888))
+    assertNull(view.drawable)
+  }
+
+  private fun bind(view: ImageView, color: String = "rgba(0,0,0,1)") {
+    val icon = hybridIcon(view)
+    icon.iconName = "TestIcon"
+    icon.resolvedColor = color
+    icon.afterUpdate()
+    assertNotNull(view.drawable)
   }
 
   private fun hybridIcon(view: View): HybridOneKeyIcon {
