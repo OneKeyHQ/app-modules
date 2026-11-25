@@ -50,7 +50,13 @@ interface IToastNode {
   removed: boolean;
   swiping: boolean;
   swipeOut: boolean;
-  exitLayout?: { index: number; offset: number; expanded: boolean };
+  exitReason?: IOverlayToastDismissReason;
+  exitLayout?: {
+    index: number;
+    offset: number;
+    expanded: boolean;
+    paneScale: number;
+  };
   initialHeight: number;
   closeTimer?: ReturnType<typeof setTimeout>;
   unmountTimer?: ReturnType<typeof setTimeout>;
@@ -74,6 +80,7 @@ interface IToastGroup {
   toasts: IToastNode[];
   /** Newest first, without leaving cards. */
   heights: { id: string; height: number }[];
+  paneScale: number;
 }
 
 function getDocumentDirection(): 'ltr' | 'rtl' {
@@ -142,6 +149,7 @@ export function createToastDomRenderer(
   let keyboardExpanded = false;
   let touchExpandedGroup: IToastGroup | undefined;
   let destroyed = false;
+  let itemOrder = new Map<string, number>();
   const groupResizeObserver =
     typeof ResizeObserver === 'function'
       ? new ResizeObserver(onResize)
@@ -151,8 +159,28 @@ export function createToastDomRenderer(
     nodes.size > 1 &&
     (keyboardExpanded || !!touchExpandedGroup || hoveredGroups.size > 0);
 
-  const positionOf = (spec: IOverlayToastSpec): IOverlayToastPosition =>
-    spec.position ?? config.position ?? DEFAULT_POSITION;
+  const narrowViewport = globalThis.matchMedia?.('(max-width: 600px)');
+  const splitColumns = globalThis.matchMedia?.(
+    '(horizontal-viewport-segments: 2)'
+  );
+  const splitRows = globalThis.matchMedia?.('(vertical-viewport-segments: 2)');
+
+  function positionOf(spec: IOverlayToastSpec): IOverlayToastPosition {
+    const position = spec.position ?? config.position ?? DEFAULT_POSITION;
+    const [vertical, horizontal] = position.split('-');
+    if (splitColumns?.matches) {
+      const lane =
+        horizontal === 'center'
+          ? getDocumentDirection() === 'rtl'
+            ? 'right'
+            : 'left'
+          : horizontal;
+      return `${vertical}-${lane}` as IOverlayToastPosition;
+    }
+    return narrowViewport?.matches
+      ? (`${vertical}-center` as IOverlayToastPosition)
+      : position;
+  }
 
   const motionPreference = globalThis.matchMedia?.(
     '(prefers-reduced-motion: reduce)'
@@ -199,6 +227,7 @@ export function createToastDomRenderer(
         ol,
         toasts: [],
         heights: [],
+        paneScale: 1,
       };
       const hover = (event: PointerEvent) => {
         if (
@@ -219,6 +248,11 @@ export function createToastDomRenderer(
         ) {
           hoveredGroups.delete(event.pointerId);
           update();
+        }
+      });
+      ol.addEventListener('transitionend', (event) => {
+        if (event.target === ol && event.propertyName === 'top') {
+          applyGroup(nextGroup);
         }
       });
       group = nextGroup;
@@ -354,6 +388,7 @@ export function createToastDomRenderer(
     clearNodePresses(node);
     const group = groups.get(node.position);
     node.removed = true;
+    node.exitReason = reason;
     const statusTile = node.content.querySelector<HTMLElement>(
       ':scope > [data-okt-row] > [data-okt-icon-box] > [data-okt-status-tile]'
     );
@@ -366,8 +401,9 @@ export function createToastDomRenderer(
           0,
           group.heights.findIndex((entry) => entry.id === node.id)
         ),
-        offset: offsetOf(group, node),
+        offset: offsetOf(group, node) * group.paneScale,
         expanded: isExpanded(),
+        paneScale: group.paneScale,
       };
       group.heights = group.heights.filter((entry) => entry.id !== node.id);
     }
@@ -462,7 +498,7 @@ export function createToastDomRenderer(
       return 0;
     }
     const dt = Math.max(1, now - oldest.t);
-    return Math.abs(x - oldest.x) / dt;
+    return (x - oldest.x) / dt;
   }
 
   function onGlobalPointerMove(event: PointerEvent) {
@@ -486,7 +522,7 @@ export function createToastDomRenderer(
       clearSwipe(node, event.pointerId);
       return;
     }
-    recordSwipeSample(press, event.clientX, Date.now());
+    recordSwipeSample(press, event.clientX, event.timeStamp);
     if (!node.swiping) {
       if (absDx <= threshold || absDx <= absDy) {
         return;
@@ -521,7 +557,7 @@ export function createToastDomRenderer(
     const amount = swiped ? rawDx : 0;
     const absAmount = Math.abs(amount);
     const velocity = swiped
-      ? swipeVelocity(press, event.clientX, Date.now())
+      ? swipeVelocity(press, event.clientX, event.timeStamp) * Math.sign(amount)
       : 0;
     const dismissed =
       swiped &&
@@ -632,7 +668,7 @@ export function createToastDomRenderer(
         x: event.clientX,
         y: event.clientY,
         moved: false,
-        samples: [{ x: event.clientX, t: Date.now() }],
+        samples: [{ x: event.clientX, t: event.timeStamp }],
       });
       update();
     });
@@ -778,6 +814,42 @@ export function createToastDomRenderer(
     return Math.max(0, Math.min(bottom + gap, globalThis.innerHeight - room));
   }
 
+  function getPaneScale(group: IToastGroup, expanded: boolean): number {
+    if (!splitRows?.matches || group.heights.length === 0) {
+      return 1;
+    }
+    const { ol } = group;
+    const styles = globalThis.getComputedStyle(ol);
+    const top = group.position.startsWith('top');
+    const hinge = Number.parseFloat(
+      styles.getPropertyValue(
+        top ? '--toast-segment-bottom' : '--toast-segment-top'
+      )
+    );
+    if (!Number.isFinite(hinge)) {
+      return 1;
+    }
+    const currentAnchor = ol.getBoundingClientRect().top;
+    const room = config.topObstructionRoom ?? DEFAULT_OBSTRUCTION_ROOM;
+    const anchor = top
+      ? Math.max(currentAnchor, Math.min(obstructionTop(), hinge - room))
+      : currentAnchor;
+    const visible = group.heights.slice(0, VISIBLE_TOASTS);
+    const naturalHeight = expanded
+      ? visible.reduce((sum, { height }) => sum + height, 0)
+      : visible[0]?.height ?? 0;
+    const stackHeight = naturalHeight + (visible.length - 1) * GAP;
+    return stackHeight > 0
+      ? Math.min(
+          1,
+          Math.max(
+            0,
+            ((top ? hinge - anchor : anchor - hinge) - GAP) / stackHeight
+          )
+        )
+      : 1;
+  }
+
   function applyGroup(group: IToastGroup) {
     const { ol } = group;
     const [yPosition, xPosition] = group.position.split('-');
@@ -819,8 +891,13 @@ export function createToastDomRenderer(
       ? ''
       : `top ${OBSTRUCTION_SHIFT_MS}ms ease`;
     ol.style.setProperty('--toast-obstruction-top', top > 0 ? `${top}px` : '');
+    ol.style.setProperty(
+      '--toast-obstruction-room',
+      `${config.topObstructionRoom ?? DEFAULT_OBSTRUCTION_ROOM}px`
+    );
 
     const expanded = isExpanded();
+    group.paneScale = getPaneScale(group, expanded);
     let activeIndex = 0;
     group.toasts.forEach((node, stackIndex) => {
       const { li, body, exitLayout } = node;
@@ -829,6 +906,7 @@ export function createToastDomRenderer(
       const visible = index < VISIBLE_TOASTS;
       const front = index === 0;
       const bodyHidden = !front && !cardExpanded;
+      const paneScale = exitLayout?.paneScale ?? group.paneScale;
       li.inert = !visible || node.removed;
       const lastFocus = document.activeElement;
       const needsFocusHandoff =
@@ -858,8 +936,10 @@ export function createToastDomRenderer(
       );
       li.style.setProperty(
         '--offset',
-        `${exitLayout?.offset ?? offsetOf(group, node)}px`
+        `${exitLayout?.offset ?? offsetOf(group, node) * paneScale}px`
       );
+      li.style.setProperty('--toast-pane-scale', String(paneScale));
+      li.toggleAttribute('data-pane-constrained', paneScale < 1);
       li.style.setProperty('--initial-height', `${node.initialHeight}px`);
     });
   }
@@ -916,10 +996,22 @@ export function createToastDomRenderer(
     node.position = position;
     const group = ensureGroup(position);
     group.toasts.push(node);
+    const focused = document.activeElement;
+    const restoreFocus =
+      focused instanceof HTMLElement && node.li.contains(focused);
     group.ol.append(node.li);
-    if (!node.removed) {
-      group.heights.push({ id: node.id, height: node.initialHeight });
+    if (
+      touchExpandedGroup === previous &&
+      previous &&
+      previous.toasts.length === 0
+    ) {
+      touchExpandedGroup = group;
     }
+    if (restoreFocus && document.activeElement === document.body) {
+      focusAfterLayout(focused, document.body);
+    }
+    applyGroup(group);
+    measure(node);
     return group;
   }
 
@@ -930,7 +1022,12 @@ export function createToastDomRenderer(
     group.toasts.sort(
       (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)
     );
-    group.toasts.forEach((node) => group.ol.append(node.li));
+    group.toasts.forEach((node, index) => {
+      const child = group.ol.children.item(index);
+      if (node.li !== child) {
+        group.ol.insertBefore(node.li, child);
+      }
+    });
     group.heights.sort(
       (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)
     );
@@ -961,11 +1058,18 @@ export function createToastDomRenderer(
   }
 
   function onResize() {
+    const moved = new Set<IToastGroup>();
     nodes.forEach((node) => {
       if (!node.removed) {
-        measure(node);
+        const position = positionOf(node.spec);
+        if (position !== node.position) {
+          moved.add(moveNode(node, position));
+        } else {
+          measure(node);
+        }
       }
     });
+    moved.forEach((group) => reconcileGroupOrder(group, itemOrder));
     update();
   }
 
@@ -995,14 +1099,22 @@ export function createToastDomRenderer(
     if (!reduceMotion()) {
       return;
     }
-    nodes.forEach(({ content }) => {
+    for (const node of [...nodes.values()]) {
+      if (nodes.get(node.id) !== node) {
+        continue;
+      }
+      if (node.exitReason !== undefined) {
+        unmount(node, node.exitReason);
+        continue;
+      }
+      const { content } = node;
       content
         .querySelectorAll<HTMLElement>('[data-okt-status-motion]')
         .forEach(stopStatusTile);
       content
         .querySelector('[data-okt-content-swap]')
         ?.removeAttribute('data-okt-content-swap');
-    });
+    }
   }
 
   function onMotionPreferenceChange() {
@@ -1016,11 +1128,13 @@ export function createToastDomRenderer(
   document.addEventListener('pointermove', onGlobalPointerMove, true);
   document.addEventListener('pointerup', onGlobalPointerEnd, true);
   document.addEventListener('pointercancel', onGlobalPointerEnd, true);
-  const segmentQueries = [
-    globalThis.matchMedia?.('(horizontal-viewport-segments: 2)'),
-    globalThis.matchMedia?.('(vertical-viewport-segments: 2)'),
-  ];
-  segmentQueries.forEach((query) =>
+  const layoutQueries = [narrowViewport, splitColumns, splitRows];
+  const directionObserver = new MutationObserver(onResize);
+  directionObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['dir'],
+  });
+  layoutQueries.forEach((query) =>
     query?.addEventListener?.('change', onResize)
   );
   globalThis.addEventListener('resize', onResize);
@@ -1039,9 +1153,7 @@ export function createToastDomRenderer(
       if (heightCapChanged) {
         groups.forEach(applyGroup);
       }
-      if (!shouldReduceBeforeSync && reduceMotion()) {
-        finalizeReducedMotion();
-      }
+      itemOrder = new Map(items.map((item, index) => [item.spec.id, index]));
       const present = new Set(items.map((item) => item.spec.id));
       [...nodes.values()].forEach((node) => {
         if (!present.has(node.id)) {
@@ -1083,27 +1195,24 @@ export function createToastDomRenderer(
           node.spec = item.spec;
           renderContent(node, settling ? 'settle' : undefined);
         }
-        if (needsRedraw || heightCapChanged) {
-          measure(node);
-        }
         if (node.generation !== item.generation) {
           clearNodePresses(node);
           node.generation = item.generation;
           clearCloseTimer(node);
         }
         const position = positionOf(node.spec);
-        if (position !== node.position) {
+        if (!node.removed && position !== node.position) {
           movedGroups.add(moveNode(node, position));
+        } else if (needsRedraw || heightCapChanged) {
+          measure(node);
         }
         if (!item.visible) {
           deleteToast(node, 'programmatic', false);
         }
       });
-      if (movedGroups.size > 0) {
-        const order = new Map(
-          items.map((item, index) => [item.spec.id, index])
-        );
-        movedGroups.forEach((group) => reconcileGroupOrder(group, order));
+      movedGroups.forEach((group) => reconcileGroupOrder(group, itemOrder));
+      if (!shouldReduceBeforeSync && reduceMotion()) {
+        finalizeReducedMotion();
       }
       update();
       syncing = false;
@@ -1112,6 +1221,7 @@ export function createToastDomRenderer(
     destroy() {
       destroyed = true;
       groupResizeObserver?.disconnect();
+      directionObserver.disconnect();
       motionPreference?.removeEventListener?.(
         'change',
         onMotionPreferenceChange
@@ -1121,7 +1231,7 @@ export function createToastDomRenderer(
       document.removeEventListener('pointermove', onGlobalPointerMove, true);
       document.removeEventListener('pointerup', onGlobalPointerEnd, true);
       document.removeEventListener('pointercancel', onGlobalPointerEnd, true);
-      segmentQueries.forEach((query) =>
+      layoutQueries.forEach((query) =>
         query?.removeEventListener?.('change', onResize)
       );
       globalThis.removeEventListener('resize', onResize);

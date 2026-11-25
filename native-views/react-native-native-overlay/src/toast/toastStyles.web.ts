@@ -60,21 +60,23 @@ function buildOverlayToastCss(): string {
 :where([data-onekey-toast-toaster][data-y-position="bottom"]){bottom:calc(100vh - var(--toast-segment-bottom) + max(var(--toast-vertical-offset),env(safe-area-inset-bottom)))}
 :where([data-onekey-toast]){
   --y:translateY(calc(100% + 16px)) scale(.96);
-  --lift-amount:calc(var(--lift) * var(--gap));
+  --lift-amount:calc(var(--lift) * var(--gap) * var(--toast-pane-scale,1));
   z-index:var(--z-index);
   position:absolute;
   width:100%;
   inset-inline:0;
   opacity:0;
-  transform:var(--y);
+  transform:var(--y) scale(var(--toast-pane-scale,1));
   touch-action:none;
   transition:transform var(--okt-card-spring-duration) var(--okt-card-spring-ease),opacity 220ms ease-out,height var(--okt-card-spring-duration) var(--okt-card-spring-ease);
   box-sizing:border-box;
   outline:none;
   overflow-wrap:anywhere;
 }
-:where([data-onekey-toast][data-y-position="top"]){top:0;--y:translateY(calc(-100% - 16px)) scale(.96);--lift:1;--lift-amount:calc(1 * var(--gap))}
-:where([data-onekey-toast][data-y-position="bottom"]){bottom:0;--y:translateY(calc(100% + 16px)) scale(.96);--lift:-1;--lift-amount:calc(var(--lift) * var(--gap))}
+:where([data-onekey-toast][data-y-position="top"]){top:0;--y:translateY(calc(-100% - 16px)) scale(.96);--lift:1}
+:where([data-onekey-toast][data-y-position="bottom"]){bottom:0;--y:translateY(calc(100% + 16px)) scale(.96);--lift:-1}
+:where([data-onekey-toast][data-pane-constrained][data-y-position="top"]){transform-origin:center top}
+:where([data-onekey-toast][data-pane-constrained][data-y-position="bottom"]){transform-origin:center bottom}
 :where([data-onekey-toast][data-swiping="true"]):before{content:"";position:absolute;left:0;right:0;height:100%;z-index:-1}
 :where([data-onekey-toast][data-y-position="top"][data-swiping="true"]):before{bottom:50%;transform:scaleY(3) translateY(50%)}
 :where([data-onekey-toast][data-y-position="bottom"][data-swiping="true"]):before{top:50%;transform:scaleY(3) translateY(-50%)}
@@ -95,11 +97,11 @@ function buildOverlayToastCss(): string {
 :where([data-onekey-toast][data-removed="true"][data-front="false"][data-swipe-out="false"][data-expanded="true"]){--y:translateY(calc(var(--lift) * var(--offset) + var(--lift) * -${TOAST_MOTION.cardAutoExitOffset}px)) scale(${TOAST_MOTION.cardAutoExitScale});opacity:0}
 :where([data-onekey-toast][data-removed="true"][data-front="false"][data-swipe-out="false"][data-expanded="false"]){--y:translateY(calc(var(--lift-amount) * var(--toasts-before) + var(--lift) * -${TOAST_MOTION.collapsedBackExitOffset}px)) scale(${TOAST_MOTION.collapsedBackExitScale});opacity:0}
 :where([data-onekey-toast][data-removed="true"][data-front="false"]):before{height:calc(var(--initial-height) + 20%)}
-[data-onekey-toast][data-swiping="true"]{transform:var(--y) translateX(var(--swipe-amount,0px));opacity:var(--swipe-opacity,1);transition:none}
+[data-onekey-toast][data-swiping="true"]{transform:translateX(var(--swipe-amount,0px)) var(--y) scale(var(--toast-pane-scale,1));opacity:var(--swipe-opacity,1);transition:none}
 [data-onekey-toast][data-swipe-out="true"][data-y-position="bottom"],[data-onekey-toast][data-swipe-out="true"][data-y-position="top"]{animation:onekey-toast-swipe-out ${TOAST_MOTION.cardExitMs}ms ${cardExitEase} forwards}
 @keyframes onekey-toast-swipe-out{
-  0%{transform:translateY(calc(var(--lift) * var(--offset))) translateX(var(--swipe-amount,0px)) scale(1);opacity:var(--swipe-opacity,1)}
-  to{transform:translateY(calc(var(--lift) * var(--offset))) translateX(var(--swipe-exit-x)) scale(${TOAST_MOTION.swipeExitScale});opacity:0}
+  0%{transform:translateY(calc(var(--lift) * var(--offset))) translateX(var(--swipe-amount,0px)) scale(var(--toast-pane-scale,1));opacity:var(--swipe-opacity,1)}
+  to{transform:translateY(calc(var(--lift) * var(--offset))) translateX(var(--swipe-exit-x)) scale(calc(var(--toast-pane-scale,1) * ${TOAST_MOTION.swipeExitScale}));opacity:0}
 }
 
 /* Raised concentric card with outer 1px ring + layered box-shadow (no clip-path/filter haze) */
@@ -219,8 +221,12 @@ function buildOverlayToastCss(): string {
 @media (vertical-viewport-segments:2){
   [data-onekey-toast-toaster][data-y-position="top"]{
     --toast-segment-top:env(viewport-segment-top 0 0);
+    --toast-segment-bottom:env(viewport-segment-bottom 0 0);
+    --toast-obstruction-top:0px;
+    top:max(min(var(--toast-obstruction-top),calc(var(--toast-segment-bottom) - var(--toast-obstruction-room,88px))),calc(var(--toast-segment-top) + max(var(--toast-vertical-offset),env(safe-area-inset-top))));
   }
   [data-onekey-toast-toaster][data-y-position="bottom"]{
+    --toast-segment-top:env(viewport-segment-top 0 1);
     --toast-segment-bottom:env(viewport-segment-bottom 0 1);
   }
 }

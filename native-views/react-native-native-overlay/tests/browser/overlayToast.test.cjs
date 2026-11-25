@@ -44,8 +44,13 @@ before(async () => {
             onAction: (id) => window.callbacks.push(id),
           });
         window.redrawStatus = (status, colors) => store.update(statusSpec(status, colors));
+        window.moveStatus = (id, position) => {
+          const { spec } = store.getSnapshot().items.find((item) => item.spec.id === id);
+          store.update({ ...spec, position });
+        };
         window.dismissStatus = () => store.dismiss('status');
         window.configure = (config) => store.configure(config);
+        window.dismissNotification = () => store.dismiss('notification');
         window.showToast = (duration, position) => {
           store.show({
             id: 'notification', layout: 'notification',
@@ -935,17 +940,17 @@ test('narrow toast lanes and all three cards share the viewport center', async (
 
   await page.setViewportSize({ width: 601, height: 800 });
   const desktopLane = await page
-    .locator('[data-onekey-toast-toaster]')
+    .locator('[data-onekey-toast-toaster][data-x-position="right"]')
     .boundingBox();
   assert.equal(desktopLane.width, 356);
   assert.equal(601 - desktopLane.x - desktopLane.width, 32);
 });
 
-test('a separating fold keeps a toast stack centered inside its selected pane', async (t) => {
+async function foldablePage(t) {
   const page = await statusPage(t, 'reduce');
   await page.setViewportSize({ width: 740, height: 800 });
   const client = await page.context().newCDPSession(page);
-  const emulateFold = (displayFeature) =>
+  const fold = (displayFeature) =>
     client.send('Emulation.setDeviceMetricsOverride', {
       width: 740,
       height: 800,
@@ -955,7 +960,12 @@ test('a separating fold keeps a toast stack centered inside its selected pane', 
       mobile: true,
       displayFeature,
     });
-  await emulateFold({ orientation: 'vertical', offset: 340, maskLength: 30 });
+  return { page, fold };
+}
+
+test('a separating fold keeps a toast stack centered inside its selected pane', async (t) => {
+  const { page, fold } = await foldablePage(t);
+  await fold({ orientation: 'vertical', offset: 340, maskLength: 30 });
 
   const lane = page.locator('[data-onekey-toast-toaster]');
   const showStack = (position, dir = 'ltr') =>
@@ -994,14 +1004,14 @@ test('a separating fold keeps a toast stack centered inside its selected pane', 
     assert.deepEqual(boundsByCard, Array(3).fill([left, width]));
   }
 
-  await emulateFold({ orientation: 'horizontal', offset: 370, maskLength: 30 });
+  await fold({ orientation: 'horizontal', offset: 370, maskLength: 30 });
   await page.waitForFunction(
     () => matchMedia('(vertical-viewport-segments: 2)').matches
   );
   await showStack('bottom-center');
   assert.equal((await lane.boundingBox()).y, 768);
 
-  await emulateFold();
+  await fold();
   await page.waitForFunction(
     () => !matchMedia('(vertical-viewport-segments: 2)').matches
   );
@@ -1009,3 +1019,188 @@ test('a separating fold keeps a toast stack centered inside its selected pane', 
   assert.equal((await lane.boundingBox()).width, 356);
   assert.deepEqual(await callbacks(page), []);
 });
+
+test('folded lanes merge by direction and remeasure a moved toast at its new width', async (t) => {
+  const { page, fold } = await foldablePage(t);
+  await fold({ orientation: 'vertical', offset: 255, maskLength: 30 });
+  await page.waitForFunction(
+    () => matchMedia('(horizontal-viewport-segments: 2)').matches
+  );
+  await page.evaluate(() => {
+    window.showStatus('success', {
+      id: 'left',
+      testID: 'left',
+      position: 'top-left',
+    });
+    window.showStatus('success', {
+      id: 'center',
+      testID: 'center',
+      position: 'top-center',
+    });
+    window.showStatus('success', {
+      id: 'right',
+      testID: 'right',
+      position: 'top-right',
+      title: {
+        paragraphs: [
+          [
+            {
+              text: 'Securely review the transaction details and the amount before choosing to continue.',
+            },
+          ],
+        ],
+        fontSize: 14,
+        lineHeight: 20,
+        color: '#111',
+      },
+      actions: [
+        {
+          id: 'continue',
+          label: 'Review transaction details',
+          borderRadius: 11,
+          color: '#111',
+          backgroundColor: '#eee',
+          fontSize: 14,
+          lineHeight: 20,
+          paddingHorizontal: 12,
+          paddingVertical: 4,
+        },
+      ],
+    });
+  });
+  const laneFor = (id) =>
+    page.locator('[data-onekey-toast-toaster]').filter({
+      has: page.getByTestId(id),
+    });
+  const cardIDs = (lane) =>
+    lane
+      .locator('[data-onekey-toast]')
+      .evaluateAll((nodes) => nodes.map((node) => node.dataset.testid));
+  assert.deepEqual(await cardIDs(laneFor('center')), ['center', 'left']);
+  const right = page.getByTestId('right');
+  const originalHeight = (await right.boundingBox()).height;
+
+  await page.evaluate(() => {
+    document.documentElement.dir = 'rtl';
+  });
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-testid="center"]').parentElement ===
+      document.querySelector('[data-testid="right"]').parentElement
+  );
+  assert.deepEqual(await cardIDs(laneFor('center')), ['right', 'center']);
+  await page.evaluate(() => window.moveStatus('right', 'top-left'));
+  assert.deepEqual(await cardIDs(laneFor('left')), ['right', 'left']);
+  const bounds = await right.boundingBox();
+  assert.ok(
+    bounds.height > originalHeight,
+    JSON.stringify({ originalHeight, bounds })
+  );
+  const action = right.getByRole('button', {
+    name: 'Review transaction details',
+  });
+  const buttonBounds = await action.boundingBox();
+  assert.ok(buttonBounds.y + buttonBounds.height <= bounds.y + bounds.height);
+  await action.click();
+  assert.deepEqual(await callbacks(page), ['continue']);
+
+  await fold();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-testid="center"]').parentElement !==
+      document.querySelector('[data-testid="left"]').parentElement
+  );
+});
+
+test('expanded toasts and their actions stay within either horizontal-fold pane after obstruction', async (t) => {
+  const { page, fold } = await foldablePage(t);
+  await fold({ orientation: 'horizontal', offset: 225, maskLength: 380 });
+  await page.waitForFunction(
+    () => matchMedia('(vertical-viewport-segments: 2)').matches
+  );
+  for (const position of ['top-center', 'bottom-center']) {
+    await page.evaluate((position) => {
+      window.configure({ topObstruction: 100 });
+      for (const id of ['oldest', 'middle', 'newest']) {
+        window.showStatus('success', {
+          id,
+          testID: id,
+          position,
+          actions: [
+            {
+              id,
+              label: 'View transaction details',
+              borderRadius: 11,
+              color: '#111',
+              backgroundColor: '#eee',
+              fontSize: 14,
+              lineHeight: 20,
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+            },
+          ],
+        });
+      }
+    }, position);
+    await page.keyboard.press('Alt+t');
+    const cards = page.locator('[data-onekey-toast]');
+    assert.equal(await cards.first().getAttribute('data-expanded'), 'true');
+    for (const card of await cards.all()) {
+      assert.equal(await card.getAttribute('data-pane-constrained'), '');
+      const bounds = await card.boundingBox();
+      const action = card.getByRole('button', {
+        name: 'View transaction details',
+      });
+      const buttonBounds = await action.boundingBox();
+      assert.ok(buttonBounds.y >= bounds.y);
+      assert.ok(
+        buttonBounds.y + buttonBounds.height <= bounds.y + bounds.height
+      );
+      if (position === 'top-center') {
+        assert.ok(
+          bounds.y >= 108 && bounds.y + bounds.height < 225,
+          JSON.stringify(bounds)
+        );
+      } else {
+        assert.ok(
+          bounds.y > 605 && bounds.y + bounds.height <= 768,
+          JSON.stringify(bounds)
+        );
+      }
+    }
+    await page
+      .getByTestId('oldest')
+      .getByRole('button', { name: 'View transaction details' })
+      .click();
+    await page.keyboard.press('Escape');
+  }
+  assert.deepEqual(await callbacks(page), ['oldest', 'oldest']);
+});
+
+for (const reason of ['swipe', 'programmatic']) {
+  test(`reduced motion immediately completes an in-flight ${reason} exit`, async (t) => {
+    const page = await statusPage(t);
+    await page.clock.install();
+    await page.evaluate(() => window.showToast(Infinity, 'top-center'));
+    const card = page.locator('[data-onekey-toast]');
+    await card.click({ trial: true });
+    await page.clock.pauseAt(Date.now() + 1000);
+    if (reason === 'swipe') {
+      const { x, y, width, height } = await card.boundingBox();
+      await page.mouse.move(x + width / 2, y + height / 2);
+      await page.mouse.down();
+      await page.mouse.move(x + width / 2 + 80, y + height / 2, { steps: 3 });
+      await page.mouse.up();
+    } else {
+      await page.evaluate(() => window.dismissNotification());
+    }
+    assert.equal(await card.getAttribute('data-removed'), 'true');
+    assert.deepEqual(await callbacks(page), []);
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await card.waitFor({ state: 'detached', timeout: 1000 });
+    assert.deepEqual(await callbacks(page), [reason]);
+    await page.clock.runFor(250);
+    assert.deepEqual(await callbacks(page), [reason]);
+  });
+}

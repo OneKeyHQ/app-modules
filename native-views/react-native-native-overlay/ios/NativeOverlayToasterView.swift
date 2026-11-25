@@ -104,6 +104,7 @@ private final class ToastEntry {
   /// Parent of the card: carries the stack position, the card the drag.
   let slot: UIView = ToastPassthroughView()
   var leaving = false
+  var collapsedBackExit = false
   var reason = "programmatic"
   /// Seconds of lifetime left, counted while not paused.
   var remaining: TimeInterval?
@@ -340,7 +341,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   private func attach(_ entry: ToastEntry) {
     guard ensureWindow() != nil else { return }
     cards.addSubview(entry.slot)
-    entry.card.alpha = 0
+    entry.slot.alpha = 0
     UIAccessibility.post(notification: .announcement, argument: entry.card.announcement)
   }
 
@@ -350,6 +351,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
 
   private func dismiss(_ entry: ToastEntry, reason: String, report: Bool) {
     guard !entry.leaving else { return }
+    entry.collapsedBackExit = !expanded && entry.lastActiveIndex > 0 && reason != "swipe"
     entry.leaving = true
     entry.card.cancelStatusMotion()
     entry.reason = reason
@@ -481,7 +483,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
 
       if entry.leaving {
         displayHeight = entry.card.bounds.height > 0 ? entry.card.bounds.height : naturalSize.height
-        let collapsedBackExit = !expanded && entry.lastActiveIndex > 0 && !swipeExit
+        let collapsedBackExit = entry.collapsedBackExit
         let baseY = entry.lastTargetY ?? top
         if swipeExit {
           targetY = baseY
@@ -582,24 +584,24 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
           let animator = swipeExit ? toastExitAnimator() : toastAutoExitAnimator()
           animator.addAnimations {
             applyGeometry()
-            entry.card.alpha = targetAlpha
+            entry.slot.alpha = targetAlpha
           }
           animator.startAnimation()
         } else {
           let spring = toastSpringAnimator()
           spring.addAnimations(applyGeometry)
           spring.startAnimation()
-          if entry.card.alpha != targetAlpha {
+          if entry.slot.alpha != targetAlpha {
             let fade = UIViewPropertyAnimator(
               duration: ToasterMetrics.enterFadeDuration, curve: .easeOut
             )
-            fade.addAnimations { entry.card.alpha = targetAlpha }
+            fade.addAnimations { entry.slot.alpha = targetAlpha }
             fade.startAnimation()
           }
         }
       } else {
         applyGeometry()
-        entry.card.alpha = targetAlpha
+        entry.slot.alpha = targetAlpha
       }
     }
   }
@@ -709,7 +711,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     case .ended:
       let totalX = entry.dragStart + translation.x
       let distance = abs(totalX)
-      let velocity = abs(gesture.velocity(in: stage).x)
+      let velocity = gesture.velocity(in: stage).x * (totalX >= 0 ? 1 : -1)
       let dismissed =
         distance >= ToasterMetrics.swipeDistance
         || (distance >= ToasterMetrics.swipeFlickDistance

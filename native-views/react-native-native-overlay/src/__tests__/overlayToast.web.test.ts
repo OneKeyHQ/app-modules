@@ -557,14 +557,16 @@ function dispatchPointer(
   type: string,
   init: Record<string, unknown> = {}
 ) {
+  const { timeStamp = performance.now(), ...pointer } = init;
   const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'timeStamp', { value: timeStamp });
   Object.assign(event, {
     pointerId: 1,
     pointerType: 'mouse',
     button: 0,
     clientX: 0,
     clientY: 0,
-    ...init,
+    ...pointer,
   });
   target.dispatchEvent(event);
 }
@@ -817,6 +819,27 @@ test('short horizontal flick dismisses even after a stationary hold', () => {
   jest.advanceTimersByTime(200);
   expect(onClose).toHaveBeenCalledWith('swipe');
 });
+
+test.each([
+  ['slow events delivered together', 108, 130, 660, false],
+  ['fast reversal toward the origin', 149, 121, 620, false],
+  ['fast motion toward the exit', 111, 138, 620, true],
+] as const)(
+  'short swipe uses event time and signed velocity for %s',
+  (_, firstX, lastX, lastAt, dismisses) => {
+    const onDismiss = jest.fn();
+    store.show(message('timed-flick', { duration: 5000 }), { onDismiss });
+    const card = cards()[0]!;
+    dispatchPointer(card, 'pointerdown', { clientX: 100, timeStamp: 1 });
+    dispatchPointer(card, 'pointermove', { clientX: firstX, timeStamp: 600 });
+    dispatchPointer(card, 'pointermove', { clientX: lastX, timeStamp: lastAt });
+    dispatchPointer(card, 'pointerup', {
+      clientX: lastX,
+      timeStamp: lastAt + 5,
+    });
+    expect(onDismiss.mock.calls).toEqual(dismisses ? [['swipe']] : []);
+  }
+);
 
 test('a slow short drag after a stationary hold settles without dismissing', () => {
   const onDismiss = jest.fn();

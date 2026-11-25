@@ -39,6 +39,16 @@ class NativeOverlayToastBoundsTest {
     assertEquals(200f, toastContentWidth(340f, 200f), 0f)
   }
 
+  @Test
+  fun stackFitsTheUpperPaneAfterTheObstructionShift() {
+    val available = 430f - 62f - 96f - 4f
+    val stackHeight = 128 + 92 + 122 + 2 * 4
+    val scale = toastStackScale(available, stackHeight)
+    assertEquals(available, stackHeight * scale, 0.001f)
+    assertEquals(1f, toastStackScale(available, 128 + 2 * 4), 0f)
+    assertEquals(0f, toastStackScale(-4f, stackHeight), 0f)
+  }
+
   private fun fold(
     rect: Rect,
     foldOrientation: FoldingFeature.Orientation = FoldingFeature.Orientation.VERTICAL,
