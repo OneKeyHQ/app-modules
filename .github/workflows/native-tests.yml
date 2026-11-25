@@ -19,7 +19,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      native: ${{ steps.plan.outputs.native }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+      - name: Plan native CI
+        id: plan
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          plan="$RUNNER_TEMP/native-ci-plan.json"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            node scripts/plan-native-ci.mjs --pull-request "$PR_HEAD_SHA" > "$plan"
+          else
+            node scripts/plan-native-ci.mjs --full > "$plan"
+          fi
+          output=$(jq -c . "$plan")
+          echo "native=$output" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Native CI plan'
+            echo
+            echo '```json'
+            cat "$plan"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload native CI plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-ci-plan
+          path: ${{ runner.temp }}/native-ci-plan.json
+          if-no-files-found: error
+
   native-overlay-package:
+    needs: plan
+    if: ${{ fromJSON(needs.plan.outputs.native).jobs['native-overlay-package'] }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -45,21 +89,26 @@ jobs:
           test -f "$RUNNER_TEMP/native-overlay/package/ios/RCTNativeOverlayComponentView.mm"
 
   device-utils-store:
+    needs: plan
+    if: ${{ fromJSON(needs.plan.outputs.native).jobs['device-utils-store'] }}
     runs-on: macos-26
     timeout-minutes: 50
     env:
-      IOS_NATIVE_GROUP: services
+      IOS_NATIVE_PLAN: ${{ toJSON(fromJSON(needs.plan.outputs.native).ios.services) }}
+      IOS_NEEDS_XCODE_PROJECT: ${{ fromJSON(needs.plan.outputs.native).ios.services.buildTargets[0] != null || fromJSON(needs.plan.outputs.native).ios.services.testSchemes[0] != null }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '24.x'
       - uses: ruby/setup-ruby@v1
+        if: env.IOS_NEEDS_XCODE_PROJECT == 'true'
         with:
           working-directory: example/react-native
           ruby-version: '3.4.4'
           bundler-cache: true
       - name: Restore Yarn download cache
+        if: env.IOS_NEEDS_XCODE_PROJECT == 'true'
         id: yarn-cache
         uses: actions/cache/restore@v4
         with:
@@ -67,6 +116,7 @@ jobs:
           key: yarn-v2-${{ runner.os }}-${{ runner.arch }}-yarn4.1.0-${{ hashFiles('yarn.lock', '.yarnrc.yml', 'package.json', '.yarn/patches/**') }}
           restore-keys: yarn-v2-${{ runner.os }}-${{ runner.arch }}-yarn4.1.0-
       - name: Restore CocoaPods and React Native download caches
+        if: env.IOS_NEEDS_XCODE_PROJECT == 'true'
         id: pod-cache
         uses: actions/cache/restore@v4
         with:
@@ -90,6 +140,7 @@ jobs:
           echo "SIMULATOR_UDID=$sim_udid" >> "$GITHUB_ENV"
           df -h .
       - name: Install and generate native bindings
+        if: env.IOS_NEEDS_XCODE_PROJECT == 'true'
         id: install-bindings
         timeout-minutes: 8
         run: |
@@ -99,22 +150,25 @@ jobs:
           find native-modules native-views -mindepth 2 -maxdepth 2 -name nitro.json -print0 |
             xargs -0 -n1 -P4 bash -c 'yarn --cwd "$(dirname "$0")" nitrogen > /dev/null'
       - name: Save Yarn download cache
-        if: steps.yarn-cache.outputs.cache-hit != 'true'
+        if: env.IOS_NEEDS_XCODE_PROJECT == 'true' && steps.yarn-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .yarn/cache
           key: ${{ steps.yarn-cache.outputs.cache-primary-key }}
       - name: Restore installed CocoaPods
+        if: env.IOS_NEEDS_XCODE_PROJECT == 'true'
         id: installed-pods-cache
         uses: actions/cache/restore@v4
         with:
           path: example/react-native/ios/Pods
           key: ios-installed-pods-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.xcode.outputs.version-hash }}-${{ hashFiles('yarn.lock', '.yarnrc.yml', 'package.json', '.yarn/patches/**', 'example/react-native/package.json', 'example/react-native/Gemfile.lock', 'example/react-native/ios/Podfile', 'example/react-native/ios/Podfile.lock', 'example/react-native/ios/pods-project-script-phase.rb', 'native-modules/**/package.json', 'native-views/**/package.json', 'native-modules/**/*.podspec', 'native-views/**/*.podspec', 'native-modules/**/nitro.json', 'native-views/**/nitro.json', 'native-modules/**/*.nitro.ts', 'native-views/**/*.nitro.ts') }}
       - name: Check CocoaPods script phase UUID allocation
+        if: env.IOS_NEEDS_XCODE_PROJECT == 'true'
         env:
           BUNDLE_GEMFILE: example/react-native/Gemfile
         run: bundle exec ruby scripts/pods-project-script-phase.test.rb
       - name: Install CocoaPods test specs and verify lockfile
+        if: env.IOS_NEEDS_XCODE_PROJECT == 'true'
         timeout-minutes: 10
         working-directory: example/react-native/ios
         env:
@@ -161,14 +215,14 @@ jobs:
           puts 'Podfile.lock matches: only the Hermes checksum and Specs CDN URL may differ'
           RUBY
       - name: Save installed CocoaPods before modifying the Pods project
-        if: steps.installed-pods-cache.outputs.cache-hit != 'true'
+        if: env.IOS_NEEDS_XCODE_PROJECT == 'true' && steps.installed-pods-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: example/react-native/ios/Pods
           key: ${{ steps.installed-pods-cache.outputs.cache-primary-key }}
       - name: Keep only complete React Native downloads
         id: validate-rn-cache
-        if: always() && steps.install-bindings.outcome == 'success'
+        if: always() && env.IOS_NEEDS_XCODE_PROJECT == 'true' && steps.install-bindings.outcome == 'success'
         shell: bash
         run: |
           cache="$HOME/Library/Caches/ReactNative"
@@ -178,7 +232,7 @@ jobs:
             done < <(find "$cache" -type f -name '*.tar.gz' -print0)
           fi
       - name: Save CocoaPods and React Native download caches
-        if: always() && steps.validate-rn-cache.outcome == 'success' && steps.pod-cache.outputs.cache-hit != 'true'
+        if: always() && env.IOS_NEEDS_XCODE_PROJECT == 'true' && steps.validate-rn-cache.outcome == 'success' && steps.pod-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -186,13 +240,14 @@ jobs:
             ~/Library/Caches/ReactNative/*.tar.gz
           key: ${{ steps.pod-cache.outputs.cache-primary-key }}
       - name: Build assigned pods and run assigned XCTest suites
+        if: env.IOS_NEEDS_XCODE_PROJECT == 'true'
         shell: bash
         timeout-minutes: 30
         run: |
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          node scripts/ios-native-plan.mjs "$IOS_NATIVE_GROUP" > "$RUNNER_TEMP/ios-native-plan.json"
+          printf '%s\n' "$IOS_NATIVE_PLAN" > "$RUNNER_TEMP/ios-native-plan.json"
           BUNDLE_GEMFILE="$PWD/example/react-native/Gemfile" bundle exec ruby - "$RUNNER_TEMP/ios-native-plan.json" <<'RUBY'
           require 'json'
           require 'xcodeproj'
@@ -246,14 +301,21 @@ jobs:
             DEBUG_INFORMATION_FORMAT=dwarf IPHONEOS_DEPLOYMENT_TARGET=16.4
             'OTHER_LDFLAGS=$(inherited) -lc++'
           )
-          xcodebuild test "${xcode_args[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
-            -parallel-testing-enabled NO 2>&1 | tee artifacts/ios/AppModulesNativeTests.log
-          if [[ "$IOS_NATIVE_GROUP" == services ]]; then
+          has_tests=$(jq -r '.testSchemes | length > 0' "$RUNNER_TEMP/ios-native-plan.json")
+          if [[ "$has_tests" == true ]]; then
+            xcodebuild test "${xcode_args[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+              -parallel-testing-enabled NO 2>&1 | tee artifacts/ios/AppModulesNativeTests.log
+          else
+            xcodebuild build "${xcode_args[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+              2>&1 | tee artifacts/ios/AppModulesNativeTests.log
+          fi
+          if jq -e '.buildTargets | index("ReactNativeLiteCard") != null' "$RUNNER_TEMP/ios-native-plan.json" > /dev/null; then
             archive="$RUNNER_TEMP/native-tests-derived-data/Build/Products/Debug-iphonesimulator/ReactNativeLiteCard/libReactNativeLiteCard.a"
             test -s "$archive"
             nm -g "$archive" > artifacts/ios/LiteCard.symbols.txt
             grep -Eq '[[:space:]][DRS][[:space:]]_GPChannelSDKCoreVersionString$' artifacts/ios/LiteCard.symbols.txt
           fi
+          [[ "$has_tests" == true ]] || exit 0
           xcrun xcresulttool get test-results summary \
             --path artifacts/ios/AppModulesNativeTests.xcresult \
             > artifacts/ios/summary.json
@@ -298,11 +360,13 @@ jobs:
           if-no-files-found: warn
 
       - name: Run production Swift store regressions
+        if: contains(fromJSON(needs.plan.outputs.native).ios.host, 'react-native-device-utils')
         working-directory: native-modules/react-native-device-utils
         env:
           TMPDIR: ${{ runner.temp }}
         run: node tests/in-memory-store.cjs --swift
       - name: Run Lite Card iOS manager input regressions
+        if: contains(fromJSON(needs.plan.outputs.native).ios.host, 'react-native-lite-card')
         working-directory: native-modules/react-native-lite-card
         shell: bash
         env:
@@ -315,23 +379,22 @@ jobs:
           node tests/native-log-sanitization.cjs --swift "$RUNNER_TEMP/lite-card-ios-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
           grep -Eq '^SwiftLoggerSanitization: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-sanitization-tests.log"
       - name: Run JPush & JCore iOS native E2E regressions
+        if: contains(fromJSON(needs.plan.outputs.native).ios.host, 'react-native-jpush')
         working-directory: native-modules/react-native-jpush
         shell: bash
         run: |
           python3 scripts/test_ios_sdk.py | tee "$RUNNER_TEMP/jpush-ios-tests.log"
           grep -Fq 'ALL_IOS_SDK_TESTS_PASSED' "$RUNNER_TEMP/jpush-ios-tests.log"
-      - name: Run four SwiftPM suites and verify execution
+      - name: Run assigned SwiftPM suites and verify execution
+        if: fromJSON(needs.plan.outputs.native).ios.swiftPackages[0] != null
         shell: bash
+        env:
+          SWIFT_PACKAGES: ${{ toJSON(fromJSON(needs.plan.outputs.native).ios.swiftPackages) }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/swiftpm
-          packages=(
-            native-modules/react-native-sni-connect
-            native-modules/react-native-bundle-update
-            native-modules/react-native-range-downloader/tests/swiftpm
-            native-views/react-native-native-list/tests/swiftpm
-          )
-          for package in "${packages[@]}"; do
+          packages=$(jq -er '.[]' <<< "$SWIFT_PACKAGES")
+          while IFS= read -r package; do
             name=$(basename "$package")
             if [[ "$package" == *range-downloader* ]]; then name=range-downloader; fi
             if [[ "$package" == *native-list* ]]; then name=native-list; fi
@@ -341,7 +404,7 @@ jobs:
               echo "No executed Swift tests for $package" >&2
               exit 1
             fi
-          done
+          done <<< "$packages"
       - name: Upload SwiftPM logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -351,6 +414,8 @@ jobs:
           if-no-files-found: warn
 
   android-unit:
+    needs: plan
+    if: ${{ fromJSON(needs.plan.outputs.native).jobs['android-unit'] }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -413,11 +478,13 @@ jobs:
           path: .yarn/cache
           key: ${{ steps.yarn-cache.outputs.cache-primary-key }}
       - name: Run production Kotlin store regressions
+        if: contains(fromJSON(needs.plan.outputs.native).android.host, 'react-native-device-utils')
         working-directory: native-modules/react-native-device-utils
         env:
           TMPDIR: ${{ runner.temp }}
         run: node tests/in-memory-store.cjs --kotlin
       - name: Run bundle-update Kotlin policy tests
+        if: contains(fromJSON(needs.plan.outputs.native).android.host, 'react-native-bundle-update')
         working-directory: native-modules/react-native-bundle-update
         run: |
           "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
@@ -427,6 +494,7 @@ jobs:
           java -jar "$RUNNER_TEMP/bundle-storage-schema-tests.jar" | tee "$RUNNER_TEMP/kotlin-tests.log"
           grep -Eq 'BundleStorageSchemaPolicy: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/kotlin-tests.log"
       - name: Run bundle-update verification path tests
+        if: contains(fromJSON(needs.plan.outputs.native).android.host, 'react-native-bundle-update')
         working-directory: native-modules/react-native-bundle-update
         run: |
           "$RUNNER_TEMP/kotlin-compiler/kotlinc/bin/kotlinc" \
@@ -436,6 +504,7 @@ jobs:
           java -jar "$RUNNER_TEMP/bundle-verification-path-tests.jar" | tee "$RUNNER_TEMP/bundle-verification-path-tests.log"
           grep -Eq 'BundleVerificationPath: [1-9][0-9]* assertions passed' "$RUNNER_TEMP/bundle-verification-path-tests.log"
       - name: Run pager weak-padding snapshot regression
+        if: contains(fromJSON(needs.plan.outputs.native).android.host, 'react-native-pager-view')
         working-directory: native-views/react-native-pager-view
         shell: bash
         run: |
@@ -445,6 +514,7 @@ jobs:
           java -jar "$RUNNER_TEMP/weak-padding-snapshot-tests.jar" | tee "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
           grep -Eq '^WeakPaddingSnapshot: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/weak-padding-snapshot-tests.log"
       - name: Run picker error privacy regression
+        if: contains(fromJSON(needs.plan.outputs.native).android.host, 'react-native-image-crop-picker')
         working-directory: native-modules/react-native-image-crop-picker
         shell: bash
         run: |
@@ -455,12 +525,14 @@ jobs:
           java -jar "$RUNNER_TEMP/picker-error-privacy-tests.jar" | tee "$RUNNER_TEMP/picker-error-privacy-tests.log"
           grep -Eq '^ImageCropPickerException: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/picker-error-privacy-tests.log"
       - name: Run Lite Card Android session ownership regressions
+        if: contains(fromJSON(needs.plan.outputs.native).android.host, 'react-native-lite-card')
         working-directory: native-modules/react-native-lite-card
         shell: bash
         run: |
           node tests/android-session.cjs | tee "$RUNNER_TEMP/lite-card-session-tests.log"
           grep -Eq '^CardSession: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-session-tests.log"
       - name: Run Lite Card SDK C++ and JNI native regressions
+        if: contains(fromJSON(needs.plan.outputs.native).android.host, 'react-native-lite-card')
         working-directory: native-modules/react-native-lite-card/sdk
         shell: bash
         env:
@@ -471,6 +543,7 @@ jobs:
           ctest --test-dir "$RUNNER_TEMP/lite-card-sdk-build" --output-on-failure -V | tee "$RUNNER_TEMP/lite-card-sdk-tests.log"
           grep -Fq 'Native security regression tests + 5000 malformed-input cases passed' "$RUNNER_TEMP/lite-card-sdk-tests.log"
       - name: Run production Kotlin logger sanitization regression
+        if: contains(fromJSON(needs.plan.outputs.native).android.host, 'react-native-lite-card')
         working-directory: native-modules/react-native-lite-card
         shell: bash
         run: |
@@ -478,11 +551,15 @@ jobs:
           node tests/native-log-sanitization.cjs --kotlin "$RUNNER_TEMP/lite-card-jni-build-messages.txt" | tee "$RUNNER_TEMP/lite-card-sanitization-tests.log"
           grep -Eq '^KotlinLoggerSanitization: [1-9][0-9]* assertions passed$' "$RUNNER_TEMP/lite-card-sanitization-tests.log"
       - name: Run Android unit tests and build native modules
+        if: fromJSON(needs.plan.outputs.native).android.gradleTasks[0] != null
         working-directory: example/react-native/android
         shell: bash
         env:
           ROBOLECTRIC_MAVEN_CACHE: ${{ runner.temp }}/robolectric-maven
+          GRADLE_TASKS: ${{ toJSON(fromJSON(needs.plan.outputs.native).android.gradleTasks) }}
         run: |
+          tasks=$(jq -er '.[]' <<< "$GRADLE_TASKS")
+          mapfile -t gradle_tasks <<< "$tasks"
           cat > "$RUNNER_TEMP/rerun-native-tests.gradle" <<'GRADLE'
           allprojects {
             tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
@@ -497,24 +574,7 @@ jobs:
           run_android_checks() {
             ROBOLECTRIC_MAVEN_URL="$1" ./gradlew --continue --no-daemon --parallel --max-workers=4 --console=plain \
               --build-cache --init-script "$RUNNER_TEMP/rerun-native-tests.gradle" \
-              :onekeyfe_react-native-app-update:testDebugUnitTest \
-              :onekeyfe_react-native-bundle-crypto:testDebugUnitTest \
-              :onekeyfe_react-native-bundle-update:compileDebugKotlin \
-              :onekeyfe_react-native-jpush:testDebugUnitTest \
-              :onekey-jpush-fcm:testDebugUnitTest \
-              :onekeyfe_react-native-network-throttle:testDebugUnitTest \
-              :onekeyfe_react-native-range-downloader:testDebugUnitTest \
-              :onekeyfe_react-native-sni-connect:testDebugUnitTest \
-              :onekeyfe_react-native-auto-size-input:testDebugUnitTest \
-              :onekeyfe_react-native-image:testDebugUnitTest \
-              :onekeyfe_react-native-native-list:testDebugUnitTest \
-              :onekeyfe_react-native-native-overlay:testDebugUnitTest \
-              :onekeyfe_react-native-text-input:testDebugUnitTest \
-              :onekeyfe_react-native-qr-scanner:testDebugUnitTest \
-              :onekeyfe_react-native-bottom-tabs:compileReleaseKotlin \
-              :onekeyfe_react-native-capture-protection:assembleDebug \
-              :onekeyfe_react-native-device-utils:assembleDebug \
-              :onekeyfe_react-native-photo-library:assembleDebug
+              "${gradle_tasks[@]}"
           }
 
           if run_android_checks https://repo.maven.apache.org/maven2; then
@@ -531,43 +591,34 @@ jobs:
           echo '::warning::Robolectric SDK download failed. Retrying Android checks via repo1.maven.org.'
           run_android_checks https://repo1.maven.org/maven2
       - name: Run JPush Java host regressions with real JUnit
+        if: contains(fromJSON(needs.plan.outputs.native).android.host, 'react-native-jpush')
         working-directory: native-modules/react-native-jpush
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/test_android_sdk.py | tee "$RUNNER_TEMP/jpush-android-host-tests.log"
           grep -Fq 'ALL_ANDROID_SDK_TESTS_PASSED' "$RUNNER_TEMP/jpush-android-host-tests.log"
-      - name: Verify every Android suite executed tests
-        if: always()
+      - name: Verify every selected Android suite executed tests
+        if: always() && fromJSON(needs.plan.outputs.native).android.reportDirectories[0] != null
+        env:
+          ANDROID_REPORT_DIRECTORIES: ${{ toJSON(fromJSON(needs.plan.outputs.native).android.reportDirectories) }}
         run: |
           python3 - <<'PY'
+          import json
+          import os
           from pathlib import Path
           import xml.etree.ElementTree as ET
 
-          packages = {
-              'native-modules/react-native-app-update',
-              'native-modules/react-native-bundle-crypto',
-              'native-modules/react-native-jpush',
-              'native-modules/react-native-jpush/android/fcm',
-              'native-modules/react-native-network-throttle',
-              'native-modules/react-native-range-downloader',
-              'native-modules/react-native-sni-connect',
-              'native-views/react-native-auto-size-input',
-              'native-views/react-native-image',
-              'native-views/react-native-native-list',
-              'native-views/react-native-native-overlay',
-              'native-views/react-native-text-input',
-          }
           total = 0
-          for package in sorted(packages):
-              build_dir = Path(package) / ('build' if package.endswith('/android/fcm') else 'android/build')
+          for directory in json.loads(os.environ['ANDROID_REPORT_DIRECTORIES']):
+              build_dir = Path(directory)
               reports = list((build_dir / 'test-results/testDebugUnitTest').glob('TEST-*.xml'))
               suites = [ET.parse(report).getroot() for report in reports]
               skipped = sum(int(suite.attrib.get('skipped', 0)) for suite in suites)
               count = sum(int(suite.attrib['tests']) for suite in suites) - skipped
-              print(f'{package}: {count} executed, {skipped} skipped in {len(reports)} reports')
+              print(f'{directory}: {count} executed, {skipped} skipped in {len(reports)} reports')
               if count <= 0:
-                  raise SystemExit(f'No executed tests for {package}')
+                  raise SystemExit(f'No executed tests for {directory}')
               total += count
           print(f'Android unit tests executed: {total}')
           PY
@@ -585,10 +636,12 @@ jobs:
           if-no-files-found: warn
 
   ios-native:
+    needs: plan
+    if: ${{ fromJSON(needs.plan.outputs.native).jobs['ios-native'] }}
     runs-on: macos-26
     timeout-minutes: 50
     env:
-      IOS_NATIVE_GROUP: ui
+      IOS_NATIVE_PLAN: ${{ toJSON(fromJSON(needs.plan.outputs.native).ios.ui) }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -728,7 +781,7 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/ios
           workspace=example/react-native/ios/example.xcworkspace
-          node scripts/ios-native-plan.mjs "$IOS_NATIVE_GROUP" > "$RUNNER_TEMP/ios-native-plan.json"
+          printf '%s\n' "$IOS_NATIVE_PLAN" > "$RUNNER_TEMP/ios-native-plan.json"
           BUNDLE_GEMFILE="$PWD/example/react-native/Gemfile" bundle exec ruby - "$RUNNER_TEMP/ios-native-plan.json" <<'RUBY'
           require 'json'
           require 'xcodeproj'
@@ -788,14 +841,21 @@ jobs:
             DEBUG_INFORMATION_FORMAT=dwarf IPHONEOS_DEPLOYMENT_TARGET=16.4
             'OTHER_LDFLAGS=$(inherited) -lc++'
           )
-          xcodebuild test "${xcode_args[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
-            -parallel-testing-enabled NO 2>&1 | tee artifacts/ios/AppModulesNativeTests.log
-          if [[ "$IOS_NATIVE_GROUP" == services ]]; then
+          has_tests=$(jq -r '.testSchemes | length > 0' "$RUNNER_TEMP/ios-native-plan.json")
+          if [[ "$has_tests" == true ]]; then
+            xcodebuild test "${xcode_args[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+              -parallel-testing-enabled NO 2>&1 | tee artifacts/ios/AppModulesNativeTests.log
+          else
+            xcodebuild build "${xcode_args[@]}" -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+              2>&1 | tee artifacts/ios/AppModulesNativeTests.log
+          fi
+          if jq -e '.buildTargets | index("ReactNativeLiteCard") != null' "$RUNNER_TEMP/ios-native-plan.json" > /dev/null; then
             archive="$RUNNER_TEMP/native-tests-derived-data/Build/Products/Debug-iphonesimulator/ReactNativeLiteCard/libReactNativeLiteCard.a"
             test -s "$archive"
             nm -g "$archive" > artifacts/ios/LiteCard.symbols.txt
             grep -Eq '[[:space:]][DRS][[:space:]]_GPChannelSDKCoreVersionString$' artifacts/ios/LiteCard.symbols.txt
           fi
+          [[ "$has_tests" == true ]] || exit 0
           xcrun xcresulttool get test-results summary \
             --path artifacts/ios/AppModulesNativeTests.xcresult \
             > artifacts/ios/summary.json
@@ -841,7 +901,7 @@ jobs:
 
   ios-xctest:
     if: ${{ always() }}
-    needs: [ios-native, device-utils-store]
+    needs: [plan, ios-native, device-utils-store]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -852,6 +912,8 @@ jobs:
       - name: Require iOS native tests to succeed
         id: gate
         env:
+          NATIVE_PLAN_RESULT: ${{ needs.plan.result }}
+          NATIVE_CI_PLAN: ${{ needs.plan.outputs.native }}
           IOS_NATIVE_RESULT: ${{ needs.ios-native.result }}
           DEVICE_UTILS_STORE_RESULT: ${{ needs.device-utils-store.result }}
         run: node scripts/check-ios-native-results.mjs
