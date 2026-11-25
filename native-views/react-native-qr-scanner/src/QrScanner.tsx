@@ -136,7 +136,13 @@ export function QrScanner({
     return {
       onFrameText: callback((text: string, generation: number) => {
         if (!accept(generation)) return;
-        handlers.current.onFrameText?.(text);
+        if (handlers.current.onFrameText) {
+          try {
+            handlers.current.onFrameText(text);
+          } catch {
+            // A consumer observer cannot interrupt the built-in session.
+          }
+        }
         const usesBuiltInSession =
           !handlers.current.onFrameText ||
           !!handlers.current.onResult ||

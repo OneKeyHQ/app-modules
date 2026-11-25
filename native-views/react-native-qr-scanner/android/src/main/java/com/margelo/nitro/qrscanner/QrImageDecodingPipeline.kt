@@ -184,7 +184,15 @@ class QrImageDecodingPipeline(private val engines: List<QrImageEngine>) {
 
     for ((pass, make) in passes) {
       if (merged.size >= maxImageSymbols) break
-      val variant = make()
+      val variant = try {
+        make()
+      } catch (error: OutOfMemoryError) {
+        if (merged.isNotEmpty()) break
+        throw error
+      } catch (error: RuntimeException) {
+        if (merged.isNotEmpty()) continue
+        throw error
+      }
       try {
         for (engine in engines) {
           if (merged.size >= maxImageSymbols) break

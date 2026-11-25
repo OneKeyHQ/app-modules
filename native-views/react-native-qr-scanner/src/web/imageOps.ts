@@ -152,6 +152,9 @@ function raceWithDeadline<T>(
   remainingMs: number
 ): Promise<{ timedOut: true } | { timedOut: false; value: T }> {
   if (remainingMs <= 0) {
+    // Observe rejections from already-started work so the browser never sees
+    // an unhandled rejection after the fallback budget expires.
+    promise.catch(() => {});
     return Promise.resolve({ timedOut: true });
   }
   return new Promise((resolve, reject) => {

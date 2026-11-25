@@ -166,7 +166,7 @@ final class QrImageDecodingPipeline {
     var attempted = false
     var decoded = false
     var merged: [QrPipelineSymbol] = []
-    var seen = Set<String>()
+    var seen = Set<Data>()
     var firstEngine: String?
     var firstPass: String?
 
@@ -186,8 +186,10 @@ final class QrImageDecodingPipeline {
                 ? symbols.map { self.unpadSymbol($0, original: image, padded: variant) }
                 : symbols
               for sym in mapped {
-                if sym.text.isEmpty || seen.contains(sym.text) { continue }
-                seen.insert(sym.text)
+                if sym.text.isEmpty { continue }
+                let key = Data(sym.text.utf8)
+                if seen.contains(key) { continue }
+                seen.insert(key)
                 merged.append(sym)
                 if firstEngine == nil {
                   firstEngine = engine.name

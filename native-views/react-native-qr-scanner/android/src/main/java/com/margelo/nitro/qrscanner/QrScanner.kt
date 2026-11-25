@@ -318,6 +318,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
   private var pendingFreezeSnapshot = false
   private var pendingBindLayoutListener: View.OnLayoutChangeListener? = null
+  private var pendingBindLayoutHost: View? = null
 
   private fun captureFrozenSnapshot(): Boolean {
     val snapshot = previewView.bitmap ?: return false
@@ -469,10 +470,24 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     container.addView(targetPreview, 0, FrameLayout.LayoutParams(
       FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
     ))
-    // Wait until the replacement PreviewView has non-zero bounds so
-    // previewView.viewPort is non-null when binding UseCaseGroup (CameraX 1.6).
-    if (targetPreview.width > 0 && targetPreview.height > 0 && targetPreview.viewPort != null) {
+    // React Native Fabric's ReactViewGroup.requestLayout() is a no-op for
+    // dynamically inserted children, so lay out targetPreview synchronously
+    // using container's committed bounds when available; only defer to a
+    // layout listener on `container` if container itself is still 0x0.
+    val layoutAndBind = {
+      val w = container.width
+      val h = container.height
+      if (w > 0 && h > 0) {
+        targetPreview.measure(
+          View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+          View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY),
+        )
+        targetPreview.layout(0, 0, w, h)
+      }
       bindLaidOutPreview(provider, selector, targetPreview, generation)
+    }
+    if (container.width > 0 && container.height > 0) {
+      layoutAndBind()
       return
     }
     val listener = object : View.OnLayoutChangeListener {
@@ -489,16 +504,19 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       ) {
         if (right - left <= 0 || bottom - top <= 0) return
         v.removeOnLayoutChangeListener(this)
-        if (pendingBindLayoutListener === this) pendingBindLayoutListener = null
+        if (pendingBindLayoutListener === this) {
+          pendingBindLayoutListener = null
+          pendingBindLayoutHost = null
+        }
         if (gate.currentGeneration != generation || !shouldRun || dropped || previewView !== targetPreview) {
           return
         }
-        bindLaidOutPreview(provider, selector, targetPreview, generation)
+        layoutAndBind()
       }
     }
     pendingBindLayoutListener = listener
-    targetPreview.addOnLayoutChangeListener(listener)
-    targetPreview.requestLayout()
+    pendingBindLayoutHost = container
+    container.addOnLayoutChangeListener(listener)
   }
 
   private fun bindLaidOutPreview(
@@ -582,8 +600,11 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
   private fun unbind() {
     gate.setCapturing(false)
-    pendingBindLayoutListener?.let { previewView.removeOnLayoutChangeListener(it) }
+    pendingBindLayoutListener?.let { listener ->
+      pendingBindLayoutHost?.removeOnLayoutChangeListener(listener)
+    }
     pendingBindLayoutListener = null
+    pendingBindLayoutHost = null
     // Preserve frozenImageView and isFrozenMain across temporary rebinds
     // (camera switch or host pause/resume) while `frozen` remains true;
     // `afterUpdate` and `dispose` clear the freeze explicitly.

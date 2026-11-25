@@ -197,14 +197,16 @@ function extractMultipartUrKey(text: string): string | null {
 
 function classifyCommitResult(
   result: MultiSymbolCommitResult
-): 'accepted' | 'complete' | 'rejected' {
-  if (result === false) return 'rejected';
+): 'accepted' | 'duplicate' | 'complete' | 'rejected' | 'ignored' {
+  if (result === true) return 'accepted';
   if (result && typeof result === 'object') {
     if (result.status === 'complete') return 'complete';
+    if (result.status === 'rejected') return 'rejected';
     if (result.status === 'progress') return 'accepted';
-    return 'rejected';
+    if (result.status === 'ignored' && result.reason === 'duplicate') return 'duplicate';
+    return 'ignored';
   }
-  return 'accepted';
+  return 'ignored';
 }
 
 /**
@@ -239,14 +241,15 @@ export function createMultiSymbolCoordinator(
   }
 
   function enterUrStreaming(firstPart: string, keepMultiSymbol: boolean) {
-    clearTimer();
-    pendingSymbol = undefined;
+    // Evaluate acceptance before mutating aggregation/selection state so an
+    // ignored UR never clears a pending static scan or exits selection.
     const outcome = classifyCommitResult(options.onCommitText(firstPart, 'ur'));
-    if (outcome === 'rejected') {
-      // Do not latch into ur-streaming if the caller/session did not bind.
+    if (outcome === 'ignored') {
       return;
     }
-    if (outcome === 'complete') {
+    clearTimer();
+    pendingSymbol = undefined;
+    if (outcome === 'complete' || outcome === 'rejected') {
       selectedUrKey = null;
       phase = 'resolved';
       options.onSelectingChange([]);
@@ -293,19 +296,19 @@ export function createMultiSymbolCoordinator(
           if (selectedUrKey === null) return true;
           return extractMultipartUrKey(item.text) === selectedUrKey;
         });
-        let anyAccepted = false;
+        let boundUrVisible = false;
         for (const ur of urSymbols) {
           const outcome = classifyCommitResult(options.onCommitText(ur.text, 'ur'));
-          if (outcome === 'complete') {
+          if (outcome === 'complete' || outcome === 'rejected') {
             selectedUrKey = null;
             phase = 'resolved';
             return;
           }
-          if (outcome === 'accepted') {
-            anyAccepted = true;
+          if (outcome === 'accepted' || outcome === 'duplicate') {
+            boundUrVisible = true;
           }
         }
-        if (!anyAccepted) {
+        if (!boundUrVisible) {
           // Either a simpler static QR or a foreign competing UR won
           // maxNumberOfSymbols=1 and starved the bound UR stream; re-enable
           // multiSymbol so the bound UR remains visible.
@@ -334,8 +337,17 @@ export function createMultiSymbolCoordinator(
             single.centerY - pendingSymbol.centerY
           );
           if (distance > minSpatialSeparation) {
-            enterSelecting([pendingSymbol, single]);
-            return;
+            // Do not merge an earlier frame's symbol into selecting (every
+            // selection anchor must belong to the exact frozen frame). Track
+            // the newly visible symbol and restart the short window instead.
+            pendingSymbol = single;
+            clearTimer();
+            timer = setTimeout(() => {
+              timer = undefined;
+              if (phase === 'aggregating' && pendingSymbol) {
+                commitStatic(pendingSymbol.text);
+              }
+            }, aggregationWindowMs);
           }
         }
         return;
@@ -360,10 +372,11 @@ export function createMultiSymbolCoordinator(
       if (phase !== 'selecting') return;
       if (isUrFrameText(symbol.text)) {
         if (extractMultipartUrKey(symbol.text) === null) {
-          // Single-part or malformed UR: attempt to commit; leave selection
-          // open if rejected/ignored so the user can pick another code.
+          // Single-part or malformed UR: require explicit acceptance; leave
+          // selection open if ignored so the user can pick another code, and
+          // end the attempt on terminal completion or rejection.
           const outcome = classifyCommitResult(options.onCommitText(symbol.text, 'ur'));
-          if (outcome === 'rejected') return;
+          if (outcome === 'ignored') return;
           clearTimer();
           pendingSymbol = undefined;
           selectedUrKey = null;
@@ -373,7 +386,7 @@ export function createMultiSymbolCoordinator(
         }
         // Competing static symbols are already in view; keep multiSymbol on so
         // an easier static QR cannot starve the denser animated UR frames.
-        // `enterUrStreaming` leaves selection open if the first part is rejected.
+        // `enterUrStreaming` leaves selection open if the first part is ignored.
         enterUrStreaming(symbol.text, true);
       } else {
         commitStatic(symbol.text);

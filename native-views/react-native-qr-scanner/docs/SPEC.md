@@ -486,13 +486,11 @@ and applies three rules:
    immediately, and dynamically set `multiSymbol=false` so subsequent frames
    run at full single-symbol throughput (crucial for Windows ZXing-C++ and Web
    ZXing-WASM) without restarting the camera.
-2. **Spatial separation for cross-frame aggregation**: a frame with `>= 2`
-   distinct visible symbols freezes into `selecting` immediately. If the caller
-   uses a short anti-race aggregation window (120–150 ms) after a single
-   non-UR symbol, a later frame merges into `selecting` only when the new
-   symbol is non-UR, has distinct text, and is spatially separated
-   ($\sqrt{\Delta x^2 + \Delta y^2} > 0.08$), preventing dynamic codes at the
-   same position from freezing.
+2. **Single-frame anchor integrity**: a frame with `>= 2` distinct visible
+   symbols freezes into `selecting` immediately so every selection anchor is
+   backed by the exact displayed frozen frame. During a short anti-race
+   aggregation window (120–150 ms) after a single non-UR symbol, an earlier
+   frame's symbol is never merged into a later frame's selection overlay.
 3. **Mixed UR + static in the same frame**: before `ur-streaming` begins, a
    frame containing `>= 2` symbols (even if one is `ur:`) freezes into
    `selecting`; picking the `ur:` anchor calls `setFrozen(false)` and latches

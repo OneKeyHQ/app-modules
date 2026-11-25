@@ -87,7 +87,9 @@ describe('createMultiSymbolCoordinator', () => {
     const onFrozenChange = jest.fn();
     const onMultiSymbolChange = jest.fn();
     const onSelectingChange = jest.fn();
-    const onCommitText = jest.fn();
+    const onCommitText = jest.fn((_text: string, mode: 'static' | 'ur') =>
+      mode === 'ur' ? ({ status: 'progress' as const }) : undefined
+    );
     const coordinator = createMultiSymbolCoordinator({
       aggregationWindowMs,
       onFrozenChange,
@@ -125,7 +127,7 @@ describe('createMultiSymbolCoordinator', () => {
     expect(onCommitText).toHaveBeenCalledWith('ethereum:0x1', 'static');
   });
 
-  test('140ms aggregation window merges spatially separated static codes but ignores same-spot changes', () => {
+  test('140ms aggregation window avoids cross-frame ghost markers and ignores same-spot changes', () => {
     const { coordinator, onFrozenChange, onCommitText } = setup(140);
     coordinator.receiveFrame([{ text: 'frame-1', centerX: 0.5, centerY: 0.5 }]);
     expect(coordinator.phase).toBe('aggregating');
@@ -140,12 +142,16 @@ describe('createMultiSymbolCoordinator', () => {
     expect(coordinator.phase).toBe('resolved');
     expect(onCommitText).toHaveBeenCalledWith('frame-1', 'static');
 
-    // Now test spatially separated second code arriving within window
+    // Spatially separated single code in a later frame does NOT freeze with
+    // the older frame's marker; it tracks the newer visible code until either
+    // both appear in the same frame or the window settles on the new code.
     coordinator.reset();
     coordinator.receiveFrame([{ text: 'left', centerX: 0.2, centerY: 0.5 }]);
     coordinator.receiveFrame([{ text: 'right', centerX: 0.8, centerY: 0.5 }]);
-    expect(coordinator.phase).toBe('selecting');
-    expect(onFrozenChange).toHaveBeenLastCalledWith(true);
+    expect(coordinator.phase).toBe('aggregating');
+    jest.advanceTimersByTime(140);
+    expect(coordinator.phase).toBe('resolved');
+    expect(onCommitText).toHaveBeenLastCalledWith('right', 'static');
   });
 
   test('single ur: code latches into ur-streaming immediately with 0ms delay and disables multiSymbol', () => {
@@ -272,10 +278,53 @@ describe('createMultiSymbolCoordinator', () => {
     expect(coordinator.phase).toBe('ur-streaming');
     expect(onMultiSymbolChange).toHaveBeenLastCalledWith(false);
 
-    // Single-symbol detector later returns a foreign UR instead
+    // Single-symbol detector later returns a duplicate of the bound UR -> stays single-symbol
+    onCommitText.mockReturnValueOnce({ status: 'ignored', reason: 'duplicate' });
+    coordinator.receiveFrame([
+      { text: 'UR:CRYPTO-PSBT/1-3/LPADAO', centerX: 0.5, centerY: 0.5 },
+    ]);
+    expect(onMultiSymbolChange).toHaveBeenLastCalledWith(false);
+
+    // Single-symbol detector later returns a foreign UR instead -> recovers multiSymbol=true
     coordinator.receiveFrame([
       { text: 'UR:BYTES/1-2/LPADAO', centerX: 0.5, centerY: 0.5 },
     ]);
     expect(onMultiSymbolChange).toHaveBeenLastCalledWith(true);
+  });
+
+  test('terminal UR rejection ends attempt and ignored automatic UR preserves pending static scan', () => {
+    const onFrozenChange = jest.fn();
+    const onMultiSymbolChange = jest.fn();
+    const onSelectingChange = jest.fn();
+    const onCommitText = jest.fn((_text: string, mode: 'static' | 'ur') =>
+      mode === 'ur' ? ({ status: 'ignored' as const, reason: 'malformed' }) : undefined
+    );
+    const coordinator = createMultiSymbolCoordinator({
+      aggregationWindowMs: 140,
+      onFrozenChange,
+      onMultiSymbolChange,
+      onSelectingChange,
+      onCommitText,
+    });
+
+    // Pending static scan stays intact if an ignored automatic UR briefly appears
+    coordinator.receiveFrame([{ text: 'ethereum:0xabc', centerX: 0.5, centerY: 0.5 }]);
+    expect(coordinator.phase).toBe('aggregating');
+    coordinator.receiveFrame([{ text: 'UR:BYTES/1-2/LPADAO', centerX: 0.5, centerY: 0.5 }]);
+    expect(coordinator.phase).toBe('aggregating');
+    jest.advanceTimersByTime(140);
+    expect(coordinator.phase).toBe('resolved');
+    expect(onCommitText).toHaveBeenLastCalledWith('ethereum:0xabc', 'static');
+
+    // Terminal UR rejection during selection closes selection and ends the attempt
+    coordinator.reset();
+    onCommitText.mockReturnValueOnce({ status: 'rejected' as const, reason: 'too-large' } as never);
+    const badUr = { text: 'UR:CRYPTO-PSBT/1-999/LPADAO', centerX: 0.25, centerY: 0.5 };
+    const eth = { text: 'ethereum:0xdef', centerX: 0.75, centerY: 0.5 };
+    coordinator.receiveFrame([badUr, eth]);
+    expect(coordinator.phase).toBe('selecting');
+    coordinator.selectSymbol(badUr);
+    expect(coordinator.phase).toBe('resolved');
+    expect(onSelectingChange).toHaveBeenLastCalledWith([]);
   });
 });
