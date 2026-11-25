@@ -60,6 +60,60 @@ public func oqs_decode_image(
   }
 }
 
+/// 1: ok (outJson set to `{width, height, symbols}`), -1: error (outError set).
+@_cdecl("oqs_decode_image_symbols")
+public func oqs_decode_image_symbols(
+  _ path: UnsafePointer<CChar>, _ maxPixels: Int64, _ engines: Int32,
+  _ outJson: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>,
+  _ outLength: UnsafeMutablePointer<Int>,
+  _ outError: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
+) -> Int32 {
+  let url = URL(fileURLWithPath: String(cString: path))
+  imageLock.lock()
+  defer { imageLock.unlock() }
+  let pipeline = pipelines[engines] ?? makePipeline(engines: engines)
+  pipelines[engines] = pipeline
+  do {
+    let hit = try pipeline.decodeSymbols(url: url, maxPixels: Int(maxPixels))
+    let symbols: [[String: Any]] = hit.symbols.map { sym in
+      var item: [String: Any] = [
+        "text": sym.text,
+        "centerX": sym.centerX,
+        "centerY": sym.centerY,
+      ]
+      if let x = sym.boundsX, let y = sym.boundsY,
+        let w = sym.boundsWidth, let h = sym.boundsHeight
+      {
+        item["bounds"] = ["x": x, "y": y, "width": w, "height": h]
+      }
+      return item
+    }
+    let payload: [String: Any] = [
+      "width": hit.width,
+      "height": hit.height,
+      "symbols": symbols,
+    ]
+    let data = try JSONSerialization.data(withJSONObject: payload)
+    let bytes = Array(data)
+    guard let buffer = malloc(bytes.count)?.assumingMemoryBound(to: UInt8.self) else {
+      outError.pointee = strdup("resource-limit: could not allocate symbols JSON")
+      return -1
+    }
+    bytes.withUnsafeBufferPointer {
+      if let base = $0.baseAddress { buffer.initialize(from: base, count: $0.count) }
+    }
+    outJson.pointee = buffer
+    outLength.pointee = bytes.count
+    return 1
+  } catch let error as QrImageDecodeError {
+    outError.pointee = strdup(error.codedMessage)
+    return -1
+  } catch {
+    outError.pointee = strdup("invalid-image: \(error.localizedDescription)")
+    return -1
+  }
+}
+
 /// JSON array of {id, position, label}; free with oqs_free_string.
 @_cdecl("oqs_list_cameras")
 public func oqs_list_cameras() -> UnsafeMutablePointer<CChar>? {
@@ -137,6 +191,16 @@ public func oqs_capture_start(_ handle: UnsafeMutableRawPointer) -> Int64 {
 @_cdecl("oqs_capture_stop")
 public func oqs_capture_stop(_ handle: UnsafeMutableRawPointer) {
   Unmanaged<QrCaptureController>.fromOpaque(handle).takeUnretainedValue().stop()
+}
+
+@_cdecl("oqs_capture_set_multi_symbol")
+public func oqs_capture_set_multi_symbol(_ handle: UnsafeMutableRawPointer, _ enabled: Bool) {
+  Unmanaged<QrCaptureController>.fromOpaque(handle).takeUnretainedValue().setMultiSymbol(enabled)
+}
+
+@_cdecl("oqs_capture_set_paused")
+public func oqs_capture_set_paused(_ handle: UnsafeMutableRawPointer, _ paused: Bool) {
+  Unmanaged<QrCaptureController>.fromOpaque(handle).takeUnretainedValue().setPaused(paused)
 }
 
 /// Stops capture; no callback runs after this returns. Releases the handle.

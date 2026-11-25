@@ -1,5 +1,7 @@
 import { QrScannerError } from '../errors';
 
+import type { QrDetectedSymbol } from '../symbols';
+
 /**
  * Pixel operations for the image passes, on plain RGBA buffers so they run
  * the same in browsers, workers and tests (no canvas needed).
@@ -85,12 +87,105 @@ export interface QrImageEngine {
   name: string;
   /** Text of the first QR symbol, or null. */
   decode(image: RgbaImage): Promise<string | null>;
+  /** All QR symbols with normalized top-left coordinates in `image`. */
+  decodeSymbols?(image: RgbaImage, multiSymbol: boolean): Promise<QrDetectedSymbol[]>;
 }
 
 export interface QrImageHit {
   text: string;
   engine: string;
   pass: DecodePass;
+}
+
+export interface QrImageSymbolsHit {
+  symbols: QrDetectedSymbol[];
+  engine: string;
+  pass: DecodePass;
+}
+
+function unpadSymbol(
+  symbol: QrDetectedSymbol,
+  original: RgbaImage,
+  paddedImage: RgbaImage
+): QrDetectedSymbol {
+  const margin = Math.max(
+    MIN_PADDING,
+    Math.floor(Math.max(original.width, original.height) * PADDING_RATIO)
+  );
+  const expandedWidth = original.width + margin * 2;
+  const expandedHeight = original.height + margin * 2;
+  const left = Math.min(
+    Math.floor((margin * paddedImage.width) / expandedWidth),
+    Math.floor((paddedImage.width - 1) / 2)
+  );
+  const top = Math.min(
+    Math.floor((margin * paddedImage.height) / expandedHeight),
+    Math.floor((paddedImage.height - 1) / 2)
+  );
+  const innerWidth = paddedImage.width - left * 2;
+  const innerHeight = paddedImage.height - top * 2;
+  if (innerWidth <= 0 || innerHeight <= 0) return symbol;
+
+  const mapX = (x: number) => (x * paddedImage.width - left) / innerWidth;
+  const mapY = (y: number) => (y * paddedImage.height - top) / innerHeight;
+  const bounds = symbol.bounds
+    ? {
+        x: mapX(symbol.bounds.x),
+        y: mapY(symbol.bounds.y),
+        width: (symbol.bounds.width * paddedImage.width) / innerWidth,
+        height: (symbol.bounds.height * paddedImage.height) / innerHeight,
+      }
+    : undefined;
+  return {
+    text: symbol.text,
+    centerX: mapX(symbol.centerX),
+    centerY: mapY(symbol.centerY),
+    bounds,
+  };
+}
+
+/**
+ * The same pass order as `decodePixels`, returning all symbols from the first
+ * pass that detects at least one QR code, mapped back to original image space.
+ */
+export async function decodePixelsSymbols(
+  image: RgbaImage,
+  engines: readonly QrImageEngine[],
+  maxPixels?: number
+): Promise<QrImageSymbolsHit | null> {
+  const passes: [DecodePass, () => RgbaImage][] = [
+    ['original', () => image],
+    ['padded', () => padded(image, maxPixels)],
+    ['grayscale', () => grayscale(image)],
+    ['inverted', () => grayscale(image, true)],
+  ];
+  let attempted = false;
+  let decoded = false;
+  for (const [pass, make] of passes) {
+    const variant = make();
+    for (const engine of engines) {
+      attempted = true;
+      try {
+        const symbols = engine.decodeSymbols
+          ? await engine.decodeSymbols(variant, true)
+          : await engine.decode(variant).then((text) =>
+              text ? [{ text, centerX: 0.5, centerY: 0.5 }] : []
+            );
+        decoded = true;
+        if (symbols.length > 0) {
+          const normalized =
+            pass === 'padded'
+              ? symbols.map((sym) => unpadSymbol(sym, image, variant))
+              : symbols;
+          return { symbols: normalized, engine: engine.name, pass };
+        }
+      } catch {
+        // A failed pass leaves the remaining engines and passes available.
+      }
+    }
+  }
+  if (attempted && !decoded) throw new QrScannerError('decoder-unavailable', 'A QR decoder failed');
+  return null;
 }
 
 /**

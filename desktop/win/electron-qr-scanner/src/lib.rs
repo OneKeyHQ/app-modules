@@ -17,7 +17,8 @@ use crate::capture::{
     CameraDeviceInfo, CaptureController, CaptureEvent, CaptureReadyInfo, CaptureStatsSnapshot,
     PreferredResolution, SourceConfig,
 };
-use crate::image_decode::decode_image_file;
+use crate::image_decode::{decode_image_file, decode_image_file_symbols, ImageSymbolsResult};
+use crate::zxing_text::DecodedSymbol;
 
 /// Hard ceiling on the caller's `maxPixels`.
 const MAX_PIXELS_CEILING: u64 = 50_000_000;
@@ -88,6 +89,114 @@ pub fn decode_image(
     }
 
     Ok(AsyncTask::new(DecodeImageTask { path, max_pixels }))
+}
+
+#[napi(object)]
+pub struct JsSymbolBounds {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[napi(object)]
+pub struct JsDetectedSymbol {
+    pub text: String,
+    pub center_x: f64,
+    pub center_y: f64,
+    pub bounds: Option<JsSymbolBounds>,
+}
+
+impl From<DecodedSymbol> for JsDetectedSymbol {
+    fn from(sym: DecodedSymbol) -> Self {
+        Self {
+            text: sym.text,
+            center_x: sym.center_x,
+            center_y: sym.center_y,
+            bounds: Some(JsSymbolBounds {
+                x: sym.bounds_x,
+                y: sym.bounds_y,
+                width: sym.bounds_width,
+                height: sym.bounds_height,
+            }),
+        }
+    }
+}
+
+#[napi(object)]
+pub struct JsImageSymbolsResult {
+    pub width: u32,
+    pub height: u32,
+    pub symbols: Vec<JsDetectedSymbol>,
+}
+
+pub struct DecodeImageSymbolsTask {
+    path: String,
+    max_pixels: u64,
+}
+
+impl Task for DecodeImageSymbolsTask {
+    type Output = ImageSymbolsResult;
+    type JsValue = JsImageSymbolsResult;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        decode_image_file_symbols(&self.path, self.max_pixels)
+            .map_err(|msg| Error::new(Status::GenericFailure, msg))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(JsImageSymbolsResult {
+            width: output.width,
+            height: output.height,
+            symbols: output.symbols.into_iter().map(Into::into).collect(),
+        })
+    }
+}
+
+#[napi]
+pub fn decode_image_symbols(
+    path: String,
+    max_pixels: Option<f64>,
+    engines: Option<Vec<String>>,
+) -> Result<AsyncTask<DecodeImageSymbolsTask>> {
+    if let Some(names) = engines {
+        if names.is_empty() {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "decoder-unavailable: engines must not be empty",
+            ));
+        }
+        for name in names {
+            if name != "zxing" {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    format!("decoder-unavailable: unknown engine: {name}"),
+                ));
+            }
+        }
+    }
+
+    let max_pixels = match max_pixels {
+        None => DEFAULT_MAX_PIXELS,
+        Some(value) if value.is_finite() && value >= 1.0 => {
+            (value.floor() as u64).min(MAX_PIXELS_CEILING)
+        }
+        Some(_) => {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "invalid-image: maxPixels must be a positive number",
+            ));
+        }
+    };
+
+    if path.is_empty() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            "invalid-image: path must be a non-empty string",
+        ));
+    }
+
+    Ok(AsyncTask::new(DecodeImageSymbolsTask { path, max_pixels }))
 }
 
 #[napi(object)]
@@ -187,6 +296,7 @@ pub struct JsCaptureEvent {
     pub generation: i64,
     pub info: Option<JsCaptureReadyInfo>,
     pub text: Option<String>,
+    pub symbols: Option<Vec<JsDetectedSymbol>>,
     pub code: Option<String>,
     pub message: Option<String>,
     pub token: Option<i64>,
@@ -202,6 +312,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
             generation,
             info: Some(info.into()),
             text: None,
+            symbols: None,
             code: None,
             message: None,
             token: None,
@@ -214,12 +325,31 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
             generation,
             info: None,
             text: Some(text),
+            symbols: None,
             code: None,
             message: None,
             token: None,
             nt_handle: None,
             width: None,
             height: None,
+        },
+        CaptureEvent::Symbols {
+            symbols,
+            frame_width,
+            frame_height,
+            generation,
+        } => JsCaptureEvent {
+            kind: "symbols".to_owned(),
+            generation,
+            info: None,
+            text: None,
+            symbols: Some(symbols.into_iter().map(Into::into).collect()),
+            code: None,
+            message: None,
+            token: None,
+            nt_handle: None,
+            width: Some(frame_width),
+            height: Some(frame_height),
         },
         CaptureEvent::Error {
             code,
@@ -230,6 +360,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
             generation,
             info: None,
             text: None,
+            symbols: None,
             code: Some(code.to_owned()),
             message: Some(message),
             token: None,
@@ -242,6 +373,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
             generation,
             info: None,
             text: None,
+            symbols: None,
             code: None,
             message: None,
             token: None,
@@ -260,6 +392,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
             generation,
             info: None,
             text: None,
+            symbols: None,
             code: None,
             message: None,
             token: Some(token),
@@ -279,6 +412,7 @@ pub struct NativeCaptureOptions {
     pub preferred_resolution: Option<String>,
     pub lock_focus_on_detect: Option<bool>,
     pub with_preview: bool,
+    pub multi_symbol: Option<bool>,
 }
 
 #[napi]
@@ -331,6 +465,7 @@ impl NativeCapture {
         let controller = Arc::new(CaptureController::new(
             source,
             options.with_preview,
+            options.multi_symbol.unwrap_or(false),
             Arc::new(move |event: CaptureEvent| {
                 let js_event = to_js_event(event);
                 let _ = tsfn.call(js_event, ThreadsafeFunctionCallMode::NonBlocking);
@@ -358,6 +493,20 @@ impl NativeCapture {
     pub fn stop(&self) {
         if let Some(ctrl) = self.controller.as_ref() {
             ctrl.stop();
+        }
+    }
+
+    #[napi]
+    pub fn set_multi_symbol(&self, enabled: bool) {
+        if let Some(ctrl) = self.controller.as_ref() {
+            ctrl.set_multi_symbol(enabled);
+        }
+    }
+
+    #[napi]
+    pub fn set_paused(&self, paused: bool) {
+        if let Some(ctrl) = self.controller.as_ref() {
+            ctrl.set_paused(paused);
         }
     }
 

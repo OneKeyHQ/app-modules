@@ -17,8 +17,34 @@ export interface DecodeImageOptions {
   engines?: ("vision" | "zxing")[];
 }
 
+export interface QrSymbolBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface QrDetectedSymbol {
+  text: string;
+  centerX: number;
+  centerY: number;
+  bounds?: QrSymbolBounds;
+}
+
+export interface QrImageSymbolsResult {
+  width: number;
+  height: number;
+  symbols: QrDetectedSymbol[];
+}
+
 /** Raw text of the first QR symbol in a local image file, or null. */
 export function decodeImage(path: string, options?: DecodeImageOptions): Promise<string | null>;
+
+/** All QR symbols in a local image file with top-left normalized coordinates. */
+export function decodeImageSymbols(
+  path: string,
+  options?: DecodeImageOptions,
+): Promise<QrImageSymbolsResult>;
 
 export type CaptureSource =
   /** `deviceId` from listCameras(); unset or disconnected uses the default camera. */
@@ -28,9 +54,18 @@ export type CaptureSource =
 
 export interface CaptureOptions {
   source?: CaptureSource;
+  /** When true, report whole-frame symbols via `onSymbols` (top-left normalized `frame` space). Default false. */
+  multiSymbol?: boolean;
   onReady?: (generation: number, deviceId?: string) => void;
   /** Each distinct QR text; the same text repeats at most once per second. */
   onText?: (text: string, generation: number) => void;
+  /** Whole-frame symbols when `multiSymbol` is enabled. */
+  onSymbols?: (
+    symbols: QrDetectedSymbol[],
+    frameWidth: number,
+    frameHeight: number,
+    generation: number,
+  ) => void;
   onError?: (error: QrScannerError, generation: number) => void;
   /** A file source reached its end (not looping). */
   onEnded?: (generation: number) => void;
@@ -56,6 +91,10 @@ export interface QrPreviewFrame {
 export interface QrCapture {
   start(): void;
   stop(): void;
+  /** Dynamically toggles whole-frame multi-symbol reporting on the next frame. */
+  setMultiSymbol(enabled: boolean): void;
+  /** Pauses or resumes Vision analysis without stopping capture or releasing the camera. */
+  setPaused(paused: boolean): void;
   /** Preview frames currently held by the consumer (at most 3). */
   lentFrames(): number;
   /** Idempotent; no callback runs after it returns. */

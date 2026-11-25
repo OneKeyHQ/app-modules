@@ -6,6 +6,7 @@ import { QrScannerError, isQrScannerErrorCode } from './errors';
 import { createScanSession } from './ur';
 
 import type { QrScannerMethods, QrScannerProps } from './QrScanner.nitro';
+import type { QrDetectedSymbol } from './symbols';
 import type { ScanError, ScanMode, ScanResult, UrLimits } from './ur';
 import type { StyleProp, ViewStyle } from 'react-native';
 
@@ -25,6 +26,10 @@ export interface QrScannerComponentProps {
    * back camera. Switching keeps the scan session (collected UR parts).
    */
   cameraId?: string;
+  /** Enable whole-frame multi-symbol reporting via `onFrameSymbols`. Default false. */
+  multiSymbol?: boolean;
+  /** Freeze the last preview frame and pause detection without releasing the camera. */
+  frozen?: boolean;
   mode: ScanMode;
   allowPlainText?: boolean;
   limits?: Partial<UrLimits>;
@@ -35,6 +40,8 @@ export interface QrScannerComponentProps {
   sessionKey?: string | number;
   style?: StyleProp<ViewStyle>;
   onReady?: (cameraId: string) => void;
+  /** Whole-frame symbols in normalized visible view coordinates (`[0, 1]`). */
+  onFrameSymbols?: (symbols: QrDetectedSymbol[]) => void;
   /** UR assembly progress, 0..1 (below 1 until complete). */
   onProgress?: (progress: number) => void;
   /** Fired once per session. */
@@ -50,20 +57,35 @@ export interface QrScannerComponentProps {
 export function QrScanner({
   active,
   cameraId,
+  multiSymbol,
+  frozen,
   mode,
   allowPlainText,
   limits,
   sessionKey,
   style,
   onReady,
+  onFrameSymbols,
   onProgress,
   onResult,
   onError,
 }: QrScannerComponentProps) {
-  const handlers = useRef({ onReady, onProgress, onResult, onError });
+  const handlers = useRef({
+    onReady,
+    onFrameSymbols,
+    onProgress,
+    onResult,
+    onError,
+  });
   useLayoutEffect(() => {
-    handlers.current = { onReady, onProgress, onResult, onError };
-  }, [onReady, onProgress, onResult, onError]);
+    handlers.current = {
+      onReady,
+      onFrameSymbols,
+      onProgress,
+      onResult,
+      onError,
+    };
+  }, [onReady, onFrameSymbols, onProgress, onResult, onError]);
 
   // Limits are read once per session; callers pass a constant object.
   const limitsRef = useRef(limits);
@@ -118,6 +140,10 @@ export function QrScanner({
           handlers.current.onError?.(outcome.error);
         }
       }),
+      onFrameSymbols: callback((symbols: QrDetectedSymbol[], generation: number) => {
+        if (!accept(generation)) return;
+        handlers.current.onFrameSymbols?.(symbols);
+      }),
       onError: callback((code: string, message: string, generation: number) => {
         if (!accept(generation)) return;
         handlers.current.onError?.(
@@ -135,6 +161,8 @@ export function QrScanner({
       style={style}
       active={active}
       cameraId={cameraId}
+      multiSymbol={multiSymbol}
+      frozen={frozen}
       onReady={nativeOnReady}
       {...sessionCallbacks}
     />

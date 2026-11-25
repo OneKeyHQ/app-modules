@@ -16,7 +16,7 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
 
-use crate::zxing_text::decode_qr_text;
+use crate::zxing_text::{decode_qr_symbols, decode_qr_text, DecodedSymbol};
 
 /// Sources above this pixel count are refused before decoding.
 pub const MAX_SOURCE_PIXELS: u64 = 200_000_000;
@@ -58,6 +58,23 @@ impl Drop for ComGuard {
 /// Decodes one QR code from a tightly packed 8-bit luminance buffer.
 pub fn decode_qr_luma(luma: &[u8], width: i32, height: i32, try_invert: bool) -> Option<String> {
     decode_qr_text(luma, width, height, false, try_invert)
+}
+
+/// Decodes up to `max_symbols` QR codes with normalized top-left coordinates.
+pub fn decode_qr_luma_symbols(
+    luma: &[u8],
+    width: i32,
+    height: i32,
+    try_invert: bool,
+    max_symbols: i32,
+) -> Vec<DecodedSymbol> {
+    decode_qr_symbols(luma, width, height, false, try_invert, max_symbols)
+}
+
+pub struct ImageSymbolsResult {
+    pub width: u32,
+    pub height: u32,
+    pub symbols: Vec<DecodedSymbol>,
 }
 
 fn read_exif_orientation(frame: &IWICBitmapFrameDecode) -> u16 {
@@ -294,6 +311,98 @@ pub fn decode_image_file(path: &str, max_pixels: u64) -> Result<Option<String>, 
     }
 
     Ok(None)
+}
+
+fn unpad_symbol(
+    sym: DecodedSymbol,
+    orig_w: usize,
+    orig_h: usize,
+    margin: usize,
+    padded_w: usize,
+    padded_h: usize,
+) -> DecodedSymbol {
+    let ow = orig_w as f64;
+    let oh = orig_h as f64;
+    let pw = padded_w as f64;
+    let ph = padded_h as f64;
+    let m = margin as f64;
+    let map_x = |x: f64| (x * pw - m) / ow;
+    let map_y = |y: f64| (y * ph - m) / oh;
+    DecodedSymbol {
+        text: sym.text,
+        center_x: map_x(sym.center_x),
+        center_y: map_y(sym.center_y),
+        bounds_x: map_x(sym.bounds_x),
+        bounds_y: map_y(sym.bounds_y),
+        bounds_width: (sym.bounds_width * pw) / ow,
+        bounds_height: (sym.bounds_height * ph) / oh,
+    }
+}
+
+/// Runs the 4-pass image decoding pipeline returning all QR symbols (up to 8)
+/// with normalized top-left coordinates in EXIF-oriented image space.
+pub fn decode_image_file_symbols(
+    path: &str,
+    max_pixels: u64,
+) -> Result<ImageSymbolsResult, String> {
+    let (rgba, width, height) = load_oriented_rgba(path, max_pixels)?;
+    let w = width as usize;
+    let h = height as usize;
+
+    // Pass 1: original
+    let symbols = decode_qr_symbols(&rgba, width as i32, height as i32, true, false, 8);
+    if !symbols.is_empty() {
+        return Ok(ImageSymbolsResult {
+            width,
+            height,
+            symbols,
+        });
+    }
+
+    // Pass 2: padded white quiet zone
+    if let Some((margin, pw, ph, bytes)) = padded_layout(w, h, max_pixels) {
+        let mut padded = reserve_image_buffer(bytes)?;
+        padded.resize(bytes, 255);
+        for (y, row) in rgba.chunks_exact(w * 4).enumerate() {
+            let start = ((y + margin) * pw + margin) * 4;
+            padded[start..start + row.len()].copy_from_slice(row);
+        }
+        let symbols = decode_qr_symbols(&padded, pw as i32, ph as i32, true, false, 8);
+        if !symbols.is_empty() {
+            let mapped = symbols
+                .into_iter()
+                .map(|s| unpad_symbol(s, w, h, margin, pw, ph))
+                .collect();
+            return Ok(ImageSymbolsResult {
+                width,
+                height,
+                symbols: mapped,
+            });
+        }
+    }
+
+    // Pass 3: grayscale
+    let mut gray = rgba_to_luma(&rgba)?;
+    drop(rgba);
+    let symbols = decode_qr_luma_symbols(&gray, width as i32, height as i32, false, 8);
+    if !symbols.is_empty() {
+        return Ok(ImageSymbolsResult {
+            width,
+            height,
+            symbols,
+        });
+    }
+
+    // Pass 4: inverted grayscale
+    for pixel in &mut gray {
+        *pixel = 255 - *pixel;
+    }
+    let symbols = decode_qr_luma_symbols(&gray, width as i32, height as i32, false, 8);
+    Ok(ImageSymbolsResult {
+        width,
+        height,
+        symbols,
+    })
 }
 
 #[cfg(test)]

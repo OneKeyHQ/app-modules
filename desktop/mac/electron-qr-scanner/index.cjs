@@ -46,14 +46,34 @@ async function decodeImage(path, options = {}) {
   }
 }
 
+async function decodeImageSymbols(path, options = {}) {
+  if (typeof path !== "string" || path.length === 0) {
+    throw errorWithCode("invalid-image", "path must be a non-empty string");
+  }
+  try {
+    const raw = await binding().decodeImageSymbols(path, options.maxPixels, options.engines);
+    return JSON.parse(raw);
+  } catch (error) {
+    throw toCodedError(error);
+  }
+}
+
 /**
  * Starts reporting raw QR text from the camera or a video file. Events from
  * an older capture generation are dropped; nothing is delivered after
  * dispose().
  */
 function createCapture(options) {
-  const { source = { kind: "camera" }, onReady, onText, onError, onEnded, onFrame } =
-    options ?? {};
+  const {
+    source = { kind: "camera" },
+    multiSymbol = false,
+    onReady,
+    onText,
+    onSymbols,
+    onError,
+    onEnded,
+    onFrame,
+  } = options ?? {};
   if (source.kind !== "camera" && source.kind !== "file") {
     throw errorWithCode("decoder-unavailable", `Unknown source: ${source.kind}`);
   }
@@ -99,6 +119,13 @@ function createCapture(options) {
         case "text":
           onText?.(event.text, event.generation);
           break;
+        case "symbols": {
+          if (typeof onSymbols === "function" && event.text) {
+            const payload = JSON.parse(event.text);
+            onSymbols(payload.symbols, payload.frameWidth, payload.frameHeight, event.generation);
+          }
+          break;
+        }
         case "error":
           activeGeneration = undefined;
           onError?.(
@@ -115,6 +142,9 @@ function createCapture(options) {
       }
     },
   );
+  if (multiSymbol) {
+    native.setMultiSymbol(true);
+  }
   return {
     start() {
       if (disposed) throw errorWithCode("decoder-unavailable", "The capture was disposed");
@@ -124,6 +154,14 @@ function createCapture(options) {
       if (disposed) return;
       activeGeneration = undefined;
       native.stop();
+    },
+    setMultiSymbol(enabled) {
+      if (disposed) return;
+      native.setMultiSymbol(Boolean(enabled));
+    },
+    setPaused(paused) {
+      if (disposed) return;
+      native.setPaused(Boolean(paused));
     },
     /** Preview frames currently held by the consumer (at most 3). */
     lentFrames() {
@@ -145,4 +183,4 @@ function listCameras() {
   return JSON.parse(binding().listCameras());
 }
 
-module.exports = { decodeImage, createCapture, listCameras };
+module.exports = { decodeImage, decodeImageSymbols, createCapture, listCameras };

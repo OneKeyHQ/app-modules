@@ -98,6 +98,23 @@ analysis queue, so preview rate is bounded by detection time per frame.
   at most one frame is in analysis. Missing hardware is reported as
   `no-camera` before any permission request. Error codes: `no-camera`,
   `permission-denied`, `camera-busy`, `decoder-unavailable`.
+- **Multi-symbol detection and freeze (Planned)** — contract shared with
+  `native-views/react-native-qr-scanner/docs/SPEC.md` section 3.4:
+  - `createCapture` adds `multiSymbol?: boolean` (default `false`) and
+    `onSymbols?(symbols: QrDetectedSymbol[], frameWidth: number, frameHeight: number, generation: number): void`,
+    plus handle methods `setMultiSymbol(enabled: boolean): void` and
+    `setPaused(paused: boolean): void` (pauses Vision analysis on the analysis
+    queue while keeping capture and preview slots healthy; the Electron preload
+    freezes the `<canvas>` by skipping `drawImage` while still releasing every
+    `importedSharedTexture`).
+  - When `multiSymbol` is `true`, `VNDetectBarcodesRequest` reports all
+    observations per frame without splitting through `QrFrameTextGate`. Vision
+    `boundingBox` uses a bottom-left origin, so native flips Y before emitting:
+    `centerX = box.midX`, `centerY = 1 - box.midY`, `bounds.y = 1 - box.maxY`
+    (top-left origin, `frame` coordinate space).
+  - Add `decodeImageSymbols(path: string, options?)` returning EXIF-oriented
+    image dimensions and all detected symbols with normalized top-left
+    coordinates.
 
 ## 4. Threads and lifetime
 

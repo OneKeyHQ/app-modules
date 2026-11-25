@@ -24,6 +24,14 @@ extern "C" {
         out_length: *mut usize,
         out_error: *mut *mut c_char,
     ) -> i32;
+    fn oqs_decode_image_symbols(
+        path: *const c_char,
+        max_pixels: i64,
+        engines: i32,
+        out_json: *mut *mut u8,
+        out_length: *mut usize,
+        out_error: *mut *mut c_char,
+    ) -> i32;
     fn oqs_free_bytes(value: *mut u8);
     fn oqs_free_string(value: *mut c_char);
     fn oqs_list_cameras() -> *mut c_char;
@@ -39,6 +47,8 @@ extern "C" {
     fn oqs_capture_lent_frames(handle: *mut c_void) -> i32;
     fn oqs_capture_start(handle: *mut c_void) -> i64;
     fn oqs_capture_stop(handle: *mut c_void);
+    fn oqs_capture_set_multi_symbol(handle: *mut c_void, enabled: bool);
+    fn oqs_capture_set_paused(handle: *mut c_void, paused: bool);
     fn oqs_capture_destroy(handle: *mut c_void);
 }
 
@@ -210,6 +220,103 @@ pub fn decode_image(
     }))
 }
 
+pub struct DecodeImageSymbolsTask {
+    path: CString,
+    max_pixels: i64,
+    engines: i32,
+}
+
+impl Task for DecodeImageSymbolsTask {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let mut json: *mut u8 = ptr::null_mut();
+        let mut json_length = 0;
+        let mut error: *mut c_char = ptr::null_mut();
+        let status = unsafe {
+            oqs_decode_image_symbols(
+                self.path.as_ptr(),
+                self.max_pixels,
+                self.engines,
+                &mut json,
+                &mut json_length,
+                &mut error,
+            )
+        };
+        match status {
+            1 => {
+                let value = unsafe {
+                    let value =
+                        String::from_utf8_lossy(std::slice::from_raw_parts(json, json_length))
+                            .into_owned();
+                    oqs_free_bytes(json);
+                    value
+                };
+                Ok(value)
+            }
+            _ => Err(Error::new(Status::GenericFailure, unsafe {
+                take_string(error)
+            })),
+        }
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// JSON `{ width, height, symbols }` of all QR symbols in a local image.
+#[napi]
+pub fn decode_image_symbols(
+    path: String,
+    max_pixels: Option<f64>,
+    engines: Option<Vec<String>>,
+) -> Result<AsyncTask<DecodeImageSymbolsTask>> {
+    let engines = match engines {
+        None => ENGINE_VISION | ENGINE_ZXING,
+        Some(names) => {
+            let mut mask = 0;
+            for name in names {
+                mask |= match name.as_str() {
+                    "vision" => ENGINE_VISION,
+                    "zxing" => ENGINE_ZXING,
+                    other => {
+                        return Err(Error::new(
+                            Status::InvalidArg,
+                            format!("decoder-unavailable: unknown engine {other}"),
+                        ))
+                    }
+                };
+            }
+            if mask == 0 {
+                return Err(Error::new(
+                    Status::InvalidArg,
+                    "decoder-unavailable: no engine",
+                ));
+            }
+            mask
+        }
+    };
+    let max_pixels = match max_pixels {
+        None => DEFAULT_MAX_PIXELS,
+        Some(value) if value.is_finite() && value >= 1.0 => (value as i64).min(MAX_PIXELS_CEILING),
+        Some(_) => {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "invalid-image: maxPixels must be at least 1",
+            ))
+        }
+    };
+    let path = CString::new(path)
+        .map_err(|_| Error::new(Status::InvalidArg, "invalid-image: path contains NUL"))?;
+    Ok(AsyncTask::new(DecodeImageSymbolsTask {
+        path,
+        max_pixels,
+        engines,
+    }))
+}
+
 #[napi(object)]
 pub struct CaptureEvent {
     /// `ready`, `text`, `error`, `ended` or `frame`.
@@ -303,6 +410,10 @@ extern "C" fn on_event(
             message: Some(second),
             ..event("error", generation)
         },
+        4 => CaptureEvent {
+            text: Some(first),
+            ..event("symbols", generation)
+        },
         _ => event("ended", generation),
     };
     tsfn.call(payload, ThreadsafeFunctionCallMode::NonBlocking);
@@ -388,6 +499,20 @@ impl NativeCapture {
     pub fn stop(&self) -> Result<()> {
         self.live()?;
         unsafe { oqs_capture_stop(self.handle) };
+        Ok(())
+    }
+
+    #[napi]
+    pub fn set_multi_symbol(&self, enabled: bool) -> Result<()> {
+        self.live()?;
+        unsafe { oqs_capture_set_multi_symbol(self.handle, enabled) };
+        Ok(())
+    }
+
+    #[napi]
+    pub fn set_paused(&self, paused: bool) -> Result<()> {
+        self.live()?;
+        unsafe { oqs_capture_set_paused(self.handle, paused) };
         Ok(())
     }
 

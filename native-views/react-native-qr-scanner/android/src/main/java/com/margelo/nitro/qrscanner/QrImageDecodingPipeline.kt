@@ -19,10 +19,32 @@ class QrImageDecodeException(val code: String, reason: String) : Exception("$cod
 
 data class QrImageHit(val text: String, val engine: String, val pass: String)
 
+data class QrPipelineSymbol(
+  val text: String,
+  val centerX: Double,
+  val centerY: Double,
+  val boundsX: Double? = null,
+  val boundsY: Double? = null,
+  val boundsWidth: Double? = null,
+  val boundsHeight: Double? = null,
+)
+
+data class QrImageSymbolsHit(
+  val width: Int,
+  val height: Int,
+  val symbols: List<QrPipelineSymbol>,
+  val engine: String? = null,
+  val pass: String? = null,
+)
+
 interface QrImageEngine {
   /** `mlkit` or `zxing`. */
   val name: String
   fun decode(bitmap: Bitmap): String?
+  fun decodeSymbols(bitmap: Bitmap): List<QrPipelineSymbol> {
+    val text = decode(bitmap)?.takeIf(String::isNotEmpty) ?: return emptyList()
+    return listOf(QrPipelineSymbol(text = text, centerX = 0.5, centerY = 0.5))
+  }
 }
 
 /**
@@ -134,6 +156,87 @@ class QrImageDecodingPipeline(private val engines: List<QrImageEngine>) {
     }
     if (attempted && !decoded) throw QrImageDecodeException("decoder-unavailable", "A QR decoder failed")
     return null
+  }
+
+  fun decodeSymbols(file: File, maxPixels: Long): QrImageSymbolsHit {
+    val image = loadOriented(file, maxPixels)
+    try {
+      return decodeBitmapSymbols(image, maxPixels)
+    } finally {
+      image.recycle()
+    }
+  }
+
+  fun decodeBitmapSymbols(image: Bitmap, maxPixels: Long = 50_000_000): QrImageSymbolsHit {
+    val passes: List<Pair<String, () -> Bitmap>> = listOf(
+      "original" to { image },
+      "padded" to { padded(image, maxPixels) },
+      "grayscale" to { grayscale(image, inverted = false) },
+      "inverted" to { grayscale(image, inverted = true) },
+    )
+    var attempted = false
+    var decoded = false
+    for ((pass, make) in passes) {
+      val variant = make()
+      try {
+        for (engine in engines) {
+          attempted = true
+          try {
+            val symbols = engine.decodeSymbols(variant)
+            decoded = true
+            if (symbols.isNotEmpty()) {
+              val mapped = if (pass == "padded") {
+                symbols.map { unpadSymbol(it, image, variant) }
+              } else {
+                symbols
+              }
+              return QrImageSymbolsHit(
+                width = image.width,
+                height = image.height,
+                symbols = mapped,
+                engine = engine.name,
+                pass = pass,
+              )
+            }
+          } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw error
+          } catch (_: Exception) {
+            // A failed pass leaves the remaining engines and passes available.
+          }
+        }
+      } finally {
+        if (variant !== image) variant.recycle()
+      }
+    }
+    if (attempted && !decoded) throw QrImageDecodeException("decoder-unavailable", "A QR decoder failed")
+    return QrImageSymbolsHit(width = image.width, height = image.height, symbols = emptyList())
+  }
+
+  private fun unpadSymbol(
+    symbol: QrPipelineSymbol,
+    original: Bitmap,
+    padded: Bitmap,
+  ): QrPipelineSymbol {
+    val margin = max(MIN_PADDING, (max(original.width, original.height) * PADDING_RATIO).toInt())
+    val expandedWidth = original.width + margin * 2
+    val expandedHeight = original.height + margin * 2
+    val insetX = margin.toDouble() * padded.width / expandedWidth
+    val insetY = margin.toDouble() * padded.height / expandedHeight
+    val innerWidth = padded.width - insetX * 2
+    val innerHeight = padded.height - insetY * 2
+    if (innerWidth <= 0 || innerHeight <= 0) return symbol
+    val mapX: (Double) -> Double = { (it * padded.width - insetX) / innerWidth }
+    val mapY: (Double) -> Double = { (it * padded.height - insetY) / innerHeight }
+    return QrPipelineSymbol(
+      text = symbol.text,
+      centerX = mapX(symbol.centerX),
+      centerY = mapY(symbol.centerY),
+      boundsX = symbol.boundsX?.let(mapX),
+      boundsY = symbol.boundsY?.let(mapY),
+      boundsWidth = symbol.boundsWidth?.let { (it * padded.width) / innerWidth },
+      boundsHeight = symbol.boundsHeight?.let { (it * padded.height) / innerHeight },
+    )
   }
 
   private fun loadOriented(file: File, maxPixels: Long): Bitmap {

@@ -14,6 +14,7 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
 import androidx.annotation.OptIn
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
@@ -49,7 +50,7 @@ import java.util.concurrent.TimeUnit
  */
 @DoNotStrip
 class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), LifecycleOwner {
-  private companion object {
+  internal companion object {
     const val DECODE_ERROR_INTERVAL_MS = 1_000L
     const val FOCUS_INDICATOR_DP = 72
     // A tapped focus point is held this long, then CameraX returns to
@@ -61,6 +62,38 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     val analysisExecutor = Executors.newSingleThreadExecutor { runnable ->
       Thread(runnable, "QrScannerAnalysis").apply { isDaemon = true }
     }
+
+    /**
+     * Maps a bounding rect in upright `InputImage` pixel coordinates into
+     * normalized `[0, 1]` visible `PreviewView` coordinates under `FILL_CENTER`
+     * (`cover`), optionally mirrored horizontally for the front camera.
+     */
+    fun mapFillCenterRect(
+      left: Double,
+      top: Double,
+      right: Double,
+      bottom: Double,
+      imageWidth: Double,
+      imageHeight: Double,
+      viewWidth: Double,
+      viewHeight: Double,
+      mirrored: Boolean,
+    ): Pair<Pair<Double, Double>, QrSymbolBounds> {
+      val scale = maxOf(viewWidth / imageWidth, viewHeight / imageHeight)
+      val offsetX = (imageWidth * scale - viewWidth) / 2.0
+      val offsetY = (imageHeight * scale - viewHeight) / 2.0
+      val rawLeft = (left * scale - offsetX) / viewWidth
+      val rawRight = (right * scale - offsetX) / viewWidth
+      val rawTop = (top * scale - offsetY) / viewHeight
+      val rawBottom = (bottom * scale - offsetY) / viewHeight
+      val rawCx = ((left + right) * 0.5 * scale - offsetX) / viewWidth
+      val rawCy = ((top + bottom) * 0.5 * scale - offsetY) / viewHeight
+      val cx = if (mirrored) 1.0 - rawCx else rawCx
+      val normLeft = if (mirrored) 1.0 - rawRight else rawLeft
+      val normWidth = (rawRight - rawLeft).coerceAtLeast(0.0)
+      val normHeight = (rawBottom - rawTop).coerceAtLeast(0.0)
+      return (cx to rawCy) to QrSymbolBounds(normLeft, rawTop, normWidth, normHeight)
+    }
   }
 
   private fun newPreviewView() = PreviewView(context).apply {
@@ -69,6 +102,14 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     setBackgroundColor(Color.BLACK)
   }
   private var previewView = newPreviewView()
+  private val frozenImageView = ImageView(context).apply {
+    layoutParams = FrameLayout.LayoutParams(
+      FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
+    )
+    scaleType = ImageView.ScaleType.FIT_XY
+    visibility = View.GONE
+    isClickable = false
+  }
   private val density = context.resources.displayMetrics.density
   private val focusIndicator = View(context).apply {
     val size = (FOCUS_INDICATOR_DP * density).toInt()
@@ -84,6 +125,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     addView(previewView, FrameLayout.LayoutParams(
       FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
     ))
+    addView(frozenImageView)
     addView(focusIndicator)
   }
   override val view: View
@@ -92,16 +134,24 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   // Props
   override var active: Boolean = false
   override var cameraId: String? = null
+  override var multiSymbol: Boolean? = null
+  override var frozen: Boolean? = null
   override var onReady: ((generation: Double, cameraId: String) -> Unit)? = null
   override var onFrameText: ((text: String, generation: Double) -> Unit)? = null
+  override var onFrameSymbols: ((symbols: Array<QrDetectedSymbol>, generation: Double) -> Unit)? = null
   override var onError: ((code: String, message: String, generation: Double) -> Unit)? = null
 
   private data class CaptureCallbacks(
+    val multiSymbol: Boolean = false,
+    val frozen: Boolean = false,
     val ready: ((Double, String) -> Unit)? = null,
     val frame: ((String, Double) -> Unit)? = null,
+    val symbols: ((Array<QrDetectedSymbol>, Double) -> Unit)? = null,
     val error: ((String, String, Double) -> Unit)? = null,
   )
   @Volatile private var callbacks = CaptureCallbacks()
+  @Volatile private var boundLensFacing: Int = CameraSelector.LENS_FACING_BACK
+  private var isFrozenMain = false
 
   // The camera follows this lifecycle: RESUMED only while capturing and the
   // host activity is resumed. Touched on the main thread only.
@@ -185,6 +235,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     }).apply { setOnDoubleTapListener(null) }
     var multiTouch = false
     container.setOnTouchListener { _, event ->
+      if (isFrozenMain) return@setOnTouchListener false
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
           multiTouch = false
@@ -232,10 +283,19 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   override fun afterUpdate() {
     val shouldRun = active
     val requested = cameraId
-    val nextCallbacks = CaptureCallbacks(onReady, onFrameText, onError)
+    val nextFrozen = frozen == true
+    val nextCallbacks = CaptureCallbacks(
+      multiSymbol = multiSymbol == true,
+      frozen = nextFrozen,
+      ready = onReady,
+      frame = onFrameText,
+      symbols = onFrameSymbols,
+      error = onError,
+    )
     main.post {
       if (dropped) return@post
       callbacks = nextCallbacks
+      applyFrozen(if (shouldRun) nextFrozen else false)
       val changed = requested != requestedCameraId || shouldRun != this.shouldRun
       requestedCameraId = requested
       this.shouldRun = shouldRun
@@ -248,6 +308,23 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
         running -> switchCameraIfNeeded()
         changed -> start()
       }
+    }
+  }
+
+  private fun applyFrozen(nextFrozen: Boolean) {
+    if (isFrozenMain == nextFrozen) return
+    isFrozenMain = nextFrozen
+    if (nextFrozen) {
+      focusIndicator.animate().cancel()
+      focusIndicator.alpha = 0f
+      val snapshot = previewView.bitmap
+      if (snapshot != null) {
+        frozenImageView.setImageBitmap(snapshot)
+        frozenImageView.visibility = View.VISIBLE
+      }
+    } else {
+      frozenImageView.visibility = View.GONE
+      frozenImageView.setImageBitmap(null)
     }
   }
 
@@ -397,6 +474,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     camera = bound
     val activeCameraId = HybridQrCameraList.cameraId(bound.cameraInfo)
     boundCameraId = activeCameraId
+    boundLensFacing = bound.cameraInfo.lensFacing
     running = true
     var ready = false
     var lastErrorCode: Int? = null
@@ -434,6 +512,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
   private fun unbind() {
     gate.setCapturing(false)
+    applyFrozen(false)
     pinchGeneration = null
     streamObserver?.let { previewView.previewStreamState.removeObserver(it) }
     cameraObserver?.let { camera?.cameraInfo?.cameraState?.removeObserver(it) }
@@ -464,14 +543,21 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   /** Runs on the analysis executor; KEEP_ONLY_LATEST keeps one frame in flight. */
   @OptIn(ExperimentalGetImage::class)
   private fun analyze(proxy: ImageProxy, generation: Int) {
+    val currentCallbacks = callbacks
+    if (currentCallbacks.frozen) {
+      proxy.close()
+      return
+    }
     val mediaImage = proxy.image
     if (mediaImage == null) {
       proxy.close()
       return
     }
-    val frameCallback = callbacks.frame
+    val rotation = proxy.imageInfo.rotationDegrees
+    val rotatedWidth = if (rotation == 90 || rotation == 270) proxy.height else proxy.width
+    val rotatedHeight = if (rotation == 90 || rotation == 270) proxy.width else proxy.height
     val task = try {
-      val input = InputImage.fromMediaImage(mediaImage, proxy.imageInfo.rotationDegrees)
+      val input = InputImage.fromMediaImage(mediaImage, rotation)
       scanner.process(input)
     } catch (_: RuntimeException) {
       proxy.close()
@@ -480,12 +566,59 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     }
     task
       .addOnSuccessListener(analysisExecutor) { barcodes ->
+        val latest = callbacks
+        if (latest.frozen) return@addOnSuccessListener
+
+        if (latest.multiSymbol && latest.symbols != null) {
+          val nonEmpty = barcodes.filter { !it.rawValue.isNullOrEmpty() }
+          if (nonEmpty.isEmpty()) return@addOnSuccessListener
+          val isMirrored = boundLensFacing == CameraSelector.LENS_FACING_FRONT
+          main.post {
+            if (gate.currentGeneration != generation || isFrozenMain) return@post
+            val viewW = previewView.width.toDouble()
+            val viewH = previewView.height.toDouble()
+            if (viewW <= 0 || viewH <= 0 || rotatedWidth <= 0 || rotatedHeight <= 0) return@post
+            // PreviewView uses ScaleType.FILL_CENTER (cover).
+            val imgW = rotatedWidth.toDouble()
+            val imgH = rotatedHeight.toDouble()
+            val symbols = nonEmpty.mapNotNull { barcode ->
+              val text = barcode.rawValue?.takeIf(String::isNotEmpty) ?: return@mapNotNull null
+              val box = barcode.boundingBox
+              if (box != null) {
+                val (center, bounds) = mapFillCenterRect(
+                  left = box.left.toDouble(),
+                  top = box.top.toDouble(),
+                  right = box.right.toDouble(),
+                  bottom = box.bottom.toDouble(),
+                  imageWidth = imgW,
+                  imageHeight = imgH,
+                  viewWidth = viewW,
+                  viewHeight = viewH,
+                  mirrored = isMirrored,
+                )
+                QrDetectedSymbol(
+                  text = text,
+                  centerX = center.first,
+                  centerY = center.second,
+                  bounds = bounds,
+                )
+              } else {
+                QrDetectedSymbol(text = text, centerX = 0.5, centerY = 0.5, bounds = null)
+              }
+            }.toTypedArray()
+            if (symbols.isNotEmpty()) {
+              latest.symbols.invoke(symbols, generation.toDouble())
+            }
+          }
+          return@addOnSuccessListener
+        }
+
         val texts = barcodes.mapNotNull { it.rawValue }
         if (texts.isEmpty()) return@addOnSuccessListener
         val reports = gate.filter(texts, SystemClock.elapsedRealtime(), generation)
         if (reports.isNotEmpty()) main.post {
-          if (gate.currentGeneration != generation) return@post
-          for (report in reports) frameCallback?.invoke(report.text, report.generation.toDouble())
+          if (gate.currentGeneration != generation || isFrozenMain) return@post
+          for (report in reports) latest.frame?.invoke(report.text, report.generation.toDouble())
         }
       }
       .addOnCompleteListener(analysisExecutor) { result ->

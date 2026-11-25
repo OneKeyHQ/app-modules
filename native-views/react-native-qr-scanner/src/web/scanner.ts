@@ -4,6 +4,7 @@ import { getEngines } from './engines';
 import { fitToPixelBudget } from './imageOps';
 
 import type { QrScannerErrorCode } from '../errors';
+import type { QrDetectedSymbol, QrFrameSymbolsEvent } from '../symbols';
 import type { ScanError, ScanMode, ScanResult, UrLimits } from '../ur';
 import type { QrImageEngine, RgbaImage } from './imageOps';
 
@@ -30,6 +31,14 @@ export interface WebQrScannerOptions {
    * text, such as the next UR part, is reported at once.
    */
   onFrameText?: (text: string) => void;
+  /**
+   * When true, detect up to 8 QR symbols per frame and deliver them via
+   * `onFrameSymbols` without splitting through the 1 s repeat throttle.
+   * Default false.
+   */
+  multiSymbol?: boolean;
+  /** Whole-frame symbols in normalized `frame` coordinates (top-left origin). */
+  onFrameSymbols?: (event: Omit<QrFrameSymbolsEvent, 'generation'>) => void;
   onProgress?: (progress: number) => void;
   onResult?: (result: ScanResult) => void;
   onError?: (error: QrScannerError | ScanError) => void;
@@ -44,6 +53,16 @@ export interface WebQrScanner {
    * choice for the next `start()`.
    */
   switchCamera(deviceId?: string): Promise<void>;
+  /**
+   * Dynamically toggles multi-symbol detection without restarting the camera
+   * or incrementing the capture generation. Takes effect on the next frame.
+   */
+  setMultiSymbol(enabled: boolean): void;
+  /**
+   * Freezes or unfreezes preview playback and frame analysis while keeping the
+   * underlying MediaStream alive (zero black flash on resume).
+   */
+  setFrozen(frozen: boolean): void;
   /** Stops analysis (and the camera, for a camera source); keeps UR parts. */
   stop(): void;
   /** Starts a new scan session: drops collected UR parts. */
@@ -81,10 +100,15 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let generation = 0;
   let disposed = false;
   let active = false;
+  let multiSymbol = options.multiSymbol === true;
+  let frozen = false;
   let acquisition: { deviceId?: string; cancelPreview?: () => void } | undefined;
   let mediaAcquisitions = 0;
   let staleMediaSettlements = 0;
-  const usesBuiltInSession = !handlers.onFrameText || !!handlers.onResult || !!handlers.onProgress;
+  const usesBuiltInSession =
+    (!handlers.onFrameText && !handlers.onFrameSymbols) ||
+    !!handlers.onResult ||
+    !!handlers.onProgress;
   let stream: MediaStream | undefined;
   type RecoveryTarget = { stream: MediaStream; deviceId?: string; blockedAt?: number };
   let interruptedCamera: RecoveryTarget | undefined;
@@ -142,14 +166,57 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   }
 
   async function analyse(runGeneration: number) {
+    if (frozen) return;
     const image = readFrame();
     if (!image) return;
     const frameSession = session;
-    const isCurrent = () => runGeneration === generation && frameSession === session;
+    const isCurrent = () =>
+      runGeneration === generation && frameSession === session && !frozen;
+    const wantMulti = multiSymbol;
     frameIndex += 1;
     let failed: { error: unknown } | undefined;
     for (const [index, engine] of engines.entries()) {
       if (index > 0 && !failed && frameIndex % ZXING_EVERY_N_FRAMES !== 0) continue;
+      if (handlers.onFrameSymbols) {
+        let symbols: QrDetectedSymbol[];
+        try {
+          symbols = engine.decodeSymbols
+            ? await engine.decodeSymbols(image, wantMulti)
+            : await engine.decode(image).then((t) =>
+                t ? [{ text: t, centerX: 0.5, centerY: 0.5 }] : []
+              );
+        } catch (error) {
+          failed = { error };
+          if (!isCurrent()) return;
+          continue;
+        }
+        if (!isCurrent()) return;
+        if (symbols.length === 0) continue;
+        try {
+          handlers.onFrameSymbols({
+            symbols,
+            coordinateSpace: 'frame',
+            frameWidth: image.width,
+            frameHeight: image.height,
+          });
+        } catch {
+          // A consumer observer cannot interrupt the built-in session.
+        }
+        if (!isCurrent()) return;
+        const firstText = symbols[0]?.text;
+        if (firstText) {
+          reportFrameText(firstText);
+          if (!isCurrent() || !usesBuiltInSession) return;
+          const outcome = frameSession.receive(firstText);
+          if (outcome.status === 'progress') handlers.onProgress?.(outcome.progress);
+          else if (outcome.status === 'complete') {
+            if (outcome.result.kind === 'ur') handlers.onProgress?.(1);
+            if (isCurrent()) handlers.onResult?.(outcome.result);
+          } else if (outcome.status === 'rejected') handlers.onError?.(outcome.error);
+        }
+        return;
+      }
+
       let text: string | null;
       try {
         text = await engine.decode(image);
@@ -177,7 +244,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   }
 
   function schedule(runGeneration: number) {
-    if (runGeneration !== generation || disposed) return;
+    if (runGeneration !== generation || disposed || frozen) return;
     const tick = () => {
       if (runGeneration !== generation || disposed) return;
       // One frame in analysis at a time; skip frames that arrive meanwhile.
@@ -435,8 +502,26 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       if (acquisition && nextDeviceId === acquisition.deviceId) return;
       await acquireCamera(nextDeviceId, !hasLiveCamera());
     },
+    setMultiSymbol(enabled: boolean) {
+      multiSymbol = enabled;
+    },
+    setFrozen(nextFrozen: boolean) {
+      if (disposed || frozen === nextFrozen) return;
+      frozen = nextFrozen;
+      if (frozen) {
+        cancelSchedule();
+        video.pause();
+        return;
+      }
+      if (active) {
+        lastTime = -1;
+        void video.play().catch(() => {});
+        schedule(generation);
+      }
+    },
     stop() {
       active = false;
+      frozen = false;
       interruptedCamera = undefined;
       generation += 1;
       invalidateAcquisition();

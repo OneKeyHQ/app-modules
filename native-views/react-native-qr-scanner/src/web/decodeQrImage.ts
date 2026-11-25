@@ -2,8 +2,9 @@ import { DEFAULT_MAX_IMAGE_PIXELS } from '../decodeQrImage.constants';
 import { QrScannerError } from '../errors';
 import { getEngines } from './engines';
 import { readImageDimensions } from './imageDimensions';
-import { decodePixels, fitToPixelBudget } from './imageOps';
+import { decodePixels, decodePixelsSymbols, fitToPixelBudget } from './imageOps';
 
+import type { QrImageSymbolsResult } from '../symbols';
 import type { RgbaImage } from './imageOps';
 
 /** Sources above this pixel count are refused before decoding. */
@@ -104,4 +105,26 @@ export async function decodeQrImage(
   const pixels = await blobToPixels(image, budget);
   const hit = await decodePixels(pixels, await getEngines(), budget);
   return hit?.text ?? null;
+}
+
+/**
+ * Decodes all QR symbols in an image Blob/File with normalized top-left
+ * coordinates in EXIF-oriented image space.
+ */
+export async function decodeQrImageSymbols(
+  image: Blob,
+  options?: { maxPixels?: number }
+): Promise<QrImageSymbolsResult> {
+  const maxPixels = options?.maxPixels ?? DEFAULT_MAX_IMAGE_PIXELS;
+  if (!Number.isFinite(maxPixels) || maxPixels < 1) {
+    throw new QrScannerError('invalid-image', 'maxPixels must be at least 1');
+  }
+  const budget = Math.min(maxPixels, MAX_PIXELS_CEILING);
+  const pixels = await blobToPixels(image, budget);
+  const hit = await decodePixelsSymbols(pixels, await getEngines(), budget);
+  return {
+    width: pixels.width,
+    height: pixels.height,
+    symbols: hit?.symbols ?? [],
+  };
 }

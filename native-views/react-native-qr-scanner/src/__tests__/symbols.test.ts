@@ -1,0 +1,203 @@
+import {
+  createMultiSymbolCoordinator,
+  dedupeSymbolsByText,
+  isUrFrameText,
+  mapFramePointToCoverView,
+  mapImagePointToContainView,
+} from '../symbols';
+
+describe('symbols coordinate mapping and deduplication', () => {
+  test('mapFramePointToCoverView accounts for cover horizontal crop and mirroring', () => {
+    // 16:9 landscape frame (1600x900) inside a 400x400 square viewport:
+    // scale = 400/900 = 0.4444, renderedWidth = 711.11, offsetX = 155.56
+    const center = mapFramePointToCoverView(
+      { x: 0.5, y: 0.5 },
+      { width: 1600, height: 900 },
+      { width: 400, height: 400 }
+    );
+    expect(center.x).toBeCloseTo(0.5, 4);
+    expect(center.y).toBeCloseTo(0.5, 4);
+
+    // Point near left cropped edge (x = 0.1) falls outside [0, 1]
+    const cropped = mapFramePointToCoverView(
+      { x: 0.1, y: 0.5 },
+      { width: 1600, height: 900 },
+      { width: 400, height: 400 }
+    );
+    expect(cropped.x).toBeLessThan(0);
+
+    // Mirrored front camera flips X around 0.5
+    const normal = mapFramePointToCoverView(
+      { x: 0.65, y: 0.25 },
+      { width: 1280, height: 720 },
+      { width: 400, height: 400 },
+      false
+    );
+    const mirrored = mapFramePointToCoverView(
+      { x: 0.65, y: 0.25 },
+      { width: 1280, height: 720 },
+      { width: 400, height: 400 },
+      true
+    );
+    expect(mirrored.x).toBeCloseTo(1 - normal.x, 4);
+    expect(mirrored.y).toBeCloseTo(normal.y, 4);
+  });
+
+  test('mapImagePointToContainView accounts for letterbox/pillarbox offset', () => {
+    // 2:1 wide image (800x400) inside a 400x400 square viewport:
+    // rendered 400x200, offsetY = 100
+    const topEdge = mapImagePointToContainView(
+      { x: 0.5, y: 0 },
+      { width: 800, height: 400 },
+      { width: 400, height: 400 }
+    );
+    expect(topEdge.x).toBeCloseTo(0.5, 4);
+    expect(topEdge.y).toBeCloseTo(0.25, 4);
+  });
+
+  test('dedupeSymbolsByText keeps the occurrence closest to center', () => {
+    const deduped = dedupeSymbolsByText([
+      { text: 'dup', centerX: 0.1, centerY: 0.1 },
+      { text: 'dup', centerX: 0.48, centerY: 0.52 },
+      { text: 'other', centerX: 0.8, centerY: 0.8 },
+    ]);
+    expect(deduped).toEqual([
+      { text: 'dup', centerX: 0.48, centerY: 0.52 },
+      { text: 'other', centerX: 0.8, centerY: 0.8 },
+    ]);
+  });
+
+  test('isUrFrameText matches ur: case-insensitively', () => {
+    expect(isUrFrameText('ur:crypto-psbt/1-17/lpadao')).toBe(true);
+    expect(isUrFrameText('  UR:BYTES/1-2/LPADAO')).toBe(true);
+    expect(isUrFrameText('ethereum:0x123')).toBe(false);
+  });
+});
+
+describe('createMultiSymbolCoordinator', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  function setup(aggregationWindowMs = 140) {
+    const onFrozenChange = jest.fn();
+    const onMultiSymbolChange = jest.fn();
+    const onSelectingChange = jest.fn();
+    const onCommitText = jest.fn();
+    const coordinator = createMultiSymbolCoordinator({
+      aggregationWindowMs,
+      onFrozenChange,
+      onMultiSymbolChange,
+      onSelectingChange,
+      onCommitText,
+    });
+    return {
+      coordinator,
+      onFrozenChange,
+      onMultiSymbolChange,
+      onSelectingChange,
+      onCommitText,
+    };
+  }
+
+  test('same-frame >=2 visible symbols freeze immediately and allow selection or cancel', () => {
+    const { coordinator, onFrozenChange, onSelectingChange, onCommitText } = setup();
+    const a = { text: 'wc:abc', centerX: 0.25, centerY: 0.3 };
+    const b = { text: 'ethereum:0x1', centerX: 0.75, centerY: 0.7 };
+
+    coordinator.receiveFrame([a, b]);
+    expect(coordinator.phase).toBe('selecting');
+    expect(onFrozenChange).toHaveBeenCalledWith(true);
+    expect(onSelectingChange).toHaveBeenCalledWith([a, b]);
+
+    coordinator.cancelSelection();
+    expect(coordinator.phase).toBe('normal');
+    expect(onFrozenChange).toHaveBeenLastCalledWith(false);
+    expect(onSelectingChange).toHaveBeenLastCalledWith([]);
+
+    coordinator.receiveFrame([a, b]);
+    coordinator.selectSymbol(b);
+    expect(coordinator.phase).toBe('resolved');
+    expect(onCommitText).toHaveBeenCalledWith('ethereum:0x1', 'static');
+  });
+
+  test('140ms aggregation window merges spatially separated static codes but ignores same-spot changes', () => {
+    const { coordinator, onFrozenChange, onCommitText } = setup(140);
+    coordinator.receiveFrame([{ text: 'frame-1', centerX: 0.5, centerY: 0.5 }]);
+    expect(coordinator.phase).toBe('aggregating');
+
+    // Same-spot dynamic change (distance 0.01 <= 0.08) must NOT freeze
+    coordinator.receiveFrame([{ text: 'frame-2', centerX: 0.51, centerY: 0.5 }]);
+    expect(coordinator.phase).toBe('aggregating');
+    expect(onFrozenChange).not.toHaveBeenCalled();
+
+    // Window expires -> commits the single code
+    jest.advanceTimersByTime(140);
+    expect(coordinator.phase).toBe('resolved');
+    expect(onCommitText).toHaveBeenCalledWith('frame-1', 'static');
+
+    // Now test spatially separated second code arriving within window
+    coordinator.reset();
+    coordinator.receiveFrame([{ text: 'left', centerX: 0.2, centerY: 0.5 }]);
+    coordinator.receiveFrame([{ text: 'right', centerX: 0.8, centerY: 0.5 }]);
+    expect(coordinator.phase).toBe('selecting');
+    expect(onFrozenChange).toHaveBeenLastCalledWith(true);
+  });
+
+  test('single ur: code latches into ur-streaming immediately with 0ms delay and disables multiSymbol', () => {
+    const {
+      coordinator,
+      onFrozenChange,
+      onMultiSymbolChange,
+      onCommitText,
+    } = setup(140);
+
+    coordinator.receiveFrame([
+      { text: 'UR:CRYPTO-PSBT/1-17/LPAD', centerX: 0.5, centerY: 0.5 },
+    ]);
+    expect(coordinator.phase).toBe('ur-streaming');
+    expect(onMultiSymbolChange).toHaveBeenCalledWith(false);
+    expect(onFrozenChange).toHaveBeenCalledWith(false);
+    expect(onCommitText).toHaveBeenCalledWith('UR:CRYPTO-PSBT/1-17/LPAD', 'ur');
+
+    // Stray static codes during ur-streaming are ignored and auto-heal
+    // multiSymbol=true so a simpler static QR cannot starve the UR stream.
+    coordinator.receiveFrame([
+      { text: 'ethereum:0xstray', centerX: 0.8, centerY: 0.8 },
+    ]);
+    expect(onCommitText).toHaveBeenCalledTimes(1);
+    expect(onMultiSymbolChange).toHaveBeenLastCalledWith(true);
+
+    coordinator.receiveFrame([
+      { text: 'ethereum:0xstray', centerX: 0.8, centerY: 0.8 },
+      { text: 'UR:CRYPTO-PSBT/2-17/LPAE', centerX: 0.3, centerY: 0.5 },
+    ]);
+    expect(coordinator.phase).toBe('ur-streaming');
+    expect(onCommitText).toHaveBeenLastCalledWith('UR:CRYPTO-PSBT/2-17/LPAE', 'ur');
+  });
+
+  test('mixed ur: + static in same frame freezes; selecting ur: unfreezes and keeps multiSymbol=true', () => {
+    const {
+      coordinator,
+      onFrozenChange,
+      onMultiSymbolChange,
+      onCommitText,
+    } = setup(140);
+    const ur = { text: 'UR:CRYPTO-PSBT/1-17/LPAD', centerX: 0.28, centerY: 0.5 };
+    const eth = { text: 'ethereum:0x1', centerX: 0.76, centerY: 0.26 };
+
+    coordinator.receiveFrame([ur, eth]);
+    expect(coordinator.phase).toBe('selecting');
+    expect(onFrozenChange).toHaveBeenCalledWith(true);
+
+    coordinator.selectSymbol(ur);
+    expect(coordinator.phase).toBe('ur-streaming');
+    expect(onFrozenChange).toHaveBeenLastCalledWith(false);
+    expect(onMultiSymbolChange).toHaveBeenLastCalledWith(true);
+    expect(onCommitText).toHaveBeenCalledWith(ur.text, 'ur');
+  });
+});

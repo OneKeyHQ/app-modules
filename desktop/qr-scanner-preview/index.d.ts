@@ -9,5 +9,6 @@ export interface CaptureOptions extends Omit<win.CaptureOptions, "onReady" | "on
 
 export function createCapture(options?: CaptureOptions): mac.QrCapture | win.QrCapture;
 export const decodeImage: typeof win.decodeImage;
+export const decodeImageSymbols: typeof win.decodeImageSymbols;
 export const listCameras: typeof mac.listCameras | typeof win.listCameras;
 export const shouldFallbackToWeb: typeof win.shouldFallbackToWeb | undefined;
