@@ -357,6 +357,12 @@ function createCapture(options) {
     lentFrames() {
       return disposed ? 0 : native.lentFrames();
     },
+    focus() {
+      if (disposed || activeGeneration === null || typeof native.focus !== "function") {
+        return false;
+      }
+      return Boolean(native.focus());
+    },
     /** Privacy-safe session counters. */
     stats() {
       return readStats();

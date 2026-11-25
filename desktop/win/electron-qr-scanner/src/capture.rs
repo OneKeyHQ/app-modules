@@ -546,7 +546,7 @@ impl FocusControlHandle {
             caps.exposure_supported = true;
         }
 
-        let handle = if caps.auto_focus_supported && caps.manual_focus_supported {
+        let handle = if caps.auto_focus_supported {
             Some(Self {
                 control,
                 generation,
@@ -561,6 +561,25 @@ impl FocusControlHandle {
             None
         };
         (caps, handle)
+    }
+
+    fn trigger_auto_focus(&mut self) -> bool {
+        if !self.auto_focus_supported {
+            return false;
+        }
+        let ok = unsafe {
+            self.control.Set(
+                CameraControl_Focus.0,
+                self.default_focus,
+                CameraControl_Flags_Auto.0,
+            )
+        }
+        .is_ok();
+        if ok {
+            self.locked = false;
+            self.last_detect_at = None;
+        }
+        ok
     }
 
     /// Locks focus at the current lens position on QR hit to prevent AF hunting
@@ -1967,6 +1986,17 @@ impl CaptureController {
 
     pub fn lent_frames(&self) -> usize {
         self.preview.as_ref().map_or(0, |p| p.lent_count())
+    }
+
+    pub fn focus(&self) -> bool {
+        if self.disposed.load(Ordering::Acquire) {
+            return false;
+        }
+        self.focus_control
+            .lock()
+            .ok()
+            .and_then(|mut guard| guard.as_mut().map(FocusControlHandle::trigger_auto_focus))
+            .unwrap_or(false)
     }
 
     pub fn stats(&self) -> CaptureStatsSnapshot {

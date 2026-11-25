@@ -776,4 +776,68 @@ describe('createWebQrScanner camera start', () => {
     expect(opened).toEqual(['unplugged', undefined]);
     scanner.dispose();
   });
+
+  it('triggers tap-to-focus when the track supports autofocus and restores continuous focus', async () => {
+    jest.useFakeTimers();
+    const applyConstraints = jest.fn(async () => {});
+    const track = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['continuous', 'single-shot'] }),
+      applyConstraints,
+    };
+    const stream = { getTracks: () => [track], getVideoTracks: () => [track] };
+    setGetUserMedia(async () => stream);
+    const scanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto' });
+    await scanner.start();
+
+    await expect(scanner.focus({ x: 0.25, y: 0.75 })).resolves.toBe(true);
+    expect(applyConstraints).toHaveBeenCalledWith({
+      advanced: [{ focusMode: 'single-shot', pointsOfInterest: [{ x: 0.25, y: 0.75 }] }],
+    });
+
+    await jest.advanceTimersByTimeAsync(5000);
+    expect(applyConstraints).toHaveBeenLastCalledWith({
+      advanced: [{ focusMode: 'continuous' }],
+    });
+    scanner.dispose();
+  });
+
+  it('falls back to mode-only constraint when pointsOfInterest is rejected and returns false for fixed-focus tracks', async () => {
+    const applyConstraints = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('pointsOfInterest unsupported'))
+      .mockResolvedValueOnce(undefined);
+    const track = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['continuous'] }),
+      applyConstraints,
+    };
+    setGetUserMedia(async () => ({ getTracks: () => [track], getVideoTracks: () => [track] }));
+    const scanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto' });
+    await scanner.start();
+
+    await expect(scanner.focus({ x: 0.5, y: 0.5 })).resolves.toBe(true);
+    expect(applyConstraints).toHaveBeenNthCalledWith(2, {
+      advanced: [{ focusMode: 'continuous' }],
+    });
+    scanner.dispose();
+
+    const fixedTrack = {
+      stop: jest.fn(),
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['manual'] }),
+      applyConstraints: jest.fn(),
+    };
+    setGetUserMedia(async () => ({
+      getTracks: () => [fixedTrack],
+      getVideoTracks: () => [fixedTrack],
+    }));
+    const fixedScanner = createWebQrScanner({ video: fakeVideo(async () => {}), mode: 'auto' });
+    await fixedScanner.start();
+    await expect(fixedScanner.focus({ x: 0.5, y: 0.5 })).resolves.toBe(false);
+    expect(fixedTrack.applyConstraints).not.toHaveBeenCalled();
+    fixedScanner.dispose();
+  });
 });

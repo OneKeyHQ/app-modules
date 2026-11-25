@@ -56,6 +56,8 @@ export interface QrPreviewFrame {
 export interface QrCapture {
   start(): void;
   stop(): void;
+  /** Triggers autofocus at normalized [0, 1] coordinates when the camera supports it. */
+  focus?(x?: number, y?: number): boolean;
   /** Preview frames currently held by the consumer (at most 3). */
   lentFrames(): number;
   /** Idempotent; no callback runs after it returns. */

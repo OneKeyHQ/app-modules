@@ -34,6 +34,7 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
   private let queue: DispatchQueue
   private let deviceId: String?
   private(set) var openedDeviceId: String?
+  private var device: AVCaptureDevice?
   private var deliver: ((CVPixelBuffer) -> Void)?
   private var observers: [NSObjectProtocol] = []
 
@@ -130,14 +131,56 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
       stop()
       return ("camera-busy", "The camera could not start")
     }
+    self.device = device
     openedDeviceId = device.uniqueID
+    if (try? device.lockForConfiguration()) != nil {
+      Self.applyContinuousFocus(device)
+      device.unlockForConfiguration()
+    }
     return nil
   }
 
   func stop() {
     observers.forEach { NotificationCenter.default.removeObserver($0) }
     observers.removeAll()
+    device = nil
     if session.isRunning { session.stopRunning() }
+  }
+
+  private static func applyContinuousFocus(_ device: AVCaptureDevice) {
+    let center = CGPoint(x: 0.5, y: 0.5)
+    if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = center }
+    if device.isFocusModeSupported(.continuousAutoFocus) {
+      device.focusMode = .continuousAutoFocus
+    }
+    if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = center }
+    if device.isExposureModeSupported(.continuousAutoExposure) {
+      device.exposureMode = .continuousAutoExposure
+    }
+  }
+
+  func focus(x: Double, y: Double) -> Bool {
+    guard session.isRunning, let device,
+      device.isFocusPointOfInterestSupported,
+      device.isFocusModeSupported(.autoFocus) || device.isFocusModeSupported(.continuousAutoFocus),
+      (try? device.lockForConfiguration()) != nil
+    else { return false }
+    defer { device.unlockForConfiguration() }
+    let point = CGPoint(
+      x: min(1, max(0, x.isFinite ? x : 0.5)),
+      y: min(1, max(0, y.isFinite ? y : 0.5)))
+    device.focusPointOfInterest = point
+    device.focusMode = device.isFocusModeSupported(.autoFocus) ? .autoFocus : .continuousAutoFocus
+    if device.isExposurePointOfInterestSupported {
+      if device.isExposureModeSupported(.autoExpose) {
+        device.exposurePointOfInterest = point
+        device.exposureMode = .autoExpose
+      } else if device.isExposureModeSupported(.continuousAutoExposure) {
+        device.exposurePointOfInterest = point
+        device.exposureMode = .continuousAutoExposure
+      }
+    }
+    return true
   }
 
   func captureOutput(
@@ -353,6 +396,12 @@ final class QrCaptureController {
   func stop() {
     _ = gate.nextGeneration()
     sessionQueue.async { [weak self] in self?.stopOnQueue() }
+  }
+
+  func focus(x: Double, y: Double) -> Bool {
+    sessionQueue.sync {
+      (source as? QrCameraSource)?.focus(x: x, y: y) ?? false
+    }
   }
 
   /// Stops capture and guarantees no callback runs after it returns.

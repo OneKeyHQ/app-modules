@@ -190,6 +190,8 @@ export interface QrCapture {
   setDevice(deviceId?: string | null): void;
   /** Preview frames currently held by the consumer (at most 3). */
   lentFrames(): number;
+  /** Triggers hardware autofocus when the active camera supports it. */
+  focus?(x?: number, y?: number): boolean;
   /** Current session counters (privacy-safe). */
   stats(): CaptureStats;
   /** Idempotent; no callback runs after it returns. */

@@ -96,4 +96,20 @@ enum QrCameraControl {
         CGFloat(truncating: $0)
       })
   }
+
+  /// True when the camera can focus on a tapped point of interest.
+  static func supportsTapToFocus(
+    isFocusPointOfInterestSupported: Bool,
+    supportsAutoFocus: Bool,
+    supportsContinuousAutoFocus: Bool
+  ) -> Bool {
+    isFocusPointOfInterestSupported && (supportsAutoFocus || supportsContinuousAutoFocus)
+  }
+
+  static func supportsTapToFocus(_ device: AVCaptureDevice) -> Bool {
+    supportsTapToFocus(
+      isFocusPointOfInterestSupported: device.isFocusPointOfInterestSupported,
+      supportsAutoFocus: device.isFocusModeSupported(.autoFocus),
+      supportsContinuousAutoFocus: device.isFocusModeSupported(.continuousAutoFocus))
+  }
 }
