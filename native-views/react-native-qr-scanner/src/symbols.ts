@@ -237,9 +237,14 @@ export function createMultiSymbolCoordinator(
       if (visible.length === 0) return;
 
       if (phase === 'ur-streaming') {
-        const ur = visible.find((item) => isUrFrameText(item.text));
-        if (ur) {
-          options.onCommitText(ur.text, 'ur');
+        const urSymbols = visible.filter((item) => isUrFrameText(item.text));
+        if (urSymbols.length > 0) {
+          // Forward every visible UR candidate so the bound UrAssembler/ScanSession
+          // can pick fragments belonging to the selected message even when another
+          // UR appears earlier in the frame's symbol array.
+          for (const ur of urSymbols) {
+            options.onCommitText(ur.text, 'ur');
+          }
         } else {
           // A simpler competing static QR can win maxNumberOfSymbols=1 and starve
           // the animated UR; re-enable multiSymbol so the UR stays visible.

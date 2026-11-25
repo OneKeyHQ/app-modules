@@ -98,7 +98,7 @@ analysis queue, so preview rate is bounded by detection time per frame.
   at most one frame is in analysis. Missing hardware is reported as
   `no-camera` before any permission request. Error codes: `no-camera`,
   `permission-denied`, `camera-busy`, `decoder-unavailable`.
-- **Multi-symbol detection and freeze (Planned)** — contract shared with
+- **Multi-symbol detection and freeze (Implemented)** — contract shared with
   `native-views/react-native-qr-scanner/docs/SPEC.md` section 3.4:
   - `createCapture` adds `multiSymbol?: boolean` (default `false`) and
     `onSymbols?(symbols: QrDetectedSymbol[], frameWidth: number, frameHeight: number, generation: number): void`,

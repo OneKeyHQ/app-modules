@@ -388,7 +388,7 @@ createWebQrScanner({
   (default 8000) fails `start()` with `camera-busy` and is released, instead
   of waiting forever on `video.play()`.
 
-### 3.4 Multi-symbol detection, preview freeze and UR latch — Planned
+### 3.4 Multi-symbol detection, preview freeze and UR latch — Implemented
 
 Supports WeChat-style multi-QR selection (freeze preview on multiple codes,
 overlay clickable anchors at each code center, zero-latency resume on cancel)
@@ -462,7 +462,7 @@ interface QrImageSymbolsResult {
 | Platform | Coordinate space | Multi-symbol & coordinate mapping | Zero-black-screen freeze (`frozen=true`) |
 | --- | --- | --- | --- |
 | iOS (`QrScanner.swift`) | `view` | Iterate all `metadataObjects`; map each via `previewLayer.transformedMetadataObject(for:)` (handles `.resizeAspectFill` crop and rotation) and divide by `previewLayer.bounds.size`. | Set `previewLayer.connection?.isEnabled = false`, pause `onFrameSymbols` dispatch, suppress tap/pinch gestures; keep `AVCaptureSession` running. |
-| Android (`QrScanner.kt`) | `view` | ML Kit returns `List<Barcode>`; map each `boundingBox` to `PreviewView` via CameraX `ImageProxyTransformFactory` + `previewView.outputTransform` + `CoordinateTransform`, then divide by `previewView` size (never naive image/view ratio scaling). | Snapshot `previewView.bitmap` into an overlay `ImageView` inside `container`, pause `ImageAnalysis` dispatch, suppress tap/pinch gestures; hide and clear on unfreeze. |
+| Android (`QrScanner.kt`) | `view` | ML Kit returns `List<Barcode>`; map each upright `InputImage` `boundingBox` to visible `PreviewView` `FILL_CENTER` (`cover`) coordinates via `HybridQrScanner.mapFillCenterRect` (accounting for rotation and front-camera mirroring). | Snapshot `previewView.bitmap` into an overlay `ImageView` inside `container`, pause `ImageAnalysis` dispatch, suppress tap/pinch gestures, and preserve freeze state across temporary rebinds/pause-resume while `frozen=true`; hide and clear on unfreeze or `dispose`. |
 | Web / extension / Linux (`./web`) | `frame` | `BarcodeDetector.detect()` `boundingBox` or `zxing-wasm` `position` 4-corner centroid divided by analysed `image.width`/`height`. | `video.pause()` + `cancelSchedule()`, keep `MediaStream` tracks live. |
 | macOS / Windows Electron (`desktop/*/electron-qr-scanner`) | `frame` | See each desktop package `SPEC.md` (macOS Vision with `centerY = 1 - box.midY`; Windows `ZXing::ReadBarcodes`). | Preload skips `context.drawImage` for frozen `sessionId` (still closing `VideoFrame` and releasing `importedSharedTexture` in `finally`); main process pauses native analysis. |
 

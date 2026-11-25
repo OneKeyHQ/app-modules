@@ -129,7 +129,7 @@ createCapture(options?: {
 - **Error codes**: `permission-denied`, `no-camera`, `camera-busy`,
   `decoder-unavailable`, `preview-unavailable`, `invalid-image`,
   `resource-limit`.
-- **Multi-symbol detection and freeze (Planned)** — contract shared with
+- **Multi-symbol detection and freeze (Implemented)** — contract shared with
   `native-views/react-native-qr-scanner/docs/SPEC.md` section 3.4:
   - `createCapture` adds `multiSymbol?: boolean` (default `false`) and
     `onSymbols?(symbols: QrDetectedSymbol[], frameWidth: number, frameHeight: number, generation: number): void`,

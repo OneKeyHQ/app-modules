@@ -62,11 +62,18 @@ test("case b: decodeImageSymbols reads all 3 QRs with flipped top-left Vision co
       y: (610 + 140) / 960,
     },
   ];
-  for (const target of expected) {
-    const match = result.symbols.find((s) => s.text === target.text);
-    assert.ok(match, `missing ${target.text}`);
-    assertClose(match.centerX, target.x, 0.03, `X for ${target.text}`);
-    assertClose(match.centerY, target.y, 0.03, `Y for ${target.text}`);
+  for (const engines of [["vision"], ["zxing"]]) {
+    const result = await decodeImageSymbols(path.join(FIXTURES, "b-multi-static.png"), { engines });
+    assert.equal(result.width, 960);
+    assert.equal(result.height, 960);
+    assert.equal(result.symbols.length, 3, `${engines[0]} count`);
+
+    for (const target of expected) {
+      const match = result.symbols.find((s) => s.text === target.text);
+      assert.ok(match, `${engines[0]} missing ${target.text}`);
+      assertClose(match.centerX, target.x, 0.03, `${engines[0]} X for ${target.text}`);
+      assertClose(match.centerY, target.y, 0.03, `${engines[0]} Y for ${target.text}`);
+    }
   }
 });
 

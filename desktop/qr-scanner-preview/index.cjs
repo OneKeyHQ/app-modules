@@ -13,6 +13,7 @@ if (process.platform === "darwin") {
 }
 
 exports.decodeImage = scanner.decodeImage;
+exports.decodeImageSymbols = scanner.decodeImageSymbols;
 exports.listCameras = scanner.listCameras;
 exports.shouldFallbackToWeb = scanner.shouldFallbackToWeb;
 exports.createCapture = function createCapture(options) {
@@ -21,7 +22,9 @@ exports.createCapture = function createCapture(options) {
   if (!onReady) return scanner.createCapture(options);
   return scanner.createCapture({
     source: options.source,
+    multiSymbol: options.multiSymbol,
     onText: options.onText,
+    onSymbols: options.onSymbols,
     onError: options.onError,
     onEnded: options.onEnded,
     onFrame: options.onFrame,

@@ -359,6 +359,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       if (dropped) return@post
       dropped = true
       callbacks = CaptureCallbacks()
+      applyFrozen(false)
       cancelPermissionWait()
       stop()
       hostLifecycle?.removeObserver(hostObserver)
@@ -512,7 +513,9 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
   private fun unbind() {
     gate.setCapturing(false)
-    applyFrozen(false)
+    // Preserve frozenImageView and isFrozenMain across temporary rebinds
+    // (camera switch or host pause/resume) while `frozen` remains true;
+    // `afterUpdate` and `dispose` clear the freeze explicitly.
     pinchGeneration = null
     streamObserver?.let { previewView.previewStreamState.removeObserver(it) }
     cameraObserver?.let { camera?.cameraInfo?.cameraState?.removeObserver(it) }

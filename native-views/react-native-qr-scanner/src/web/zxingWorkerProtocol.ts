@@ -12,6 +12,7 @@ export type ZXingWorkerRequest =
       width: number;
       height: number;
       multiSymbol?: boolean;
+      includeSymbols?: boolean;
     };
 
 export type ZXingWorkerResponse =
@@ -123,12 +124,12 @@ export function createZXingWorkerHandler() {
       }
       if (!ready) throw new Error('zxing worker used before init');
       await ready;
-      if (request.multiSymbol === true) {
+      if (request.multiSymbol === true || request.includeSymbols === true) {
         const symbols = await readQrSymbols(
           request.data,
           request.width,
           request.height,
-          true
+          request.multiSymbol === true
         );
         return {
           id: request.id,

@@ -200,4 +200,24 @@ describe('createMultiSymbolCoordinator', () => {
     expect(onMultiSymbolChange).toHaveBeenLastCalledWith(true);
     expect(onCommitText).toHaveBeenCalledWith(ur.text, 'ur');
   });
+
+  test('two competing animated URs in one frame: selected second UR still receives all its parts', () => {
+    const { coordinator, onCommitText } = setup(140);
+    const urA1 = { text: 'UR:BYTES/1-3/AAA1', centerX: 0.25, centerY: 0.5 };
+    const urB1 = { text: 'UR:CRYPTO-PSBT/1-2/BBB1', centerX: 0.75, centerY: 0.5 };
+
+    coordinator.receiveFrame([urA1, urB1]);
+    expect(coordinator.phase).toBe('selecting');
+
+    coordinator.selectSymbol(urB1);
+    expect(coordinator.phase).toBe('ur-streaming');
+    expect(onCommitText).toHaveBeenCalledWith(urB1.text, 'ur');
+
+    // Subsequent frame still lists competing UR A first and selected UR B second
+    const urA2 = { text: 'UR:BYTES/2-3/AAA2', centerX: 0.25, centerY: 0.5 };
+    const urB2 = { text: 'UR:CRYPTO-PSBT/2-2/BBB2', centerX: 0.75, centerY: 0.5 };
+    coordinator.receiveFrame([urA2, urB2]);
+    expect(onCommitText).toHaveBeenCalledWith(urA2.text, 'ur');
+    expect(onCommitText).toHaveBeenCalledWith(urB2.text, 'ur');
+  });
 });

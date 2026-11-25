@@ -243,6 +243,7 @@ class ZXingWorkerClient {
           width: image.width,
           height: image.height,
           multiSymbol,
+          includeSymbols: true,
         },
         [data.buffer]
       ),
