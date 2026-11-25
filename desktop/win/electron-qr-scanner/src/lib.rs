@@ -389,9 +389,7 @@ impl NativeCapture {
 
     #[napi]
     pub fn focus(&self) -> bool {
-        self.controller
-            .as_ref()
-            .is_some_and(|ctrl| ctrl.focus())
+        self.controller.as_ref().is_some_and(|ctrl| ctrl.focus())
     }
 
     #[napi]

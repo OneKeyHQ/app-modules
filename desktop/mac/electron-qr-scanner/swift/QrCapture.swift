@@ -30,6 +30,7 @@ protocol QrFrameSource: AnyObject {
 /// Live camera frames through AVCaptureVideoDataOutput. Late frames are
 /// discarded, so at most one frame is in analysis at a time.
 final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSampleBufferDelegate {
+  private static let focusHoldSeconds: TimeInterval = 5.0
   private let session = AVCaptureSession()
   private let queue: DispatchQueue
   private let deviceId: String?
@@ -37,6 +38,7 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
   private var device: AVCaptureDevice?
   private var deliver: ((CVPixelBuffer) -> Void)?
   private var observers: [NSObjectProtocol] = []
+  private var focusRestoreWorkItem: DispatchWorkItem?
 
   init(queue: DispatchQueue, deviceId: String?) {
     self.queue = queue
@@ -141,6 +143,8 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
   }
 
   func stop() {
+    focusRestoreWorkItem?.cancel()
+    focusRestoreWorkItem = nil
     observers.forEach { NotificationCenter.default.removeObserver($0) }
     observers.removeAll()
     device = nil
@@ -159,29 +163,46 @@ final class QrCameraSource: NSObject, QrFrameSource, AVCaptureVideoDataOutputSam
     }
   }
 
-  func focus(x: Double, y: Double) -> Bool {
-    guard session.isRunning, let device else { return false }
+  func focus(x: Double, y: Double, restoreOn restoreQueue: DispatchQueue) -> Bool {
+    guard session.isRunning, let device,
+      device.isFocusModeSupported(.autoFocus) || device.isFocusModeSupported(.continuousAutoFocus),
+      (try? device.lockForConfiguration()) != nil
+    else { return false }
+    focusRestoreWorkItem?.cancel()
+    focusRestoreWorkItem = nil
     let point = CGPoint(
       x: min(1, max(0, x.isFinite ? x : 0.5)),
       y: min(1, max(0, y.isFinite ? y : 0.5)))
-    if (try? device.lockForConfiguration()) != nil {
-      defer { device.unlockForConfiguration() }
-      if device.isFocusPointOfInterestSupported {
-        device.focusPointOfInterest = point
+    if device.isFocusPointOfInterestSupported {
+      device.focusPointOfInterest = point
+    }
+    if device.isFocusModeSupported(.autoFocus) {
+      device.focusMode = .autoFocus
+    } else if device.isFocusModeSupported(.continuousAutoFocus) {
+      device.focusMode = .continuousAutoFocus
+    }
+    if device.isExposurePointOfInterestSupported {
+      device.exposurePointOfInterest = point
+    }
+    if device.isExposureModeSupported(.autoExpose) {
+      device.exposureMode = .autoExpose
+    } else if device.isExposureModeSupported(.continuousAutoExposure) {
+      device.exposureMode = .continuousAutoExposure
+    }
+    device.unlockForConfiguration()
+
+    if device.isFocusModeSupported(.continuousAutoFocus)
+      || device.isExposureModeSupported(.continuousAutoExposure)
+    {
+      let work = DispatchWorkItem { [weak self, weak device] in
+        guard let self, self.session.isRunning, let device, self.device === device,
+          (try? device.lockForConfiguration()) != nil
+        else { return }
+        defer { device.unlockForConfiguration() }
+        Self.applyContinuousFocus(device)
       }
-      if device.isFocusModeSupported(.autoFocus) {
-        device.focusMode = .autoFocus
-      } else if device.isFocusModeSupported(.continuousAutoFocus) {
-        device.focusMode = .continuousAutoFocus
-      }
-      if device.isExposurePointOfInterestSupported {
-        device.exposurePointOfInterest = point
-      }
-      if device.isExposureModeSupported(.autoExpose) {
-        device.exposureMode = .autoExpose
-      } else if device.isExposureModeSupported(.continuousAutoExposure) {
-        device.exposureMode = .continuousAutoExposure
-      }
+      focusRestoreWorkItem = work
+      restoreQueue.asyncAfter(deadline: .now() + Self.focusHoldSeconds, execute: work)
     }
     return true
   }
@@ -403,7 +424,7 @@ final class QrCaptureController {
 
   func focus(x: Double, y: Double) -> Bool {
     sessionQueue.sync {
-      (source as? QrCameraSource)?.focus(x: x, y: y) ?? false
+      (source as? QrCameraSource)?.focus(x: x, y: y, restoreOn: sessionQueue) ?? false
     }
   }
 

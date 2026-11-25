@@ -242,11 +242,10 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   private fun focusAt(x: Float, y: Float) {
     val camera = camera ?: return
     val point = previewView.meteringPointFactory.createPoint(x, y)
-    val afOnly = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF).build()
-    if (!camera.cameraInfo.isFocusMeteringSupported(afOnly)) return
     val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
       .setAutoCancelDuration(FOCUS_HOLD_SECONDS, TimeUnit.SECONDS)
       .build()
+    if (!camera.cameraInfo.isFocusMeteringSupported(action)) return
     showFocusIndicator(x, y)
     // Rejected when the camera cannot meter that point; scanning goes on.
     camera.cameraControl.startFocusAndMetering(action)
@@ -489,6 +488,8 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     gate.setCapturing(false)
     pinchGeneration = null
     main.removeCallbacks(hideFocusRunnable)
+    focusIndicator.animate().cancel()
+    focusIndicator.alpha = 0f
     if (displayListenerRegistered) {
       displayManager?.unregisterDisplayListener(displayListener)
       displayListenerRegistered = false

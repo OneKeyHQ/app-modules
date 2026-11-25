@@ -71,10 +71,50 @@ type FocusTrackCapabilities = MediaTrackCapabilities & {
   focusMode?: string[];
 };
 
+type FocusTrackSettings = MediaTrackSettings & {
+  focusMode?: string;
+};
+
 type FocusConstraintSet = MediaTrackConstraintSet & {
   focusMode?: string;
   pointsOfInterest?: { x: number; y: number }[];
 };
+
+function buildFocusConstraints(
+  track: MediaStreamTrack,
+  focusConstraint: FocusConstraintSet
+): MediaTrackConstraints {
+  const current = (track.getConstraints?.() ?? {}) as MediaTrackConstraints & FocusConstraintSet;
+  const {
+    advanced: currentAdvanced,
+    focusMode: _topFocusMode,
+    pointsOfInterest: _topPointsOfInterest,
+    ...restTopLevel
+  } = current;
+  const preservedAdvanced: MediaTrackConstraintSet[] = [];
+  if (Array.isArray(currentAdvanced)) {
+    for (const entry of currentAdvanced) {
+      if (!entry || typeof entry !== 'object') continue;
+      const {
+        focusMode: _entryFocusMode,
+        pointsOfInterest: _entryPointsOfInterest,
+        ...restEntry
+      } = entry as FocusConstraintSet;
+      if (Object.keys(restEntry).length > 0) {
+        preservedAdvanced.push(restEntry);
+      }
+    }
+  }
+  return {
+    ...restTopLevel,
+    advanced: [...preservedAdvanced, focusConstraint],
+  };
+}
+
+function didApplyFocusMode(track: MediaStreamTrack, expectedMode: string): boolean {
+  const settings = track.getSettings?.() as FocusTrackSettings | undefined;
+  return settings?.focusMode === undefined || settings.focusMode === expectedMode;
+}
 
 type VideoWithFrameCallback = HTMLVideoElement & {
   requestVideoFrameCallback?: (callback: () => void) => number;
@@ -110,6 +150,8 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let frameHandle: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let focusResetTimer: ReturnType<typeof setTimeout> | undefined;
+  let nextFocusRequestId = 0;
+  let latestAppliedFocusRequestId = 0;
   let analysing = false;
   let lastTime = -1;
   let frameIndex = 0;
@@ -471,23 +513,16 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       await acquireCamera(nextDeviceId, !hasLiveCamera());
     },
     async focus(point?: { x: number; y: number }): Promise<boolean> {
-      if (disposed || !active) return false;
-      const activeStream =
-        stream ??
-        (typeof MediaStream !== 'undefined' && video.srcObject instanceof MediaStream
-          ? video.srcObject
-          : undefined);
-      const track = activeStream
-        ?.getVideoTracks()
+      if (disposed || !active || source.kind !== 'camera' || !stream) return false;
+      const targetStream = stream;
+      const targetGeneration = generation;
+      const track = targetStream
+        .getVideoTracks()
         .find((candidate) => candidate.readyState === 'live');
       if (!track || typeof track.applyConstraints !== 'function') return false;
       const capabilities = track.getCapabilities?.() as FocusTrackCapabilities | undefined;
       const focusModes = capabilities?.focusMode;
-      if (!Array.isArray(focusModes)) {
-        // Desktop browsers (e.g. Chromium/Safari on macOS) often omit focusMode
-        // from MediaStreamTrack.getCapabilities() even on autofocus/Continuity cameras.
-        return true;
-      }
+      if (!Array.isArray(focusModes)) return false;
       const supportsSingleShot = focusModes.includes('single-shot');
       const supportsContinuous = focusModes.includes('continuous');
       if (!supportsSingleShot && !supportsContinuous) return false;
@@ -500,19 +535,31 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
               y: Math.min(1, Math.max(0, point.y)),
             }
           : undefined;
-      clearFocusResetTimer();
+      const requestId = ++nextFocusRequestId;
+      const isCurrentTarget = () =>
+        active &&
+        !disposed &&
+        stream === targetStream &&
+        generation === targetGeneration &&
+        track.readyState === 'live';
       const applyMode = (withPoint: boolean) => {
         const constraint: FocusConstraintSet =
           withPoint && normalizedPoint
             ? { focusMode, pointsOfInterest: [normalizedPoint] }
             : { focusMode };
-        return track.applyConstraints({ advanced: [constraint] });
+        return track.applyConstraints(buildFocusConstraints(track, constraint));
       };
       try {
         if (normalizedPoint) {
+          let appliedWithPoint = false;
           try {
             await applyMode(true);
+            appliedWithPoint = isCurrentTarget() && didApplyFocusMode(track, focusMode);
           } catch {
+            appliedWithPoint = false;
+          }
+          if (!appliedWithPoint) {
+            if (!isCurrentTarget()) return false;
             await applyMode(false);
           }
         } else {
@@ -521,16 +568,24 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       } catch {
         return false;
       }
-      if (supportsSingleShot && supportsContinuous && active && !disposed) {
-        const focusedGeneration = generation;
-        focusResetTimer = setTimeout(() => {
-          focusResetTimer = undefined;
-          if (!active || disposed || generation !== focusedGeneration || track.readyState !== 'live') {
-            return;
-          }
-          const continuousConstraint: FocusConstraintSet = { focusMode: 'continuous' };
-          void track.applyConstraints({ advanced: [continuousConstraint] }).catch(() => {});
-        }, FOCUS_HOLD_MS);
+      if (!isCurrentTarget() || !didApplyFocusMode(track, focusMode)) {
+        return false;
+      }
+      if (requestId >= latestAppliedFocusRequestId) {
+        latestAppliedFocusRequestId = requestId;
+        clearFocusResetTimer();
+        if (supportsSingleShot && supportsContinuous) {
+          focusResetTimer = setTimeout(() => {
+            focusResetTimer = undefined;
+            if (!isCurrentTarget() || latestAppliedFocusRequestId !== requestId) {
+              return;
+            }
+            const continuousConstraint: FocusConstraintSet = { focusMode: 'continuous' };
+            void track
+              .applyConstraints(buildFocusConstraints(track, continuousConstraint))
+              .catch(() => {});
+          }, FOCUS_HOLD_MS);
+        }
       }
       return true;
     },

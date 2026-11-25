@@ -309,10 +309,13 @@ and `onReady(generation, cameraId)`, `onFrameText(text, generation)`,
     and starts at the wide lens's zoom factor (1x). Virtual devices move to
     the ultra-wide lens by themselves when a code is closer than the wide lens
     can focus. Rules live in `ios/QrCameraControl.swift`.
-  - Tap to focus: focus and exposure move to the tapped point and a 72 pt
-    focus box fades in and out. iOS returns to continuous focus over the
-    whole frame when the subject area changes; Android uses
-    `FocusMeteringAction` (AF + AE) with a 5 s auto-cancel.
+  - Tap to focus: focus and exposure move to the tapped point and a 73 pt /
+    73 dp yellow focus box shrinks from 2x to 1x over 200 ms, holds for 1 s,
+    and fades out over 200 ms. iOS uses full-range continuous autofocus and
+    returns to continuous focus over the whole frame when the subject area
+    changes; Android checks `FocusMeteringAction` (AF + AE) support before
+    showing the indicator or starting focus and metering with a 5 s
+    auto-cancel, and hides the indicator on unbind.
   - Pinch to zoom from the current zoom, clamped to the device range and at
     most 8x the 1x factor (`QrCameraControl.clampZoom`,
     `QrCameraZoom.clampRatio`). A pinch applies only to the running capture
@@ -329,7 +332,14 @@ createWebQrScanner({
   mode; allowPlainText?; limits?; maxAnalysisSize?; // default 1280
   firstFrameTimeoutMs?; // default 8000
   onReady?; onFrameText?; onProgress?; onResult?; onError?;
-}): { start(): Promise<void>; stop(): void; resetSession(): void; dispose(): void };
+}): {
+  start(): Promise<void>;
+  switchCamera(deviceId?: string): Promise<void>;
+  focus(point?: { x: number; y: number }): Promise<boolean>;
+  stop(): void;
+  resetSession(): void;
+  dispose(): void;
+};
 ```
 
 - `camera` calls `getUserMedia({ audio: false, video: { facingMode:
@@ -387,6 +397,17 @@ createWebQrScanner({
 - A camera whose track delivers no frame within `firstFrameTimeoutMs`
   (default 8000) fails `start()` with `camera-busy` and is released, instead
   of waiting forever on `video.play()`.
+- `focus(point?)` triggers tap-to-focus on the active scanner-owned camera
+  track (`source.kind === "camera"`) when `getCapabilities().focusMode`
+  includes `"single-shot"` or `"continuous"`. `point` uses normalized `[0, 1]`
+  preview coordinates (clamped when finite) passed via `pointsOfInterest`.
+  Existing non-focus track constraints from `getConstraints()` are preserved.
+  If `pointsOfInterest` is rejected or `getSettings().focusMode` reports that
+  the mode did not take effect, the scanner falls back to a mode-only
+  constraint and resolves `false` when the mode still does not apply or the
+  capture generation changes while in flight. When the track supports both
+  `"single-shot"` and `"continuous"`, the latest successful tap schedules a
+  5 s restore to `"continuous"`.
 
 ## 4. Lifecycle and concurrency
 
@@ -418,7 +439,7 @@ freed on terminal status plus `reset()`, or when the session is dropped.
 
 | Platform | Live engine | Image engine | Fallback | Status |
 | --- | --- | --- | --- | --- |
-| iOS | AVFoundation metadata output, 1080p, back virtual device at 1x, continuous near autofocus, tap to focus, pinch zoom | Vision | ZXing-C++ (image only) | Implemented in source |
+| iOS | AVFoundation metadata output, 1080p, back virtual device at 1x, continuous autofocus, tap to focus, pinch zoom | Vision | ZXing-C++ (image only) | Implemented in source |
 | Android | CameraX + bundled ML Kit (no Play Services) | Same ML Kit detector | ZXing-C++ (image only; arm ABIs) | Implemented, emulator verified (image) |
 | Web / extension / Linux Electron | `BarcodeDetector` when it supports `qr_code` | Same | `zxing-wasm` reader (page thread or Worker) | Implemented; Chrome, WebKit and extension-CSP verified |
 | macOS Electron | `desktop/mac/electron-qr-scanner` (AVFoundation + Vision) | Same | ZXing-C++ (image) | Implemented, not integrated |

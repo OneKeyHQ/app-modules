@@ -14,6 +14,7 @@ final class QrPreviewView: UIView {
 
   private var sceneGeometryObservation: NSKeyValueObservation?
   private var deviceOrientationObserver: NSObjectProtocol?
+  private var generatingDeviceOrientationNotifications = false
   private var legacyOrientationTimer: Timer?
   private var focusFadeWorkItem: DispatchWorkItem?
   private var captureRunning = false
@@ -40,6 +41,16 @@ final class QrPreviewView: UIView {
     legacyOrientationTimer?.invalidate()
     if let deviceOrientationObserver {
       NotificationCenter.default.removeObserver(deviceOrientationObserver)
+    }
+    if generatingDeviceOrientationNotifications {
+      let endNotifications = {
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
+      }
+      if Thread.isMainThread {
+        MainActor.assumeIsolated(endNotifications)
+      } else {
+        DispatchQueue.main.async(execute: endNotifications)
+      }
     }
   }
 
@@ -73,7 +84,13 @@ final class QrPreviewView: UIView {
       NotificationCenter.default.removeObserver(deviceOrientationObserver)
       self.deviceOrientationObserver = nil
     }
+    if generatingDeviceOrientationNotifications {
+      UIDevice.current.endGeneratingDeviceOrientationNotifications()
+      generatingDeviceOrientationNotifications = false
+    }
     guard window != nil else { return }
+    UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+    generatingDeviceOrientationNotifications = true
     deviceOrientationObserver = NotificationCenter.default.addObserver(
       forName: UIDevice.orientationDidChangeNotification, object: nil, queue: .main
     ) { [weak self] _ in
