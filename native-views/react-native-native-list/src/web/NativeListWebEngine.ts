@@ -4555,7 +4555,14 @@ export class NativeListWebEngine {
   private rowLabel(row: RowModel): string {
     if ((row.type === 'dataRow' || row.type === 'market') && row.tableColumns) {
       return row.tableColumns
-        .flatMap((cell) => [cell.text, cell.secondaryText])
+        .flatMap((cell) => [
+          cell.textSegments?.length
+            ? cell.textSegments.map((run) => run.text).join('')
+            : cell.text,
+          cell.secondaryTextSegments?.length
+            ? cell.secondaryTextSegments.map((run) => run.text).join('')
+            : cell.secondaryText,
+        ])
         .filter(Boolean)
         .join(', ');
     }

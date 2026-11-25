@@ -6047,6 +6047,51 @@ describe('Web migration layout and table regressions', () => {
     }
   );
 
+  it('announces the rendered primary and secondary segments unless a row supplies its own label', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const columns = [
+      {
+        key: 'asset',
+        text: 'fallback',
+        textSegments: [{ text: 'E' }, { text: 'TH' }],
+      },
+      {
+        key: 'price',
+        text: '$42',
+        secondaryTextSegments: [{ text: '+' }, { text: '2%' }],
+      },
+    ];
+    const detail = {
+      type: 'dataRow' as const,
+      key: 'detail',
+      columns,
+      tableColumns: columns,
+    };
+    const engine = new NativeListWebEngine(
+      document.body,
+      snapshot({ kind: 'sectioned' }, [
+        detail,
+        {
+          ...detail,
+          key: 'custom',
+          accessibilityLabel: 'My quote',
+        },
+      ]),
+      {},
+      false
+    );
+    try {
+      const label = (key: string) =>
+        document
+          .querySelector('[data-native-list-row-key="' + key + '"]')
+          ?.getAttribute('aria-label');
+      expect(label('detail')).toBe('ETH, $42, +2%');
+      expect(label('custom')).toBe('My quote');
+    } finally {
+      engine.destroy();
+    }
+  });
+
   it('keeps an inline table action independent of the row and updates the recycled cell', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');

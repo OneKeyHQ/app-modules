@@ -117,7 +117,7 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     row.layout(0, 0, width, height)
     val second = row.getChildAt(1) as android.view.ViewGroup
     assertTrue(kotlin.math.abs(second.left - row.getChildAt(0).right - 8 * density) <= 1)
-    val labels = second.getChildAt(1) as NativeListTableColumnView
+    val labels = (second.getChildAt(0) as android.view.ViewGroup).getChildAt(1) as NativeListTableColumnView
     assertTrue(labels.getChildAt(1).width > labels.getChildAt(0).width)
     val button = row.getChildAt(0)
     assertEquals("Favorite", button.contentDescription)
@@ -127,6 +127,53 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     assertEquals(2, row.childCount)
     assertFalse(button.performClick())
     assertEquals(listOf("favorite"), actions)
+    row.dispose()
+  }
+
+  fun testBoundedDetailContentAlignmentAccessibilityAndPressedState() = withMarketRow { host ->
+    val row = NativeListBoundedTableView(host.context as ThemedReactContext, NativeListFonts())
+    val columns = JSONArray().put(JSONObject().put("key", "asset").put("text", "fallback")
+      .put("textSegments", JSONArray().put(JSONObject().put("text", "ETH")))
+      .put("leading", JSONObject().put("kind", "token").put("fallbackText", "ETH")))
+      .put(JSONObject().put("key", "price").put("text", "$42")
+        .put("secondaryTextSegments", JSONArray().put(JSONObject().put("text", "+")).put(JSONObject().put("text", "2%"))))
+    val container = JSONObject().put("height", 80)
+    val data = JSONObject().put("key", "detail").put("type", "dataRow").put("columns", columns)
+      .put("tableColumns", columns).put("style", JSONObject().put("container", container)
+        .put("image", JSONObject().put("width", 40).put("height", 40)))
+    val density = row.resources.displayMetrics.density
+    val width = (320 * density).toInt()
+    val height = (80 * density).toInt()
+    for (alignment in listOf("top", "bottom")) {
+      container.put("contentVerticalAlignment", alignment)
+      row.bind(NativeListItem.parse(data), null, "linear", "vertical", null, false, { _, _, fallback -> fallback })
+      row.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+      row.layout(0, 0, width, height)
+      val cell = row.getChildAt(0) as android.view.ViewGroup
+      val group = cell.getChildAt(0) as android.view.ViewGroup
+      val visual = group.getChildAt(0)
+      val labels = group.getChildAt(1)
+      assertTrue(visual.height > labels.height)
+      assertTrue(kotlin.math.abs(visual.top + visual.bottom - labels.top - labels.bottom) <= 1)
+      if (alignment == "top") assertEquals(0, group.top) else assertEquals(cell.height, group.bottom)
+      assertEquals("ETH, $42, +2%", row.contentDescription)
+    }
+    val time = android.os.SystemClock.uptimeMillis()
+    fun touch(action: Int, x: Float) {
+      val event = android.view.MotionEvent.obtain(time, time, action, x, height / 2f, 0)
+      row.dispatchTouchEvent(event)
+      event.recycle()
+    }
+    fun fill() = (row.background as android.graphics.drawable.GradientDrawable).color?.defaultColor
+    val normal = fill()
+    touch(android.view.MotionEvent.ACTION_DOWN, width / 3f)
+    val pressed = fill()
+    assertFalse(normal == pressed)
+    touch(android.view.MotionEvent.ACTION_MOVE, width / 3f + 1)
+    assertEquals(pressed, fill())
+    touch(android.view.MotionEvent.ACTION_CANCEL, width / 3f + 1)
+    assertEquals(normal, fill())
     row.dispose()
   }
 

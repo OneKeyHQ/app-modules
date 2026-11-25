@@ -11,10 +11,14 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
   private class Cell(context: ThemedReactContext, fonts: NativeListFonts) : LinearLayout(context) {
     val visual = NativeListLeadingVisual(context, fonts)
     val labels = NativeListTableColumnView(context, fonts, wrapSecondary = true)
-    init {
+    val content = LinearLayout(context).apply {
       orientation = HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
       addView(visual)
       addView(labels, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+    }
+    init {
+      addView(content, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
     }
   }
 
@@ -22,7 +26,7 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
 
   override fun bindContent(item: NativeListItem, theme: JSONObject?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String) {
-    resetMarketGesture()
+    bindMarketGesture(item)
     val style = JSONObject(item.json.optJSONObject("style")?.toString() ?: "{}")
     if (item.type == "market") {
       style.put("columns", style.optJSONObject("price"))
@@ -100,7 +104,7 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
     val columns = item.json.getJSONArray("tableColumns")
     return (0 until columns.length()).flatMap { index ->
       val cell = columns.getJSONObject(index)
-      listOf(cell.optString("text"), cell.optString("secondaryText"))
+      listOf(nativeListDataColumnText(cell, "text"), nativeListDataColumnText(cell, "secondaryText"))
     }.filter { it.isNotEmpty() }.joinToString(", ")
   }
 

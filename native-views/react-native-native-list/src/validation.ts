@@ -4934,12 +4934,12 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
         fail(`${path}.changes.${field}`, 'unsupported patch field');
       continue;
     }
+    if (field === 'tableColumns' && !Array.isArray(value))
+      fail(
+        path + '.changes.tableColumns',
+        'expected an array; use a snapshot to change table geometry'
+      );
     if (value === null) {
-      if (field === 'tableColumns')
-        fail(
-          path + '.changes.tableColumns',
-          'use a snapshot to change table geometry'
-        );
       if (patch.type === 'market' && field === 'metrics')
         fail(
           `${path}.changes.metrics`,

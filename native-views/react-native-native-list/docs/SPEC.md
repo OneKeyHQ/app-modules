@@ -2827,7 +2827,9 @@ computes widths from its container and owns horizontal scrolling. Each formatted
 Only the active presentation supplies table-specific interactions. A cell
 supports formatted primary and secondary text, alignment, tones and an optional
 leading visual. An actionable cell supplies actionKey and accessibilityLabel
-together. Activating it delivers the existing row action event with its slot.
+together. Unless an explicit row accessibility label is supplied, the row announces
+the visible primary and secondary text in column order, including formatted segments.
+Activating it delivers the existing row action event with its slot.
 
 Replacing cell values can use a row patch. Entering or leaving table mode or
 changing cell keys, order, widths or alignment requires a structural snapshot.

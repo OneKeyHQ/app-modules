@@ -572,7 +572,7 @@ final class NativeListTableColumnView: UIStackView {
   }
 }
 
-private func nativeListDataColumnText(_ column: [String: Any], _ field: String) -> String {
+func nativeListDataColumnText(_ column: [String: Any], _ field: String) -> String {
   let segments = column.dictionaries("\(field)Segments")
   return segments.isEmpty ? column.string(field) : segments.map { $0.string("text") }.joined()
 }

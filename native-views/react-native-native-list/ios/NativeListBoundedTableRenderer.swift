@@ -132,7 +132,7 @@ final class NativeListBoundedTableCell: NativeListRendererCell {
   override func accessibilityText(_ item: NativeListItem) -> String {
     if let label = item.data["accessibilityLabel"] as? String { return label }
     return item.data.dictionaries("tableColumns").flatMap {
-      [$0.string("text"), $0.string("secondaryText")]
+      [nativeListDataColumnText($0, "text"), nativeListDataColumnText($0, "secondaryText")]
     }.filter { !$0.isEmpty }.joined(separator: ", ")
   }
 

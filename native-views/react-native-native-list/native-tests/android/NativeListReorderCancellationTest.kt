@@ -234,11 +234,25 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
     onMain {
       val row = holder(0).rowView as NativeListBoundedTableView
       val cell = row.getChildAt(0) as android.view.ViewGroup
-      assertEquals(cell.height, cell.getChildAt(1).bottom)
+      assertEquals(cell.height, cell.getChildAt(0).bottom)
       touch(android.view.MotionEvent.ACTION_DOWN, 12f, down)
     }
     SystemClock.sleep(900)
-    onMain { touch(android.view.MotionEvent.ACTION_UP, 12f, down) }
+    onMain {
+      assertEquals(listOf("warm", "menu"), actions)
+      list.applyPatches(JSONArray().put(JSONObject().put("key", "bounded").put("type", "market")
+        .put("changes", JSONObject().put("accessibilityLabel", "While held"))).toString())
+    }
+    for (attempt in 0 until 100) {
+      var updated = false
+      onMain { updated = holder(0).rowView.contentDescription == "While held" }
+      if (updated) break
+      SystemClock.sleep(20)
+    }
+    onMain {
+      assertEquals("While held", holder(0).rowView.contentDescription)
+      touch(android.view.MotionEvent.ACTION_UP, 12f, down)
+    }
     instrumentation.waitForIdleSync()
     onMain {
       assertEquals(listOf("warm", "menu"), actions)
@@ -251,6 +265,14 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
     instrumentation.waitForIdleSync()
     onMain {
       assertEquals(listOf("warm", "menu", "favorite"), actions)
+    }
+    val canceled = SystemClock.uptimeMillis()
+    onMain { touch(android.view.MotionEvent.ACTION_DOWN, 12f, canceled) }
+    SystemClock.sleep(900)
+    onMain {
+      touch(android.view.MotionEvent.ACTION_CANCEL, 12f, canceled)
+      holder(0).rowView.performClick()
+      assertEquals(listOf("warm", "menu", "favorite", "warm", "menu", "open"), actions)
       list.applyPatches(JSONArray().put(JSONObject().put("key", "bounded").put("type", "market")
         .put("changes", JSONObject().put("accessibilityLabel", "Updated"))).toString())
     }

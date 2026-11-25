@@ -4303,6 +4303,29 @@ describe.each([true, false])(
       expect(applyRowPatches(before, patches!).rows).toEqual(after.rows);
     });
 
+    it('requires a table patch array before normalizing nested images', () => {
+      const before = snapshot([
+        {
+          ...compact,
+          tableColumns: [
+            { ...columns[0], actionKey: 'copy', accessibilityLabel: 'Copy' },
+            columns[1],
+          ],
+        },
+      ]);
+      const apply = () =>
+        applyRowPatches(before, [
+          {
+            type: 'dataRow',
+            key: compact.key,
+            // @ts-expect-error Malformed input at the JSON boundary.
+            changes: { tableColumns: { uri: '', width: 24, height: 24 } },
+          },
+        ]);
+      if (development) expect(apply).toThrow(/tableColumns/);
+      else expect(apply().rows).toEqual(before.rows);
+    });
+
     it('normalizes unavailable cell images identically in snapshots and patches', () => {
       const before = validateSnapshot(
         snapshot([{ ...compact, tableColumns: columns.slice(0, 2) }])

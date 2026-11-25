@@ -219,7 +219,7 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
     layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
-    resetMarketGesture()
+    bindMarketGesture(item)
     removeAllViews()
     marketOriginalPaintFlags.forEach { (view, flags) -> view.paintFlags = flags }
     marketOriginalPaintFlags.clear()
@@ -983,6 +983,12 @@ internal abstract class NativeListMarketGestureRowView(context: ThemedReactConte
   private var touchX = 0f
   private var touchY = 0f
 
+  protected fun bindMarketGesture(item: NativeListItem) {
+    // The release still belongs to a hold that fired before a same-row content bind.
+    if (item.type == "market" && (tag as? NativeListItem)?.type == "market") cancelMarketHold()
+    else resetMarketGesture()
+  }
+
   protected fun resetMarketGesture() {
     cancelMarketHold()
     held = false
@@ -995,10 +1001,11 @@ internal abstract class NativeListMarketGestureRowView(context: ThemedReactConte
   }
 
   override fun onRowTouch(event: MotionEvent) {
+    val item = tag as? NativeListItem ?: return
+    if (item.type != "market") return
     when (event.actionMasked) {
       MotionEvent.ACTION_DOWN -> {
-        val item = tag as? NativeListItem
-        if (item?.type == "market" && item.isRowPressEnabled) {
+        if (item.isRowPressEnabled) {
           held = true
           longPressFired = false
           startX = event.x
@@ -1053,8 +1060,8 @@ internal abstract class NativeListMarketGestureRowView(context: ThemedReactConte
           setTouchPressed(false)
         }
       }
-      MotionEvent.ACTION_UP,
-      MotionEvent.ACTION_CANCEL -> {
+      MotionEvent.ACTION_CANCEL -> resetMarketGesture()
+      MotionEvent.ACTION_UP -> {
         cancelMarketHold()
         held = false
       }

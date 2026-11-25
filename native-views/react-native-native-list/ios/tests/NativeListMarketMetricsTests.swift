@@ -65,6 +65,21 @@ final class NativeListMarketMetricsTests: XCTestCase {
     XCTAssertEqual(actions, ["favorite"])
   }
 
+  func testBoundedTableAnnouncesDisplayedSegmentsAndExplicitLabel() throws {
+    var data = try item().data
+    data["tableColumns"] = [
+      ["key": "asset", "text": "fallback", "textSegments": [["text": "E"], ["text": "TH"]]],
+      ["key": "price", "text": "$42", "secondaryTextSegments": [["text": "+"], ["text": "2%"]]],
+    ]
+    let cell = NativeListBoundedTableCell(frame: .zero)
+    for label in [nil, "My quote"] as [String?] {
+      data["accessibilityLabel"] = label
+      cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      XCTAssertEqual(cell.accessibilityLabel, label ?? "ETH, $42, +2%")
+    }
+  }
+
   func testBoundedTextWrapsAtColumnWidthAndHonorsVerticalAlignment() throws {
     var data = try item().data
     data["tableColumns"] = [

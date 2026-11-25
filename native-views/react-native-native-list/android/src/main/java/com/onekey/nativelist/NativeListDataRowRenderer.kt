@@ -576,7 +576,7 @@ internal class NativeListTableColumnView(
   private fun sp(value: Float): Float = NativeListScale.font(resources, value)
 }
 
-private fun nativeListDataColumnText(column: JSONObject, field: String): String {
+internal fun nativeListDataColumnText(column: JSONObject, field: String): String {
   val segments = column.optJSONArray("${field}Segments")
   if (segments == null || segments.length() == 0) return column.optString(field)
   return buildString {
