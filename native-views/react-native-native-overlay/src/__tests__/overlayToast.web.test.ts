@@ -818,6 +818,108 @@ test('short horizontal flick dismisses even after a stationary hold', () => {
   expect(onClose).toHaveBeenCalledWith('swipe');
 });
 
+test('mouse drag inside selectable text preserves text selection without swiping the toast away', () => {
+  const onClose = jest.fn();
+  store.configure({ position: 'bottom-right' });
+  store.show(
+    message('selectable-toast', {
+      duration: 1000,
+      message: {
+        ...text('0x71C...89A'),
+        selectable: true,
+      },
+    }),
+    { onClose }
+  );
+  const card = cards()[0]!;
+  const selectable = card.querySelector<HTMLElement>('[data-okt-selectable]')!;
+  expect(selectable).toBeTruthy();
+
+  dispatchPointer(selectable, 'pointerdown', {
+    pointerType: 'mouse',
+    clientX: 100,
+    clientY: 100,
+  });
+  dispatchPointer(selectable, 'pointermove', {
+    pointerType: 'mouse',
+    clientX: 190,
+    clientY: 100,
+  });
+  expect(card.getAttribute('data-swiping')).toBe('false');
+  // Press still pauses timer while selecting.
+  jest.advanceTimersByTime(1500);
+  expect(card.getAttribute('data-removed')).toBe('false');
+
+  dispatchPointer(selectable, 'pointerup', {
+    pointerType: 'mouse',
+    clientX: 190,
+    clientY: 100,
+  });
+  expect(card.getAttribute('data-removed')).toBe('false');
+  expect(onClose).not.toHaveBeenCalled();
+
+  // Timers resume once the mouse leaves the toast after releasing selection.
+  dispatchPointer(card.parentElement!, 'pointerleave', {
+    pointerType: 'mouse',
+  });
+  jest.advanceTimersByTime(1200);
+  expect(onClose).toHaveBeenCalledWith('timeout');
+});
+
+test('vertical drag on a pressable notification suppresses the synthesized row click', () => {
+  const onPress = jest.fn();
+  store.configure({ position: 'top-center' });
+  store.show(
+    {
+      id: 'notif-drag',
+      layout: 'notification',
+      pressable: true,
+      duration: 5000,
+      badgeSize: 36,
+      badgeColor: '#eee',
+      icon: { kind: 'icon', name: 'Bell', size: 18, color: '#111' },
+      title: text('Transfer received'),
+      message: text('1.0 ETH'),
+    },
+    { onPress }
+  );
+  const card = cards()[0]!;
+  const row = card.querySelector<HTMLElement>('[data-okt-pressable]')!;
+
+  // Vertical drag followed by synthesized click should not trigger onPress.
+  dispatchPointer(row, 'pointerdown', {
+    pointerType: 'mouse',
+    clientX: 200,
+    clientY: 80,
+  });
+  dispatchPointer(row, 'pointermove', {
+    pointerType: 'mouse',
+    clientX: 200,
+    clientY: 50,
+  });
+  dispatchPointer(row, 'pointerup', {
+    pointerType: 'mouse',
+    clientX: 200,
+    clientY: 50,
+  });
+  row.click();
+  expect(onPress).not.toHaveBeenCalled();
+
+  // A normal click afterwards still triggers onPress.
+  dispatchPointer(row, 'pointerdown', {
+    pointerType: 'mouse',
+    clientX: 200,
+    clientY: 80,
+  });
+  dispatchPointer(row, 'pointerup', {
+    pointerType: 'mouse',
+    clientX: 200,
+    clientY: 80,
+  });
+  row.click();
+  expect(onPress).toHaveBeenCalledTimes(1);
+});
+
 test('a leaving front card keeps its exit slot while survivors promote immediately', () => {
   store.show(message('oldest'));
   store.show(message('middle'));

@@ -55,6 +55,8 @@ interface IToastNode {
   closeTimer?: ReturnType<typeof setTimeout>;
   unmountTimer?: ReturnType<typeof setTimeout>;
   swipePointerId?: number;
+  suppressNotificationClick?: boolean;
+  suppressClickTimer?: ReturnType<typeof setTimeout>;
 }
 
 interface IToastPress {
@@ -310,6 +312,11 @@ export function createToastDomRenderer(
 
   function unmount(node: IToastNode, reason: IOverlayToastDismissReason) {
     clearNodePresses(node);
+    if (node.suppressClickTimer !== undefined) {
+      clearTimeout(node.suppressClickTimer);
+      node.suppressClickTimer = undefined;
+    }
+    node.suppressNotificationClick = false;
     if (node.unmountTimer !== undefined) {
       clearTimeout(node.unmountTimer);
       node.unmountTimer = undefined;
@@ -498,6 +505,14 @@ export function createToastDomRenderer(
     }
     const { node } = press;
     const released = event.type === 'pointerup';
+    const threshold =
+      pointerType === 'touch' ? TOUCH_START_THRESHOLD : POINTER_START_THRESHOLD;
+    const moved =
+      press.moved ||
+      Math.max(
+        Math.abs(event.clientX - press.x),
+        Math.abs(event.clientY - press.y)
+      ) > threshold;
     const rawDx = event.clientX - press.x;
     const swiped =
       released && node.swipePointerId === pointerId && node.swiping;
@@ -512,6 +527,16 @@ export function createToastDomRenderer(
         (absAmount >= SWIPE_FLICK_DISTANCE &&
           velocity >= SWIPE_FLICK_VELOCITY));
     clearPress(pointerId, press);
+    if (released && moved && !dismissed) {
+      node.suppressNotificationClick = true;
+      if (node.suppressClickTimer !== undefined) {
+        clearTimeout(node.suppressClickTimer);
+      }
+      node.suppressClickTimer = setTimeout(() => {
+        node.suppressClickTimer = undefined;
+        node.suppressNotificationClick = false;
+      }, 0);
+    }
 
     const hit = released ? groupContaining(pointerHit(event)) : undefined;
     if (pointerType === 'touch') {
@@ -557,14 +582,45 @@ export function createToastDomRenderer(
     li.addEventListener('dragstart', (event) => {
       event.preventDefault();
     });
+    li.addEventListener(
+      'click',
+      (event) => {
+        if (!node.suppressNotificationClick) {
+          return;
+        }
+        node.suppressNotificationClick = false;
+        if (node.suppressClickTimer !== undefined) {
+          clearTimeout(node.suppressClickTimer);
+          node.suppressClickTimer = undefined;
+        }
+        const target = event.target as HTMLElement | null;
+        if (target?.closest?.('button, [data-okt-link]')) {
+          return;
+        }
+        if (target?.closest?.('[data-okt-pressable]')) {
+          event.stopPropagation();
+          event.preventDefault();
+        }
+      },
+      true
+    );
     li.addEventListener('pointerdown', (event) => {
       if (node.removed || event.button !== 0) {
         return;
       }
+      node.suppressNotificationClick = false;
+      if (node.suppressClickTimer !== undefined) {
+        clearTimeout(node.suppressClickTimer);
+        node.suppressClickTimer = undefined;
+      }
       const target = event.target as HTMLElement | null;
+      const selectableMousePress =
+        event.pointerType === 'mouse' &&
+        Boolean(target?.closest?.('[data-okt-selectable]'));
       if (
         node.swipePointerId === undefined &&
         canSwipeNode(node) &&
+        !selectableMousePress &&
         !target?.closest?.('button, [data-okt-link]')
       ) {
         node.swipePointerId = event.pointerId;
