@@ -6047,7 +6047,7 @@ describe('Web migration layout and table regressions', () => {
     }
   );
 
-  it('announces the rendered primary and secondary segments unless a row supplies its own label', () => {
+  it('announces complete subscript amounts and uses segments for ordinary lines', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const columns = [
       {
@@ -6057,8 +6057,28 @@ describe('Web migration layout and table regressions', () => {
       },
       {
         key: 'price',
-        text: '$42',
+        text: '$0.000001',
+        textSegments: [
+          { text: '$0.0' },
+          { text: '5', style: 'subscript' as const },
+          { text: '1' },
+        ],
+        secondaryText: '0.000002 ETH',
+        secondaryTextSegments: [
+          { text: '0.0' },
+          { text: '5', style: 'subscript' as const },
+          { text: '2 ETH' },
+        ],
+      },
+      {
+        key: 'change',
+        text: '24h',
         secondaryTextSegments: [{ text: '+' }, { text: '2%' }],
+      },
+      {
+        key: 'missing-plain-text',
+        text: 'Balance',
+        secondaryTextSegments: [{ text: '5', style: 'subscript' as const }],
       },
     ];
     const detail = {
@@ -6085,7 +6105,13 @@ describe('Web migration layout and table regressions', () => {
         document
           .querySelector('[data-native-list-row-key="' + key + '"]')
           ?.getAttribute('aria-label');
-      expect(label('detail')).toBe('ETH, $42, +2%');
+      expect(label('detail')).toBe(
+        'ETH, $0.000001, 0.000002 ETH, 24h, +2%, Balance'
+      );
+      expect(
+        document.querySelector('[data-native-list-row-key="detail"]')
+          ?.textContent
+      ).toContain('$0.051');
       expect(label('custom')).toBe('My quote');
     } finally {
       engine.destroy();

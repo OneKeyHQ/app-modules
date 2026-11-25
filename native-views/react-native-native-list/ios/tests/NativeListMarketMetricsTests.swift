@@ -65,18 +65,26 @@ final class NativeListMarketMetricsTests: XCTestCase {
     XCTAssertEqual(actions, ["favorite"])
   }
 
-  func testBoundedTableAnnouncesDisplayedSegmentsAndExplicitLabel() throws {
+  func testBoundedTableAnnouncesCompleteSubscriptAmountsAndExplicitLabel() throws {
     var data = try item().data
     data["tableColumns"] = [
       ["key": "asset", "text": "fallback", "textSegments": [["text": "E"], ["text": "TH"]]],
-      ["key": "price", "text": "$42", "secondaryTextSegments": [["text": "+"], ["text": "2%"]]],
+      [
+        "key": "price",
+        "text": "$0.000001",
+        "textSegments": [["text": "$0.0"], ["text": "5", "style": "subscript"], ["text": "1"]],
+        "secondaryText": "0.000002 ETH",
+        "secondaryTextSegments": [["text": "0.0"], ["text": "5", "style": "subscript"], ["text": "2 ETH"]],
+      ],
+      ["key": "change", "text": "24h", "secondaryTextSegments": [["text": "+"], ["text": "2%"]]],
+      ["key": "balance", "text": "Balance", "secondaryTextSegments": [["text": "5", "style": "subscript"]]],
     ]
     let cell = NativeListBoundedTableCell(frame: .zero)
     for label in [nil, "My quote"] as [String?] {
       data["accessibilityLabel"] = label
       cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
         checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
-      XCTAssertEqual(cell.accessibilityLabel, label ?? "ETH, $42, +2%")
+      XCTAssertEqual(cell.accessibilityLabel, label ?? "ETH, $0.000001, 0.000002 ETH, 24h, +2%, Balance")
     }
   }
 

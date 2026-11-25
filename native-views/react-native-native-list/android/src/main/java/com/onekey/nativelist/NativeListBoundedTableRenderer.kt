@@ -101,10 +101,18 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
 
   override fun accessibilityText(item: NativeListItem): String {
     if (item.json.has("accessibilityLabel")) return item.json.getString("accessibilityLabel")
+    fun spokenLine(column: JSONObject, field: String): String {
+      val segments = column.optJSONArray("${field}Segments") ?: return column.optString(field)
+      val indices = 0 until segments.length()
+      if (indices.isEmpty() || indices.any { segments.getJSONObject(it).optString("style") == "subscript" }) {
+        return column.optString(field)
+      }
+      return indices.joinToString("") { segments.getJSONObject(it).optString("text") }
+    }
     val columns = item.json.getJSONArray("tableColumns")
     return (0 until columns.length()).flatMap { index ->
       val cell = columns.getJSONObject(index)
-      listOf(nativeListDataColumnText(cell, "text"), nativeListDataColumnText(cell, "secondaryText"))
+      listOf(spokenLine(cell, "text"), spokenLine(cell, "secondaryText"))
     }.filter { it.isNotEmpty() }.joinToString(", ")
   }
 

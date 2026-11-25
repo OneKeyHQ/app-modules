@@ -131,8 +131,15 @@ final class NativeListBoundedTableCell: NativeListRendererCell {
 
   override func accessibilityText(_ item: NativeListItem) -> String {
     if let label = item.data["accessibilityLabel"] as? String { return label }
+    func spokenLine(_ column: [String: Any], _ field: String) -> String {
+      let segments = column.dictionaries("\(field)Segments")
+      if segments.isEmpty || segments.contains(where: { $0.string("style") == "subscript" }) {
+        return column.string(field)
+      }
+      return segments.map { $0.string("text") }.joined()
+    }
     return item.data.dictionaries("tableColumns").flatMap {
-      [nativeListDataColumnText($0, "text"), nativeListDataColumnText($0, "secondaryText")]
+      [spokenLine($0, "text"), spokenLine($0, "secondaryText")]
     }.filter { !$0.isEmpty }.joined(separator: ", ")
   }
 

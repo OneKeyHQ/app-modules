@@ -2828,7 +2828,11 @@ Only the active presentation supplies table-specific interactions. A cell
 supports formatted primary and secondary text, alignment, tones and an optional
 leading visual. An actionable cell supplies actionKey and accessibilityLabel
 together. Unless an explicit row accessibility label is supplied, the row announces
-the visible primary and secondary text in column order, including formatted segments.
+the primary and secondary lines in column order. Lines made of ordinary segments
+announce the concatenated segment text. When a line contains a subscript run, it
+announces the corresponding plain text (`text` or `secondaryText`). Supply the
+full amount there when a subscript abbreviates digits. A subscript line with no
+plain text is omitted from the generated row label.
 Activating it delivers the existing row action event with its slot.
 
 Replacing cell values can use a row patch. Entering or leaving table mode or

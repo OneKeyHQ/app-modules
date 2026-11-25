@@ -40,6 +40,7 @@ import type {
   SelectionTarget,
   TextTone,
   TrailingAccessory,
+  ValueTextSegment,
   VisibleRangeChangedEvent,
 } from '../models';
 import type {
@@ -4554,14 +4555,17 @@ export class NativeListWebEngine {
 
   private rowLabel(row: RowModel): string {
     if ((row.type === 'dataRow' || row.type === 'market') && row.tableColumns) {
+      const spokenLine = (
+        text: string | undefined,
+        segments: readonly ValueTextSegment[] | undefined
+      ) =>
+        !segments?.length || segments.some((run) => run.style === 'subscript')
+          ? text
+          : segments.map((run) => run.text).join('');
       return row.tableColumns
         .flatMap((cell) => [
-          cell.textSegments?.length
-            ? cell.textSegments.map((run) => run.text).join('')
-            : cell.text,
-          cell.secondaryTextSegments?.length
-            ? cell.secondaryTextSegments.map((run) => run.text).join('')
-            : cell.secondaryText,
+          spokenLine(cell.text, cell.textSegments),
+          spokenLine(cell.secondaryText, cell.secondaryTextSegments),
         ])
         .filter(Boolean)
         .join(', ');
