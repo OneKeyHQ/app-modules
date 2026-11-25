@@ -1,9 +1,9 @@
 package com.margelo.nitro.qrscanner
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
-import android.annotation.SuppressLint
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
@@ -47,6 +47,40 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
+ * React Native drives layout from Yoga and suppresses Android's native
+ * `requestLayout()` pass for children added or updated after initial layout.
+ * Re-measuring on `requestLayout()` keeps the dynamically replaced CameraX
+ * `PreviewView` and its internal `TextureView` sized to this container.
+ */
+internal class QrScannerContainer(context: Context) : FrameLayout(context) {
+  private var layoutPosted = false
+  private val reLayout = Runnable {
+    layoutPosted = false
+    if (width > 0 && height > 0) {
+      measure(
+        MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY),
+      )
+      layout(left, top, right, bottom)
+    }
+  }
+
+  override fun requestLayout() {
+    super.requestLayout()
+    if (!layoutPosted && width > 0 && height > 0) {
+      layoutPosted = true
+      post(reLayout)
+    }
+  }
+
+  override fun onDetachedFromWindow() {
+    removeCallbacks(reLayout)
+    layoutPosted = false
+    super.onDetachedFromWindow()
+  }
+}
+
+/**
  * CameraX preview plus ML Kit QR detection. Native code reports raw text only;
  * mode handling and BC-UR assembly run in JS through `./ur`.
  */
@@ -82,7 +116,8 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     alpha = 0f
     isClickable = false
   }
-  private val container = FrameLayout(context).apply {
+  private val container = QrScannerContainer(context).apply {
+    setBackgroundColor(Color.BLACK)
     addView(previewView, FrameLayout.LayoutParams(
       FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
     ))
