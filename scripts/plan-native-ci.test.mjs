@@ -81,7 +81,12 @@ test("Overlay and Pager expand runtime callers in the provider-to-consumer direc
     "react-native-bottom-tabs", "react-native-native-list", "react-native-native-overlay", "react-native-pager-view",
   ]);
   const pager = planFor("native-views/react-native-pager-view/ios/RNCCollapsiblePagerViewComponentView.mm");
-  assert.deepEqual(pager.affectedModules, ["react-native-bottom-tabs", "react-native-pager-view"]);
+  assert.deepEqual(pager.affectedModules, [
+    "react-native-bottom-tabs", "react-native-native-list", "react-native-pager-view",
+  ]);
+  assert.ok(pager.ios.ui.testSchemes.includes("react-native-native-list-Unit-Tests"));
+  assert.ok(pager.ios.swiftPackages.includes("native-views/react-native-native-list/tests/swiftpm"));
+  assert.ok(pager.android.gradleTasks.includes(":onekeyfe_react-native-native-list:testDebugUnitTest"));
   assert.ok(pager.android.host.includes("react-native-pager-view"));
   assert.ok(pager.android.gradleTasks.includes(":onekeyfe_react-native-pager-view:compileDebugKotlin"));
 });
@@ -132,6 +137,39 @@ test("Docs skip native jobs, while shared, unknown, and unregistered inputs run 
   const incomplete = new Map(graph);
   incomplete.set("react-native-jpush", new Set(["missing-test-coverage"]));
   assert.equal(planNativeCI(["native-modules/react-native-jpush/ios/example.m"], incomplete).mode, "full");
+});
+
+test("iOS changes to Android-only registered modules fall back to the full suite", () => {
+  for (const path of [
+    "native-modules/react-native-app-update/ios/ReactNativeAppUpdate.swift",
+    "native-modules/react-native-network-throttle/ios/OneKeyNetworkThrottle.m",
+  ]) {
+    const plan = planFor(path);
+    assert.equal(plan.mode, "full", path);
+    assert.equal(plan.reason, "unregistered-platform", path);
+    assert.deepEqual(plan.changedModules, [path.split("/")[1]]);
+    assert.deepEqual(scheduledJobs(plan), ["native-overlay-package", "ios-native", "device-utils-store", "android-unit"]);
+  }
+  const android = planFor("native-modules/react-native-network-throttle/android/src/main/AndroidManifest.xml");
+  assert.equal(android.mode, "affected");
+  assert.deepEqual(scheduledJobs(android), ["android-unit"]);
+});
+
+test("shared changes trigger full coverage and report every changed native module regardless of path order", () => {
+  const paths = [
+    ".github/workflows/native-tests.yml",
+    "native-modules/react-native-app-update/ios/ReactNativeAppUpdate.swift",
+    "native-modules/react-native-jpush/package.json",
+    "native-modules/react-native-sni-connect/ios/SniConnectLog.swift",
+    "native-views/react-native-pager-view/docs/SPEC.md",
+  ];
+  const plan = planFor(...paths);
+  assert.equal(plan.mode, "full");
+  assert.equal(plan.reason, "shared-or-unclassified-path");
+  assert.deepEqual(plan.changedModules, [
+    "react-native-app-update", "react-native-jpush", "react-native-pager-view", "react-native-sni-connect",
+  ]);
+  assert.deepEqual(planFor(...paths.toReversed()), plan);
 });
 
 test("full CI retains the registered native suites and Android test reports", () => {

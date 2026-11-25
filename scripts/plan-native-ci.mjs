@@ -52,12 +52,16 @@ const androidModules = new Set([
 // Changes to these inputs can affect shared configuration and the dependency graph itself.
 const buildInput = /(?:^|\/)(?:package\.json|react-native\.config\.[cm]?js|nitro\.json|CMakeLists\.txt|Package\.swift|Podfile(?:\.lock)?|gradle\.properties|project\.pbxproj|[^/]+\.(?:podspec|gradle(?:\.kts)?|lock|cmake|xcconfig))$/;
 const docsOnly = /^(?:docs\/.*\.md|(?:README|CHANGELOG|CONTRIBUTING)\.md)$/;
+const iosInput = /^(?:ios|tests\/(?:ios|swiftpm)|native-tests\/ios)\//;
+const androidInput = /^(?:android|tests\/(?:android|kotlin)|native-tests\/android)\//;
 
 // Runtime lookups can cross workspace boundaries without a link dependency.
 // List the consumer and its providers. Keep these optional at runtime.
 const runtimeDependencies = {
   "react-native-native-overlay": ["react-native-image", "native-logger"], // Toast icons and window diagnostics
-  "react-native-native-list": ["react-native-native-overlay"], // Reorder dismiss suppression
+  "react-native-native-list": [
+    "react-native-native-overlay", "react-native-pager-view",
+  ], // Reorder dismiss suppression and scroll-command cancellation
   "react-native-pager-view": [
     "react-native-native-overlay", "react-native-native-list", "react-native-image", "native-logger",
   ], // Overlay ancestry, nested list, named SVG bridge and diagnostics
@@ -173,12 +177,27 @@ function fullPlan(reason, changedModules = new Set()) {
 
 export function planNativeCI(paths, dependents) {
   const changedModules = new Set();
+  let fullReason;
   for (const path of paths) {
     if (docsOnly.test(path)) continue;
-    const match = /^(native-modules|native-views)\/([^/]+)\/.+$/.exec(path);
-    if (!match || buildInput.test(path)) return fullPlan("shared-or-unclassified-path", changedModules);
-    changedModules.add(match[2]);
+    const match = /^native-(?:modules|views)\/([^/]+)\/(.+)$/.exec(path);
+    if (match) changedModules.add(match[1]);
+    if (!match || buildInput.test(path)) {
+      fullReason = "shared-or-unclassified-path";
+      continue;
+    }
+
+    // A missing check for the changed platform requires a full run.
+    // When coverage is available, selection still includes the whole module.
+    const [, module, input] = match;
+    const hasIosChecks = iosModules.has(module);
+    const hasAndroidChecks = androidModules.has(module);
+    if ((iosInput.test(input) && !hasIosChecks && hasAndroidChecks) ||
+        (androidInput.test(input) && !hasAndroidChecks && hasIosChecks)) {
+      fullReason ??= "unregistered-platform";
+    }
   }
+  if (fullReason) return fullPlan(fullReason, changedModules);
 
   const affected = new Set(changedModules);
   for (const module of affected) {
