@@ -732,7 +732,11 @@ Native prop, layout and attachment updates occur on the UI thread. A change of
 name, color, pixel size or display scale advances a generation and clears the
 previous drawing. Detach/recycle invalidates that generation; only a completion
 matching the current attached generation may bind an image. Reattachment starts
-the current identity again. Before queuing, the view probes the decoded-raster
+the current identity again. On Android a Fabric drop of a still-attached view
+that is drawing an icon (an outgoing screen transition) keeps that frame and its
+bounds until the view detaches, then clears; it invalidates pending work at drop
+time. The Android view therefore does not opt into Fabric view recycling, whose
+pool zeroes the bounds of dropped views. Before queuing, the view probes the decoded-raster
 LRU synchronously on the UI thread; a hit binds in the same frame (no blank frame
 on remount or recycle). The probe never reads assets or loads the manifest, so
 a cold process still takes the asynchronous path. Decoding runs off the UI thread with at most two
