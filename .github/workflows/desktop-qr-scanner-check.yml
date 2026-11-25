@@ -42,5 +42,6 @@ jobs:
           npm run build -- "$BUILD_TARGET"
       - name: Verify capture, decode and pause/resume behavior
         run: |
+          npm ci --ignore-scripts --no-audit --no-fund
           npm test
           node --test ../../scripts/qr-scanner-pause.test.mjs
