@@ -265,6 +265,32 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
         received.clear()
       }
     }
+    icons.getJSONObject(0).put("actionKey", "copy")
+    val reversed = JSONArray().put(icons.getJSONObject(1)).put(icons.getJSONObject(0))
+    for (expanded in listOf(false, true)) {
+      instrumentation.runOnMainSync { column.put("actions", icons); bind() }
+      instrumentation.waitForIdleSync()
+      val down = SystemClock.uptimeMillis()
+      fun touchCopy(action: Int) {
+        val copy = bounds("copy")
+        val y = if (expanded) copy.top - 1f else copy.exactCenterY()
+        val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, copy.exactCenterX(), y, 0)
+        try { row.dispatchTouchEvent(event) } finally { event.recycle() }
+      }
+      instrumentation.runOnMainSync {
+        touchCopy(MotionEvent.ACTION_DOWN)
+        column.put("actions", reversed)
+        bind()
+      }
+      instrumentation.waitForIdleSync()
+      instrumentation.runOnMainSync {
+        assertTrue(bounds("copy").left > bounds("open").left)
+        touchCopy(MotionEvent.ACTION_UP)
+      }
+      instrumentation.waitForIdleSync()
+      assertEquals("reordered button, expanded=$expanded", listOf("copy"), received)
+      received.clear()
+    }
     instrumentation.runOnMainSync {
       column.remove("actions")
       bind()

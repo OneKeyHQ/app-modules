@@ -119,12 +119,18 @@ final class NativeListMarketMetricsTests: XCTestCase {
     XCTAssertTrue(pressed.superview === column)
     _ = target.perform(release, with: pressed)
     XCTAssertEqual(received, ["copy"])
+    let originalX = pressed.frame.midX
+    try bind("below", Array(actions.reversed()))
+    XCTAssertGreaterThan(pressed.frame.midX, originalX)
+    XCTAssertTrue(column.hitTest(pressed.center, with: nil) === pressed)
+    _ = target.perform(release, with: pressed)
+    XCTAssertEqual(received, ["copy", "copy"])
     var replaced = actions
     replaced[0]["actionKey"] = "explorer"
     try bind("below", replaced)
     XCTAssertNil(pressed.superview)
     _ = target.perform(release, with: pressed)
-    XCTAssertEqual(received, ["copy"])
+    XCTAssertEqual(received, ["copy", "copy"])
     try bind("inline", [])
     XCTAssertFalse(cell.root.arrangedSubviews.first!.subviews[0].subviews.contains { $0 is NativeListIconButton })
   }
@@ -136,14 +142,23 @@ final class NativeListMarketMetricsTests: XCTestCase {
                      "container": ["contentVerticalAlignment": "top"]]
     var address: [String: Any] = ["key": "address", "width": 80, "text": "One two three four five",
       "secondaryText": "Holder", "actions": [["name": "Copy3Outline", "actionKey": "copy", "accessibilityLabel": "Copy"]]]
-    for placement in ["inline", "below"] {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+    defer { view.dispose() }
+    let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    data["size"] = "small"
+    for (index, placement) in ["inline", "below"].enumerated() {
       address["actionPlacement"] = placement
       data["tableColumns"] = [address, ["key": "value", "text": "42"]]
       let model = try NativeListItem(data: data)
       let fonts = NativeListFontFamilies()
-      let height = try XCTUnwrap(NativeListRendererRegistry.measure(model, width: 320, theme: nil, layout: "linear", fonts: fonts))
+      let snapshot: [String: Any] = ["schemaVersion": 1, "generation": index + 1,
+        "layout": ["kind": "linear"], "rows": [data]]
+      view.applySnapshotJson(String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self))
+      view.layoutIfNeeded()
+      let height = view.collectionView(collection, layout: collection.collectionViewLayout,
+        sizeForItemAt: IndexPath(item: 0, section: 0)).height
       if placement == "inline" {
-        XCTAssertEqual(height, 56)
+        XCTAssertEqual(height, 48)
         continue
       }
       let cell = NativeListBoundedTableCell(frame: CGRect(x: 0, y: 0, width: 320, height: height))

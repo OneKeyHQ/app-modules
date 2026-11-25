@@ -4522,6 +4522,32 @@ describe.each([true, false])(
       expect(applyRowPatches(before, patches!).rows).toEqual(after.rows);
     });
 
+    it.each(['inline', 'below'] as const)(
+      'clears table buttons while retaining %s placement',
+      (actionPlacement) => {
+        const first = { ...columns[0], actionPlacement };
+        const action = {
+          name: 'Copy3Outline',
+          actionKey: 'copy',
+          accessibilityLabel: 'Copy',
+        };
+        const before = validateSnapshot(
+          snapshot([{
+            ...compact,
+            tableColumns: [{ ...first, actions: [action] }, columns[1]],
+          }])
+        );
+        const tableColumns = [{ ...first, actions: [] }, columns[1]];
+        const result = applyOwnedNativePatches(before, [
+          { type: 'dataRow', key: compact.key, changes: { tableColumns } },
+        ]);
+        expect(result.snapshot.rows[0]).toMatchObject({ tableColumns });
+        expect(JSON.parse(result.json)[0].changes.tableColumns).toEqual(
+          tableColumns
+        );
+      }
+    );
+
     it('requires a table patch array before normalizing nested images', () => {
       const before = snapshot([
         {

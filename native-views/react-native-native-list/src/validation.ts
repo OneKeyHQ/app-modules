@@ -1097,12 +1097,12 @@ function assertTableColumns(
     }
     if (
       column.actionPlacement !== undefined &&
-      (!column.actions?.length ||
+      (column.actionKey !== undefined ||
         !['inline', 'below'].includes(column.actionPlacement))
     )
       fail(
         field + '.actionPlacement',
-        'requires icon actions and inline or below placement'
+        'requires a passive cell and inline or below placement'
       );
     if (column.leading !== undefined) {
       const leading = protocolObject(column.leading, field + '.leading');
@@ -4389,8 +4389,7 @@ function sanitizeTableColumns(columns: unknown[]) {
       });
     } else delete next.actions;
     if (
-      !Array.isArray(next.actions) ||
-      !next.actions.length ||
+      next.actionKey !== undefined ||
       (next.actionPlacement !== 'inline' && next.actionPlacement !== 'below')
     )
       delete next.actionPlacement;

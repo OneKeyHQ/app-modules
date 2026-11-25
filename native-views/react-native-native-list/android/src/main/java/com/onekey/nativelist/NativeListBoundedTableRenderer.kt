@@ -22,7 +22,20 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
       addView(labels, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
     }
     private val actions = LinearLayout(context)
-    private class IconDelegate(bounds: Rect, val icon: View) : TouchDelegate(bounds, icon)
+    private inner class IconDelegate(private val initial: Rect, val icon: View) : TouchDelegate(initial, icon) {
+      private val current = Rect()
+      override fun onTouchEvent(event: MotionEvent): Boolean {
+        // TouchDelegate keeps its original bounds for the gesture, even if the icon moves.
+        icon.getDrawingRect(current)
+        offsetDescendantRectToMyCoords(icon, current)
+        val adjusted = MotionEvent.obtain(event)
+        try {
+          adjusted.offsetLocation((initial.centerX() - current.centerX()).toFloat(),
+            (initial.centerY() - current.centerY()).toFloat())
+          return super.onTouchEvent(adjusted)
+        } finally { adjusted.recycle() }
+      }
+    }
     private fun removeIcon(index: Int) {
       val icon = actions.getChildAt(index)
       if ((touchDelegate as? IconDelegate)?.icon === icon) touchDelegate = null
@@ -41,7 +54,10 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
       val size = NativeListScale.dp(resources, 16)
       val gap = NativeListScale.dp(resources, 6)
       inlineWidth = if (below) 0 else count * (size + gap)
-      while (actions.childCount > count) removeIcon(actions.childCount - 1)
+      val keys = (0 until count).map { descriptors!!.getJSONObject(it).getString("actionKey") }
+      for (i in actions.childCount - 1 downTo 0) {
+        if (actions.getChildAt(i).tag !in keys) removeIcon(i)
+      }
       val parent = if (below) labels else content
       if (actions.parent !== parent || count == 0) {
         (actions.parent as? LinearLayout)?.removeView(actions)
@@ -51,12 +67,20 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
       }
       for (i in 0 until count) {
         val descriptor = descriptors!!.getJSONObject(i)
-        val key = descriptor.getString("actionKey")
-        val previous = actions.getChildAt(i)
-        if (previous != null && previous.tag != key) removeIcon(i)
-        val icon = previous?.takeIf { it.tag == key } as? OneKeyIconView ?: OneKeyIconView(context).also {
+        val key = keys[i]
+        val icon = actions.findViewWithTag<OneKeyIconView>(key) ?: OneKeyIconView(context).also {
           it.tag = key
-          actions.addView(it, i, LayoutParams(size, size).apply { if (i > 0) marginStart = gap })
+          actions.addView(it, i, LayoutParams(size, size))
+        }
+        if (actions.getChildAt(i) !== icon) {
+          // There are at most two icons. Move the sibling behind this one without detaching either.
+          actions.bringChildToFront(actions.getChildAt(i))
+        }
+        val params = icon.layoutParams as LayoutParams
+        val margin = if (i == 0) 0 else gap
+        if (params.marginStart != margin) {
+          params.marginStart = margin
+          icon.layoutParams = params
         }
         icon.iconName = descriptor.getString("name")
         icon.glyphSizeDp = 16

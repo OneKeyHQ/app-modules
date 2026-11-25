@@ -17,24 +17,29 @@ private final class TableCellContent: UIView {
   var onIconPress: ((String, UIView) -> Void)?
   var actionsBelow = false
   func bindActions(_ actions: [[String: Any]], disabled: Bool, color: UIColor) {
-    let count = min(2, actions.count)
-    while iconButtons.count > count { removeIcon(at: iconButtons.count - 1) }
-    for (index, action) in actions.prefix(count).enumerated() {
+    let descriptors = actions.prefix(2)
+    for index in iconButtons.indices.reversed() where !descriptors.contains(where: {
+      $0.string("actionKey") == iconButtons[index].actionKey
+    }) {
+      removeIcon(at: index)
+    }
+    iconButtons = descriptors.map { action in
       let key = action.string("actionKey")
-      if index == iconButtons.count || iconButtons[index].actionKey != key {
-        if index < iconButtons.count { removeIcon(at: index) }
-        let icon = TableActionButton(type: .custom)
+      let icon: TableActionButton
+      if let existing = iconButtons.first(where: { $0.actionKey == key }) {
+        icon = existing
+      } else {
+        icon = TableActionButton(type: .custom)
         icon.actionKey = key
         icon.addTarget(self, action: #selector(pressIcon(_:)), for: .touchUpInside)
-        iconButtons.insert(icon, at: index)
         addSubview(icon)
       }
-      let icon = iconButtons[index]
       icon.tintColor = color
       icon.bindIcon(action.string("name"), size: CGSize(width: 16, height: 16))
       icon.isEnabled = !disabled
       icon.accessibilityTraits = disabled ? [.button, .notEnabled] : .button
       icon.accessibilityLabel = action.string("accessibilityLabel")
+      return icon
     }
   }
   private func removeIcon(at index: Int) {
@@ -148,11 +153,18 @@ final class NativeListBoundedTableCell: NativeListRendererCell {
     style["lineGap"] = style["lineGap"] ?? 0
     return style
   }
+  private static func hasBelowActions(_ columns: [[String: Any]]) -> Bool {
+    columns.contains { $0.string("actionPlacement") == "below" && !$0.dictionaries("actions").isEmpty }
+  }
+
+  override class func appliesSizePreset(_ item: NativeListItem) -> Bool {
+    // The measured height already includes the minimum space for the action dock.
+    item.data.string("size") != "small" || !hasBelowActions(item.data.dictionaries("tableColumns"))
+  }
   override class func measure(_ item: NativeListItem, width: CGFloat, theme: [String: Any]?,
     layout: String, fonts: NativeListFontFamilies) -> CGFloat? {
     let columns = item.data.dictionaries("tableColumns")
-    guard columns.contains(where: { $0.string("actionPlacement") == "below" && !$0.dictionaries("actions").isEmpty })
-      else { return 56 }
+    guard hasBelowActions(columns) else { return 56 }
     let style = tableStyle(item)
     let widths = columns.map { ($0["width"] as? NSNumber).map { CGFloat($0.doubleValue) } }
     let flexible = TableStrip.flexibleWidth(widths, width: width - 2 * CGFloat(style.double("horizontalPadding")),
