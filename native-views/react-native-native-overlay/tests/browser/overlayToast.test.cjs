@@ -44,8 +44,13 @@ before(async () => {
             onAction: (id) => window.callbacks.push(id),
           });
         window.redrawStatus = (status, colors) => store.update(statusSpec(status, colors));
+        window.moveStatus = (id, position) => {
+          const { spec } = store.getSnapshot().items.find((item) => item.spec.id === id);
+          store.update({ ...spec, position });
+        };
         window.dismissStatus = () => store.dismiss('status');
         window.configure = (config) => store.configure(config);
+        window.dismissNotification = () => store.dismiss('notification');
         window.showToast = (duration, position) => {
           store.show({
             id: 'notification', layout: 'notification',
@@ -103,7 +108,9 @@ async function statusPage(t, reducedMotion = 'no-preference') {
   const context = await browser.newContext({ reducedMotion });
   t.after(() => context.close());
   const page = await context.newPage();
-  await page.setContent('<!doctype html><main>Page content</main>');
+  await page.setContent(
+    '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><main>Page content</main>'
+  );
   await page.addScriptTag({ content: bundle });
   return page;
 }
@@ -414,7 +421,7 @@ for (const [position, direction] of [
   ['top-center', -1],
   ['bottom-right', 1],
 ]) {
-  test(`a ${position} swipe stays vertical after sideways drift`, async (t) => {
+  test(`a ${position} swipe stays horizontal after vertical drift`, async (t) => {
     const { context, page, card } = await showToast(t, {
       touch: true,
       position,
@@ -424,22 +431,22 @@ for (const [position, direction] of [
     const x = Math.round(box.x + box.width / 2);
     const y = Math.round(box.y + box.height / 2);
     await send('touchStart', [{ x, y }]);
-    await send('touchMove', [{ x, y: y + 28 * direction }]);
+    await send('touchMove', [{ x: x + 48 * direction, y }]);
     await page.waitForFunction(
       (amount) =>
         document
           .querySelector('[data-onekey-toast]')
           .style.getPropertyValue('--swipe-amount') === amount,
-      `${28 * direction}px`,
+      `${48 * direction}px`,
       { timeout: 1000 }
     );
-    await send('touchMove', [{ x: x + 41, y: y + 30 * direction }]);
+    await send('touchMove', [{ x: x + 72 * direction, y: y + 41 }]);
     await page.waitForFunction(
       (amount) =>
         document
           .querySelector('[data-onekey-toast]')
           .style.getPropertyValue('--swipe-amount') === amount,
-      `${30 * direction}px`,
+      `${72 * direction}px`,
       { timeout: 1000 }
     );
     await send('touchEnd');
@@ -495,7 +502,9 @@ test('card adopts concentric squircle chrome, a hover close button and an inline
       actionRadius: getComputedStyle(action).borderRadius,
       alignedVertically:
         Math.abs(
-          tileBox.top + tileBox.height / 2 - (actionBox.top + actionBox.height / 2)
+          tileBox.top +
+            tileBox.height / 2 -
+            (actionBox.top + actionBox.height / 2)
         ) <= 1,
     };
   });
@@ -525,42 +534,78 @@ test('card adopts concentric squircle chrome, a hover close button and an inline
 test('a wide icon action falls back on a narrow viewport and returns inline on resize', async (t) => {
   const page = await statusPage(t, 'reduce');
   await page.setViewportSize({ width: 320, height: 800 });
-  await page.evaluate(() => window.showStatus('success', {
-    actions: [{
-      id: 'view', label: 'MMMMMMMM', borderRadius: 28,
-      color: '#111', backgroundColor: '#eee', fontSize: 14, lineHeight: 20,
-      fontWeight: '600', paddingHorizontal: 10, paddingVertical: 4,
-      icon: { kind: 'icon', name: 'View', size: 20, color: '#111' },
-      iconGap: 4,
-    }],
-  }));
+  await page.evaluate(() =>
+    window.showStatus('success', {
+      actions: [
+        {
+          id: 'view',
+          label: 'MMMMMMMM',
+          borderRadius: 28,
+          color: '#111',
+          backgroundColor: '#eee',
+          fontSize: 14,
+          lineHeight: 20,
+          fontWeight: '600',
+          paddingHorizontal: 10,
+          paddingVertical: 4,
+          icon: { kind: 'icon', name: 'View', size: 20, color: '#111' },
+          iconGap: 4,
+        },
+      ],
+    })
+  );
   const action = page.getByRole('button', { name: 'MMMMMMMM' });
   assert.equal(await action.getAttribute('data-okt-inline-action'), null);
-  assert.equal(await action.evaluate((node) => getComputedStyle(node).borderRadius), '28px');
-  assert.ok(await page.locator('[data-okt-message-col]').evaluate((node) => node.clientWidth >= 96));
+  assert.equal(
+    await action.evaluate((node) => getComputedStyle(node).borderRadius),
+    '28px'
+  );
+  assert.ok(
+    await page
+      .locator('[data-okt-message-col]')
+      .evaluate((node) => node.clientWidth >= 96)
+  );
   await page.setViewportSize({ width: 820, height: 800 });
   await page.waitForSelector('[data-okt-inline-action]', { timeout: 2000 });
-  assert.equal(await action.evaluate((node) => getComputedStyle(node).borderRadius), '11px');
+  assert.equal(
+    await action.evaluate((node) => getComputedStyle(node).borderRadius),
+    '11px'
+  );
 });
 
 test('touch browsers keep close available to the keyboard and the idle corner passes through touch', async (t) => {
   for (const isMobile of [true, false]) {
-    const context = await browser.newContext({ hasTouch: true, isMobile, reducedMotion: 'reduce' });
+    const context = await browser.newContext({
+      hasTouch: true,
+      isMobile,
+      reducedMotion: 'reduce',
+    });
     t.after(() => context.close());
     const page = await context.newPage();
-    await page.setContent('<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">');
+    await page.setContent(
+      '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">'
+    );
     await page.addScriptTag({ content: bundle });
     await page.evaluate(() => window.showStatus('success'));
     const close = page.getByRole('button', { name: 'Close toast' });
     const box = await close.boundingBox();
     assert.ok(box);
-    assert.equal(await close.evaluate((node) => getComputedStyle(node).pointerEvents), 'none');
+    assert.equal(
+      await close.evaluate((node) => getComputedStyle(node).pointerEvents),
+      'none'
+    );
     await page.touchscreen.tap(box.x + 10, box.y + 10);
-    assert.equal(await page.locator('[data-onekey-toast]').getAttribute('data-removed'), 'false');
+    assert.equal(
+      await page.locator('[data-onekey-toast]').getAttribute('data-removed'),
+      'false'
+    );
     await page.locator('[data-onekey-toast]').focus();
     await page.keyboard.press('Tab');
     assert.ok(await close.evaluate((node) => node === document.activeElement));
-    assert.equal(await close.evaluate((node) => getComputedStyle(node).opacity), '1');
+    assert.equal(
+      await close.evaluate((node) => getComputedStyle(node).opacity),
+      '1'
+    );
     await page.keyboard.press('Enter');
     await close.waitFor({ state: 'detached' });
   }
@@ -570,18 +615,29 @@ test('restoring motion resumes the ring without replaying a mounted status anima
   const page = await statusPage(t);
   await page.evaluate(() => window.showStatus('loading'));
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.waitForFunction(() => !document.querySelector('[data-okt-status-motion]'));
+  await page.waitForFunction(
+    () => !document.querySelector('[data-okt-status-motion]')
+  );
   const ring = page.locator('[data-okt-status-ring]');
-  assert.equal(await ring.evaluate((node) => getComputedStyle(node).animationName), 'none');
+  assert.equal(
+    await ring.evaluate((node) => getComputedStyle(node).animationName),
+    'none'
+  );
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.waitForFunction(() =>
-    document.querySelector('[data-okt-status-ring]').getAnimations().length === 1
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-okt-status-ring]').getAnimations()
+        .length === 1
   );
   assert.equal(await page.locator('[data-okt-status-motion]').count(), 0);
   await page.evaluate(() => window.showStatus('success'));
-  await page.waitForSelector('[data-okt-status-outgoing]', { state: 'attached' });
+  await page.waitForSelector('[data-okt-status-outgoing]', {
+    state: 'attached',
+  });
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.waitForSelector('[data-okt-status-outgoing]', { state: 'detached' });
+  await page.waitForSelector('[data-okt-status-outgoing]', {
+    state: 'detached',
+  });
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   assert.equal(await page.locator('[data-okt-status-motion]').count(), 0);
 });
@@ -589,17 +645,31 @@ test('restoring motion resumes the ring without replaying a mounted status anima
 test('a compact action stays reachable when lowering it would exceed the content height cap', async (t) => {
   const page = await statusPage(t, 'reduce');
   await page.setViewportSize({ width: 232, height: 800 });
-  await page.evaluate(() => window.showStatus('success', {
-    title: {
-      paragraphs: [[{ text: 'Done' }]], color: '#111', fontSize: 16,
-      lineHeight: 24, fontWeight: '600',
-    },
-    actions: [{
-      id: 'view', label: 'View', borderRadius: 28, color: '#111',
-      backgroundColor: '#eee', fontSize: 14, lineHeight: 20,
-      fontWeight: '600', paddingHorizontal: 10, paddingVertical: 4,
-    }],
-  }));
+  await page.evaluate(() =>
+    window.showStatus('success', {
+      title: {
+        paragraphs: [[{ text: 'Done' }]],
+        color: '#111',
+        fontSize: 16,
+        lineHeight: 24,
+        fontWeight: '600',
+      },
+      actions: [
+        {
+          id: 'view',
+          label: 'View',
+          borderRadius: 28,
+          color: '#111',
+          backgroundColor: '#eee',
+          fontSize: 14,
+          lineHeight: 20,
+          fontWeight: '600',
+          paddingHorizontal: 10,
+          paddingVertical: 4,
+        },
+      ],
+    })
+  );
   const action = page.getByRole('button', { name: 'View', exact: true });
   assert.equal(await action.getAttribute('data-okt-inline-action'), null);
   await action.focus();
@@ -626,14 +696,23 @@ test('a compact action stays reachable when lowering it would exceed the content
 });
 
 test('toasts beyond the display limit regain keyboard access only when visible', async (t) => {
-  const context = await browser.newContext({ hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
+  const context = await browser.newContext({
+    hasTouch: true,
+    isMobile: true,
+    reducedMotion: 'reduce',
+  });
   t.after(() => context.close());
   const page = await context.newPage();
-  await page.setContent('<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">');
+  await page.setContent(
+    '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">'
+  );
   await page.addScriptTag({ content: bundle });
   await page.evaluate(() => {
     for (let index = 0; index < 4; index += 1) {
-      window.showStatus('success', { id: `status-${index}`, testID: `status-${index}` });
+      window.showStatus('success', {
+        id: `status-${index}`,
+        testID: `status-${index}`,
+      });
     }
   });
 
@@ -642,19 +721,30 @@ test('toasts beyond the display limit regain keyboard access only when visible',
   const cdp = await context.newCDPSession(page);
   const { nodes } = await cdp.send('Accessibility.getFullAXTree');
   const accessibleCloseButtons = nodes.filter(
-    (node) => !node.ignored && node.role?.value === 'button' && node.name?.value === 'Close toast'
+    (node) =>
+      !node.ignored &&
+      node.role?.value === 'button' &&
+      node.name?.value === 'Close toast'
   );
   assert.equal(accessibleCloseButtons.length, 3);
   await oldest.locator('[data-close-button]').focus();
-  assert.equal(await oldest.evaluate((node) => node.contains(document.activeElement)), false);
+  assert.equal(
+    await oldest.evaluate((node) => node.contains(document.activeElement)),
+    false
+  );
 
-  const frontClose = page.getByTestId('status-3').getByRole('button', { name: 'Close toast' });
+  const frontClose = page
+    .getByTestId('status-3')
+    .getByRole('button', { name: 'Close toast' });
   await frontClose.press('Enter');
   await frontClose.waitFor({ state: 'detached', timeout: 2000 });
   const nowVisibleClose = oldest.getByRole('button', { name: 'Close toast' });
   assert.equal(await oldest.getAttribute('data-visible'), 'true');
   await nowVisibleClose.focus();
-  assert.equal(await nowVisibleClose.evaluate((node) => node === document.activeElement), true);
+  assert.equal(
+    await nowVisibleClose.evaluate((node) => node === document.activeElement),
+    true
+  );
 });
 
 test('collapsed back toast actions regain keyboard access after expansion or promotion', async (t) => {
@@ -663,21 +753,34 @@ test('collapsed back toast actions regain keyboard access after expansion or pro
     window.showStatus('success', {
       id: 'back',
       testID: 'back',
-      actions: [{
-        id: 'view', label: 'View', testID: 'view', borderRadius: 11,
-        color: '#111', backgroundColor: '#eee', fontSize: 14, lineHeight: 20,
-        fontWeight: '600', paddingHorizontal: 14, paddingVertical: 4,
-      }],
+      actions: [
+        {
+          id: 'view',
+          label: 'View',
+          testID: 'view',
+          borderRadius: 11,
+          color: '#111',
+          backgroundColor: '#eee',
+          fontSize: 14,
+          lineHeight: 20,
+          fontWeight: '600',
+          paddingHorizontal: 14,
+          paddingVertical: 4,
+        },
+      ],
     });
     window.showStatus('success', { id: 'front', testID: 'front' });
   });
 
   const back = page.getByTestId('back');
   const action = back.getByTestId('view');
-  const actionHasFocus = () => action.evaluate((node) => node === document.activeElement);
+  const actionHasFocus = () =>
+    action.evaluate((node) => node === document.activeElement);
   const backClose = back.getByRole('button', { name: 'Close toast' });
   await backClose.focus();
-  assert.ok(await backClose.evaluate((node) => node === document.activeElement));
+  assert.ok(
+    await backClose.evaluate((node) => node === document.activeElement)
+  );
   await action.focus();
   assert.equal(await actionHasFocus(), false);
 
@@ -696,7 +799,9 @@ test('collapsed back toast actions regain keyboard access after expansion or pro
   await page.keyboard.press('Enter');
   assert.deepEqual(await callbacks(page), ['view']);
 
-  const frontClose = page.getByTestId('front').getByRole('button', { name: 'Close toast' });
+  const frontClose = page
+    .getByTestId('front')
+    .getByRole('button', { name: 'Close toast' });
   await frontClose.press('Enter');
   await frontClose.waitFor({ state: 'detached', timeout: 2000 });
   assert.equal(await back.getAttribute('data-front'), 'true');
@@ -712,16 +817,27 @@ test('collapse focus handoff preserves layout when a focus listener shows anothe
     window.showStatus('success', {
       id: 'back',
       testID: 'back',
-      actions: [{
-        id: 'view', label: 'View', testID: 'view', borderRadius: 11,
-        color: '#111', backgroundColor: '#eee', fontSize: 14, lineHeight: 20,
-        fontWeight: '600', paddingHorizontal: 14, paddingVertical: 4,
-      }],
+      actions: [
+        {
+          id: 'view',
+          label: 'View',
+          testID: 'view',
+          borderRadius: 11,
+          color: '#111',
+          backgroundColor: '#eee',
+          fontSize: 14,
+          lineHeight: 20,
+          fontWeight: '600',
+          paddingHorizontal: 14,
+          paddingVertical: 4,
+        },
+      ],
     });
     window.showStatus('success', { id: 'front', testID: 'front' });
 
     function showOnShellFocus(event) {
-      if (event.target !== document.querySelector('[data-testid="back"]')) return;
+      if (event.target !== document.querySelector('[data-testid="back"]'))
+        return;
       document.removeEventListener('focusin', showOnShellFocus);
       window.showStatus('success', { id: 'new', testID: 'new' });
     }
@@ -736,10 +852,20 @@ test('collapse focus handoff preserves layout when a focus listener shows anothe
 
   assert.ok(await back.evaluate((node) => node === document.activeElement));
   assert.deepEqual(
-    await page.locator('[data-onekey-toast]').evaluateAll((cards) =>
-      cards.map((card) => [card.dataset.testid, card.dataset.index, card.style.getPropertyValue('--offset')])
-    ),
-    [['new', '0', '0px'], ['front', '1', '66px'], ['back', '2', '132px']]
+    await page
+      .locator('[data-onekey-toast]')
+      .evaluateAll((cards) =>
+        cards.map((card) => [
+          card.dataset.testid,
+          card.dataset.index,
+          card.style.getPropertyValue('--offset'),
+        ])
+      ),
+    [
+      ['new', '0', '0px'],
+      ['front', '1', '66px'],
+      ['back', '2', '132px'],
+    ]
   );
 
   await page.keyboard.press('Alt+t');
@@ -749,10 +875,460 @@ test('collapse focus handoff preserves layout when a focus listener shows anothe
     outside.id = 'outside-focus';
     document.body.append(outside);
     document.activeElement.dispatchEvent(
-      new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape', bubbles: true })
+      new KeyboardEvent('keydown', {
+        code: 'Escape',
+        key: 'Escape',
+        bubbles: true,
+      })
     );
     outside.focus();
   });
   assert.equal(await back.getAttribute('data-expanded'), 'false');
-  assert.equal(await page.evaluate(() => document.activeElement.id), 'outside-focus');
+  assert.equal(
+    await page.evaluate(() => document.activeElement.id),
+    'outside-focus'
+  );
+});
+
+test('narrow toast lanes and all three cards share the viewport center', async (t) => {
+  const page = await statusPage(t, 'reduce');
+  for (const width of [320, 390, 600]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const direction of ['ltr', 'rtl']) {
+      await page.evaluate((dir) => {
+        document.documentElement.dir = dir;
+      }, direction);
+      for (const position of ['top-left', 'top-center', 'bottom-right']) {
+        await page.evaluate((anchor) => {
+          for (const id of ['back', 'middle', 'front']) {
+            window.showStatus('success', { id, position: anchor });
+          }
+        }, position);
+
+        const lane = page.locator('[data-onekey-toast-toaster]');
+        const laneBox = await lane.boundingBox();
+        const label = `${width}px ${direction} ${position}`;
+        const expectedWidth = Math.min(356, width - 32);
+        assert.equal(laneBox.x, (width - expectedWidth) / 2, label);
+        assert.equal(laneBox.width, expectedWidth, label);
+
+        const cards = lane.locator('[data-onekey-toast]');
+        const assertCardCenters = async () => {
+          const centers = await cards.evaluateAll((nodes) =>
+            nodes.map((node) => {
+              const { left, right } = node.getBoundingClientRect();
+              return (left + right) / 2;
+            })
+          );
+          assert.equal(centers.length, 3, label);
+          for (const center of centers) {
+            assert.ok(Math.abs(center - width / 2) < 0.1, label);
+          }
+        };
+        await assertCardCenters();
+        await page.keyboard.press('Alt+t');
+        assert.equal(await cards.first().getAttribute('data-expanded'), 'true');
+        await assertCardCenters();
+        await page.keyboard.press('Escape');
+        assert.equal(
+          await cards.first().getAttribute('data-expanded'),
+          'false'
+        );
+      }
+    }
+  }
+
+  await page.setViewportSize({ width: 601, height: 800 });
+  const desktopLane = await page
+    .locator('[data-onekey-toast-toaster][data-x-position="right"]')
+    .boundingBox();
+  assert.equal(desktopLane.width, 356);
+  assert.equal(601 - desktopLane.x - desktopLane.width, 32);
+});
+
+async function foldablePage(t) {
+  const page = await statusPage(t, 'reduce');
+  await page.setViewportSize({ width: 740, height: 800 });
+  const client = await page.context().newCDPSession(page);
+  const fold = (displayFeature) =>
+    client.send('Emulation.setDeviceMetricsOverride', {
+      width: 740,
+      height: 800,
+      screenWidth: 740,
+      screenHeight: 800,
+      deviceScaleFactor: 1,
+      mobile: true,
+      displayFeature,
+    });
+  return { page, fold, client };
+}
+
+test('a separating fold keeps a toast stack centered inside its selected pane', async (t) => {
+  const { page, fold } = await foldablePage(t);
+  await fold({ orientation: 'vertical', offset: 340, maskLength: 30 });
+
+  const lane = page.locator('[data-onekey-toast-toaster]');
+  const showStack = (position, dir = 'ltr') =>
+    page.evaluate(
+      ({ position, dir }) => {
+        document.documentElement.dir = dir;
+        for (const id of ['back', 'middle', 'front']) {
+          window.showStatus('success', { id, position });
+        }
+      },
+      { position, dir }
+    );
+
+  await page.waitForFunction(
+    () => matchMedia('(horizontal-viewport-segments: 2)').matches
+  );
+  for (const [position, dir, left, width] of [
+    ['top-center', 'ltr', 16, 308],
+    ['top-center', 'rtl', 386, 338],
+    ['top-left', 'rtl', 16, 308],
+    ['bottom-right', 'ltr', 386, 338],
+  ]) {
+    await showStack(position, dir);
+    const bounds = await lane.boundingBox();
+    assert.equal(bounds.x, left);
+    assert.equal(bounds.width, width);
+    await page.keyboard.press('Alt+t');
+    const boundsByCard = await lane
+      .locator('[data-onekey-toast]')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const bounds = node.getBoundingClientRect();
+          return [bounds.x, bounds.width];
+        })
+      );
+    assert.deepEqual(boundsByCard, Array(3).fill([left, width]));
+  }
+
+  await fold({ orientation: 'horizontal', offset: 370, maskLength: 30 });
+  await page.waitForFunction(
+    () => matchMedia('(vertical-viewport-segments: 2)').matches
+  );
+  await showStack('bottom-center');
+  assert.equal((await lane.boundingBox()).y, 768);
+
+  await fold();
+  await page.waitForFunction(
+    () => !matchMedia('(vertical-viewport-segments: 2)').matches
+  );
+  assert.equal((await lane.boundingBox()).x, 192);
+  assert.equal((await lane.boundingBox()).width, 356);
+  assert.deepEqual(await callbacks(page), []);
+});
+
+test('folded lanes merge by direction and remeasure a moved toast at its new width', async (t) => {
+  const { page, fold } = await foldablePage(t);
+  await fold({ orientation: 'vertical', offset: 255, maskLength: 30 });
+  await page.waitForFunction(
+    () => matchMedia('(horizontal-viewport-segments: 2)').matches
+  );
+  await page.evaluate(() => {
+    window.showStatus('success', {
+      id: 'left',
+      testID: 'left',
+      position: 'top-left',
+    });
+    window.showStatus('success', {
+      id: 'center',
+      testID: 'center',
+      position: 'top-center',
+    });
+    window.showStatus('success', {
+      id: 'right',
+      testID: 'right',
+      position: 'top-right',
+      title: {
+        paragraphs: [
+          [
+            {
+              text: 'Securely review the transaction details and the amount before choosing to continue.',
+            },
+          ],
+        ],
+        fontSize: 14,
+        lineHeight: 20,
+        color: '#111',
+      },
+      actions: [
+        {
+          id: 'continue',
+          label: 'Review transaction details',
+          borderRadius: 11,
+          color: '#111',
+          backgroundColor: '#eee',
+          fontSize: 14,
+          lineHeight: 20,
+          paddingHorizontal: 12,
+          paddingVertical: 4,
+        },
+      ],
+    });
+  });
+  const laneFor = (id) =>
+    page.locator('[data-onekey-toast-toaster]').filter({
+      has: page.getByTestId(id),
+    });
+  const cardIDs = (lane) =>
+    lane
+      .locator('[data-onekey-toast]')
+      .evaluateAll((nodes) => nodes.map((node) => node.dataset.testid));
+  assert.deepEqual(await cardIDs(laneFor('center')), ['center', 'left']);
+  const right = page.getByTestId('right');
+  const originalHeight = (await right.boundingBox()).height;
+
+  await page.evaluate(() => {
+    document.documentElement.dir = 'rtl';
+  });
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-testid="center"]').parentElement ===
+      document.querySelector('[data-testid="right"]').parentElement
+  );
+  assert.deepEqual(await cardIDs(laneFor('center')), ['right', 'center']);
+  await page.evaluate(() => window.moveStatus('right', 'top-left'));
+  assert.deepEqual(await cardIDs(laneFor('left')), ['right', 'left']);
+  const bounds = await right.boundingBox();
+  assert.ok(
+    bounds.height > originalHeight,
+    JSON.stringify({ originalHeight, bounds })
+  );
+  const action = right.getByRole('button', {
+    name: 'Review transaction details',
+  });
+  const buttonBounds = await action.boundingBox();
+  assert.ok(buttonBounds.y + buttonBounds.height <= bounds.y + bounds.height);
+  await action.click();
+  assert.deepEqual(await callbacks(page), ['continue']);
+
+  await fold();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-testid="center"]').parentElement !==
+      document.querySelector('[data-testid="left"]').parentElement
+  );
+});
+
+test('expanded toasts and their actions stay within either horizontal-fold pane after obstruction', async (t) => {
+  const { page, fold } = await foldablePage(t);
+  await fold({ orientation: 'horizontal', offset: 225, maskLength: 380 });
+  await page.waitForFunction(
+    () => matchMedia('(vertical-viewport-segments: 2)').matches
+  );
+  for (const position of ['top-center', 'bottom-center']) {
+    await page.evaluate((position) => {
+      window.configure({ topObstruction: 100 });
+      for (const id of ['oldest', 'middle', 'newest']) {
+        window.showStatus('success', {
+          id,
+          testID: id,
+          position,
+          actions: [
+            {
+              id,
+              label: 'View transaction details',
+              borderRadius: 11,
+              color: '#111',
+              backgroundColor: '#eee',
+              fontSize: 14,
+              lineHeight: 20,
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+            },
+          ],
+        });
+      }
+    }, position);
+    await page.keyboard.press('Alt+t');
+    const cards = page.locator('[data-onekey-toast]');
+    assert.equal(await cards.first().getAttribute('data-expanded'), 'true');
+    for (const card of await cards.all()) {
+      assert.equal(await card.getAttribute('data-pane-constrained'), '');
+      const bounds = await card.boundingBox();
+      const action = card.getByRole('button', {
+        name: 'View transaction details',
+      });
+      const buttonBounds = await action.boundingBox();
+      assert.ok(buttonBounds.y >= bounds.y);
+      assert.ok(
+        buttonBounds.y + buttonBounds.height <= bounds.y + bounds.height
+      );
+      if (position === 'top-center') {
+        assert.ok(
+          bounds.y >= 108 && bounds.y + bounds.height < 225,
+          JSON.stringify(bounds)
+        );
+      } else {
+        assert.ok(
+          bounds.y > 605 && bounds.y + bounds.height <= 768,
+          JSON.stringify(bounds)
+        );
+      }
+    }
+    await page
+      .getByTestId('oldest')
+      .getByRole('button', { name: 'View transaction details' })
+      .click();
+    await page.keyboard.press('Escape');
+  }
+  assert.deepEqual(await callbacks(page), ['oldest', 'oldest']);
+});
+
+for (const reason of ['swipe', 'programmatic']) {
+  test(`reduced motion immediately completes an in-flight ${reason} exit`, async (t) => {
+    const page = await statusPage(t);
+    await page.clock.install();
+    await page.evaluate(() => window.showToast(Infinity, 'top-center'));
+    const card = page.locator('[data-onekey-toast]');
+    await card.click({ trial: true });
+    await page.clock.pauseAt(Date.now() + 1000);
+    if (reason === 'swipe') {
+      const { x, y, width, height } = await card.boundingBox();
+      await page.mouse.move(x + width / 2, y + height / 2);
+      await page.mouse.down();
+      await page.mouse.move(x + width / 2 + 80, y + height / 2, { steps: 3 });
+      await page.mouse.up();
+    } else {
+      await page.evaluate(() => window.dismissNotification());
+    }
+    assert.equal(await card.getAttribute('data-removed'), 'true');
+    assert.deepEqual(await callbacks(page), []);
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await card.waitFor({ state: 'detached', timeout: 1000 });
+    assert.deepEqual(await callbacks(page), [reason]);
+    await page.clock.runFor(250);
+    assert.deepEqual(await callbacks(page), [reason]);
+  });
+}
+
+test('keyboard focus follows a stack across the narrow layout breakpoint', async (t) => {
+  const page = await statusPage(t, 'reduce');
+  await page.setViewportSize({ width: 601, height: 800 });
+  await page.clock.install();
+  await page.evaluate(() => {
+    for (const id of ['older', 'newer']) {
+      window.showStatus('success', {
+        id,
+        position: 'bottom-right',
+        duration: 1000,
+      });
+    }
+  });
+  await page.keyboard.press('Alt+t');
+  const oldLane = page.locator(
+    '[data-onekey-toast-toaster][data-x-position="right"]'
+  );
+  assert.equal(
+    await oldLane.evaluate((lane) => lane === document.activeElement),
+    true
+  );
+
+  await page.setViewportSize({ width: 600, height: 800 });
+  const newLane = page.locator(
+    '[data-onekey-toast-toaster][data-x-position="center"]'
+  );
+  await newLane.waitFor({ state: 'attached' });
+  assert.equal(
+    await newLane.evaluate((lane) => lane === document.activeElement),
+    true
+  );
+  await page.keyboard.press('Escape');
+  const cards = newLane.locator('[data-onekey-toast]');
+  assert.equal(await cards.first().getAttribute('data-expanded'), 'false');
+  await page.clock.runFor(1100);
+  assert.equal(await cards.count(), 0);
+});
+
+test('a toast with no pane space excludes its action from keyboard focus until space returns', async (t) => {
+  const { page, fold, client } = await foldablePage(t);
+  await fold({ orientation: 'horizontal', offset: 230, maskLength: 24 });
+  await page.waitForFunction(
+    () => matchMedia('(vertical-viewport-segments: 2)').matches
+  );
+  await page.evaluate(() => {
+    window.configure({ topObstruction: 260, topObstructionRoom: 4 });
+    window.showStatus('success', {
+      actions: [
+        {
+          id: 'view',
+          label: 'View details',
+          borderRadius: 11,
+          color: '#111',
+          backgroundColor: '#eee',
+          fontSize: 14,
+          lineHeight: 20,
+          paddingHorizontal: 12,
+          paddingVertical: 4,
+        },
+      ],
+    });
+  });
+  const card = page.locator('[data-onekey-toast]');
+  const action = card.locator('[data-okt-action]');
+  assert.equal(
+    await card.evaluate((node) =>
+      node.style.getPropertyValue('--toast-pane-scale')
+    ),
+    '0'
+  );
+  assert.equal(await card.getAttribute('data-visible'), 'false');
+  await action.focus();
+  assert.equal(
+    await action.evaluate((node) => node === document.activeElement),
+    false
+  );
+  const hasAccessibleAction = async () => {
+    const { nodes } = await client.send('Accessibility.getFullAXTree');
+    return nodes.some(
+      (node) =>
+        !node.ignored &&
+        node.role?.value === 'button' &&
+        node.name?.value === 'View details'
+    );
+  };
+  assert.equal(await hasAccessibleAction(), false);
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await callbacks(page), []);
+
+  await page.evaluate(() => window.configure({ topObstruction: 0 }));
+  assert.equal(await card.getAttribute('data-visible'), 'true');
+  assert.equal(await hasAccessibleAction(), true);
+  await card.getByRole('button', { name: 'View details' }).focus();
+  await page.keyboard.press('Enter');
+  assert.deepEqual(await callbacks(page), ['view']);
+});
+
+test('a folded centered toast follows direction set by a root CSS class', async (t) => {
+  const { page, fold } = await foldablePage(t);
+  await fold({ orientation: 'vertical', offset: 300, maskLength: 28 });
+  await page.waitForFunction(
+    () => matchMedia('(horizontal-viewport-segments: 2)').matches
+  );
+  await page.addStyleTag({ content: 'html.rtl-fixture { direction: rtl; }' });
+  await page.evaluate(() => {
+    window.showStatus('success', { id: 'fixed', position: 'top-right' });
+    window.showStatus('success', { id: 'center', testID: 'center' });
+  });
+  const card = page.getByTestId('center');
+  assert.equal(await card.getAttribute('data-x-position'), 'left');
+
+  await page.evaluate(() =>
+    document.documentElement.classList.add('rtl-fixture')
+  );
+  assert.equal(await card.getAttribute('data-x-position'), 'right');
+  assert.equal(await card.locator('..').getAttribute('dir'), 'rtl');
+  assert.equal(
+    await card.locator('..').locator('[data-onekey-toast]').count(),
+    2
+  );
+
+  await page.evaluate(() =>
+    document.documentElement.classList.remove('rtl-fixture')
+  );
+  assert.equal(await card.getAttribute('data-x-position'), 'left');
+  assert.equal(await card.locator('..').getAttribute('dir'), 'ltr');
 });

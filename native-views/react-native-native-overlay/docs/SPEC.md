@@ -1465,20 +1465,39 @@ Web draws an SVG `<use>` of the `href` the caller supplies.
 All platforms adopt the shared RareUI-inspired concentric geometry (`10` card
 padding, `36` status tile, `11` tile/inline-action radius, `21` card radius)
 and unified spring motion (`card` stiffness/damping `460/36`, `tile` `620/50`,
-`glyph` `920/40`, exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`).
+`glyph` `920/40`; swipe exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`;
+non-interactive exit `190 ms` `cubic-bezier(0.2, 0, 0, 1)`).
 
 | Behaviour | Web | iOS / Android |
 | --- | --- | --- |
-| Position | Per toast or toaster; default bottom-right | Always top-centre |
+| Position | Per toast or toaster; default bottom-right. At viewport widths up to `600 px`, every position uses a horizontally centered lane with equal insets of at least `16 px`, enlarged equally to respect horizontal safe areas. The top or bottom anchor still applies. | Always top-centre |
 | Stack | Newest in front, 3 visible, `10 px` gap, depth scale `1 - 0.05 * i` with back bodies faded. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Newest in front, 3 visible, `10 pt/dp` peek, depth scale `1 - 0.05 * i` with collapsed back heights matched to front card and back bodies faded (`240 ms`). Tap stack to expand; an outside tap passes through and collapses the stack. |
-| Card | `356 px` wide, `10 px` padding, `21 px` concentric radius + `1 px` outer ring (`box-shadow`) + layered shadow, corner close button revealed by mouse/pen hover or keyboard focus | Content box from `contentWidth` plus `10 pt/dp` padding, `21 pt/dp` continuous radius + `1 px` hairline ring (`0.06` light / `0.09` dark), subtle shadow |
-| Enter / exit | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)` | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; exit `200 ms` `cubic-bezier(0.32, 0.72, 0, 1)` (collapsed back exit scales to `0.92`) |
+| Card | Fills the available lane up to `356 px` at every viewport width, `10 px` padding, `21 px` concentric radius + `1 px` outer ring (`box-shadow`) + layered shadow, corner close button revealed by mouse/pen hover or keyboard focus | Content box from `contentWidth` plus `10 pt/dp` padding. Caps outer width at `596 pt/dp` and fits the available area with at least `16 pt/dp` side insets in standard window sizes. Uses a `21 pt/dp` continuous radius + `1 px` hairline ring (`0.06` light / `0.09` dark), subtle shadow |
+| Enter / exit | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; swipe exit slides horizontally off-side (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, scale `0.98`, opacity `0`); non-interactive exit (`timeout`, `programmatic`, `close`) dissolves gently (`190 ms` `cubic-bezier(0.2, 0, 0, 1)`: front/expanded drifts `16 px` toward the anchored edge and scales to `0.95`; collapsed back drifts `12 px` and scales to `0.90`) | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; swipe exit slides horizontally off-side (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, scale `0.98`, opacity `0`); non-interactive exit (`timeout`, `programmatic`) dissolves gently (`190 ms` `cubic-bezier(0.2, 0, 0, 1)`: front/expanded drifts `-16 pt/dp` and scales to `0.95`; collapsed back drifts `-12 pt/dp` and scales to `0.90`) |
 | Message status entrance & settle | Tile at `110 ms` (`620/50` spring), glyph pop at `155 ms` (`920/40` spring), `180 ms` stroke draw at `210 ms` (~`390 ms` total); settle crossfades text/actions over `160 ms` `cubic-bezier(0.2, 0, 0, 1)` (`translateY 3 -> 0`) | Same spring parameters, stroke draw, tile bump/tint, and `160 ms` content crossfade (`CASpringAnimation` on iOS, analytical spring step response on Android) |
-| `close` reported | `200 ms` after the exit starts | `220 ms` after the exit starts |
+| `close` reported | `200 ms` after the exit starts, or immediately with reduced motion | `220 ms` after the exit starts, or immediately with reduced motion |
 | Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed or the stack is expanded; resuming continues the remaining time |
-| Swipe | Away from the anchored edge (down on bottom groups, up on top groups). Once a vertical swipe starts, only vertical displacement counts. Release dismisses at 20 px or above 0.11 px/ms. | Up on front card (or any card when expanded); 32 pt, or 12 pt at 600 pt/s; dragging down moves a quarter as far; settle-back uses the card spring |
-| Top obstruction | Inline `top` on top groups, 220 ms | Cards translate within the full-window touch stage, 220 ms |
+| Swipe | Horizontal (left or right) across all viewports (desktop and small screen). Once a horizontal swipe starts (`|dx| > |dy|`), only horizontal displacement counts and opacity attenuates down to `0.35`. Release dismisses at `64 px`, or `20 px` at `0.5 px/ms`, exiting to the dragged side while remaining cards promote vertically on the card spring. | Horizontal (left or right) on front card (collapsed) or any visible card (expanded); `64 pt/dp`, or `20 pt/dp` at `500 pt/dp/s`; card follows 1:1 on X with opacity attenuating down to `0.35`; exits to the dragged side (`200 ms`) while remaining cards promote vertically on the card spring; settle-back uses the card spring |
+| Top obstruction | Top groups animate the inset in 220 ms | Cards translate within the full-window touch stage, 220 ms |
 | Reduced motion | Transitions off (media query) | Every animation is instant |
+
+In a browser viewport that reports two segments along an axis, a left or right
+anchor chooses the matching side and a centered anchor chooses the leading
+segment in the document's current computed text direction. Top and bottom
+anchors choose the corresponding row of segments.
+Web positions that resolve to the same lane share a stack. Moving a card
+between lanes remeasures its content at the destination width. In Android
+windows that report a separating display feature, the toaster chooses the
+wider side of a vertical fold, using the leading side for ties, and the upper
+side of a horizontal fold. The native anchor remains
+top-center within that area. iOS and windows with no reported separator use the
+available window bounds. Insets, resizing and posture changes recalculate the
+placement without restarting toast lifetimes. On Web and Android, a
+horizontal fold limits the settled stack to the space between its anchor
+(after any obstruction shift) and the hinge-facing edge of its pane. If the
+stack exceeds this budget, its cards and gaps scale together so every action
+stays in the pane. On Web, cards with no remaining pane space are excluded
+from pointer input, keyboard focus and the accessibility tree until space returns.
 
 A single eligible message action stays inline when its measured width, icon
 and spacing leave at least 96 px/pt/dp for the text column. A smaller text
@@ -1490,7 +1509,7 @@ through settlement.
 
 Native collapsed back cards accept taps in their visible bounds to expand
 the stack. Movement past the drag threshold does not expand a back card.
-An active swipe is cancelled when the card loses swipe eligibility. The
+On all platforms, a swipe is cancelled when the card loses swipe eligibility. The
 front card exposes an accessibility action to expand a collapsed stack. On
 iOS the expansion control is a separate accessibility element alongside the
 front card's visible text, links and action buttons. Its focus frame uses
@@ -1503,10 +1522,12 @@ visible toasts on touch browsers. The hidden control is transparent to
 pointer input. Cards beyond the display limit are excluded from focus and
 the accessibility tree until they become visible. While the stack is
 collapsed, the hidden bodies of back cards are also excluded. After the
-stack layout updates, focus inside a newly collapsed body moves to its
-visible shell if focus has stayed with the toast. The shell keeps its
+stack layout updates, focus on a lane that no longer contains active cards
+follows its cards to a destination lane. Focus inside a newly collapsed body
+moves to its visible shell if focus has stayed with the toast. The shell keeps its
 close button accessible. Enabling Reduce Motion
-finalizes mounted status animations and keeps loading rings static.
+finalizes mounted status animations and keeps loading rings static. On Web
+it also completes in-flight exits with their original dismissal reasons.
 Restoring motion resumes the loading ring. iOS action buttons use
 color-only press feedback while motion reduction is active.
 
@@ -1518,7 +1539,14 @@ the result tile bump (`[1, 1.07, 1]` over `260 ms`) use
 with `cubic-bezier(0.4, 0, 0.2, 1)`. The status loading ring completes one
 turn every `850 ms` on every platform.
 
-On Web, the card captures the pointer after recognizing a swipe. Ordinary
+On Web, the card captures the pointer after recognizing a swipe. Flick speed
+uses input event timestamps from the last 80 ms, including movement before
+the swipe locks. Android measures both swipe velocity and displacement in
+window coordinates. While an eligible Android card is held during a pane
+resize, its visible horizontal displacement continues to match the input.
+The short flick must be moving toward its exit side on every platform.
+Holding the card still and then moving it slowly below the
+distance threshold settles it back in place. Ordinary
 clicks and taps activate the pressable row, buttons, or links through their
 own handlers. Each press ends independently on release or cancellation.
 Card removal, reuse, or repositioning clears its presses, and window blur

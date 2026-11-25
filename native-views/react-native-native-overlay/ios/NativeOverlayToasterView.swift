@@ -9,21 +9,28 @@ private enum ToasterMetrics {
   static let stackScaleStep: CGFloat = 0.05
   static let enterFadeDuration: TimeInterval = 0.22
   static let exitDuration: TimeInterval = 0.2
+  static let autoExitDuration: TimeInterval = 0.19
   static let obstructionDuration: TimeInterval = 0.22
   /// Keep leaving cards mounted long enough for the exit transition and close callback.
   static let removeDelay: TimeInterval = 0.22
-  /// Extra travel above the top edge for the resting-out position.
+  /// Extra travel above the top edge for the resting-out position on enter.
   static let enterOvershoot: CGFloat = 32
   static let hiddenScale: CGFloat = 0.96
-  static let collapsedLeaveScale: CGFloat = 0.92
+  static let swipeExitScale: CGFloat = 0.98
+  static let swipeExitMargin: CGFloat = 48
+  static let autoExitOffset: CGFloat = 16
+  static let autoExitScale: CGFloat = 0.95
+  static let collapsedBackExitOffset: CGFloat = 12
+  static let collapsedLeaveScale: CGFloat = 0.9
   static let fallbackHeight: CGFloat = 56
-  static let swipeDistance: CGFloat = 32
-  static let swipeFlickDistance: CGFloat = 12
-  static let swipeFlickVelocity: CGFloat = 600
-  /// Dragging against the dismiss direction moves the card a quarter as far.
-  static let swipeResistance: CGFloat = 4
+  static let swipeDistance: CGFloat = 64
+  static let swipeFlickDistance: CGFloat = 20
+  static let swipeFlickVelocity: CGFloat = 500
+  static let swipeOpacityRange: CGFloat = 260
+  static let swipeMinOpacity: CGFloat = 0.35
   static let fallbackMargin: CGFloat = 64
   static let fallbackMaxPageWidth: CGFloat = 640
+  static let minSideInset: CGFloat = 16
 }
 
 /// Spring timing shared with Web and Android: mass 1, stiffness 460, damping 36.
@@ -34,7 +41,7 @@ private func toastSpringAnimator() -> UIViewPropertyAnimator {
   return UIViewPropertyAnimator(duration: 0, timingParameters: timing)
 }
 
-/// Brisk ease-out curve for card exit and obstruction shifts.
+/// Brisk ease-out curve for interactive swipe exit and obstruction shifts.
 private func toastExitAnimator(duration: TimeInterval = ToasterMetrics.exitDuration) -> UIViewPropertyAnimator {
   UIViewPropertyAnimator(
     duration: duration,
@@ -44,9 +51,39 @@ private func toastExitAnimator(duration: TimeInterval = ToasterMetrics.exitDurat
   )
 }
 
+/// Gentle ease-out curve for non-interactive timeout / programmatic exit.
+private func toastAutoExitAnimator() -> UIViewPropertyAnimator {
+  UIViewPropertyAnimator(
+    duration: ToasterMetrics.autoExitDuration,
+    timingParameters: UICubicTimingParameters(
+      controlPoint1: CGPoint(x: 0.2, y: 0), controlPoint2: CGPoint(x: 0, y: 1)
+    )
+  )
+}
+
 /// Lets touches that miss every card fall through to the windows below.
 private final class ToastPassthroughView: UIView {
   var onOutsideTouch: (() -> Void)?
+  var onGeometryChanged: (() -> Void)?
+  private var lastLayoutSize: CGSize = .zero
+
+  override func didMoveToSuperview() {
+    super.didMoveToSuperview()
+    lastLayoutSize = bounds.size
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    if lastLayoutSize != bounds.size {
+      lastLayoutSize = bounds.size
+      onGeometryChanged?()
+    }
+  }
+
+  override func safeAreaInsetsDidChange() {
+    super.safeAreaInsetsDidChange()
+    onGeometryChanged?()
+  }
 
   override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
     let hit = super.hitTest(point, with: event)
@@ -67,6 +104,7 @@ private final class ToastEntry {
   /// Parent of the card: carries the stack position, the card the drag.
   let slot: UIView = ToastPassthroughView()
   var leaving = false
+  var collapsedBackExit = false
   var reason = "programmatic"
   /// Seconds of lifetime left, counted while not paused.
   var remaining: TimeInterval?
@@ -75,6 +113,8 @@ private final class ToastEntry {
   var removal: Timer?
   var pan: UIPanGestureRecognizer?
   var dragStart: CGFloat = 0
+  var swipeExitSign: CGFloat = 1
+  var lastTargetY: CGFloat?
   var dragged = false
   var isPressed = false
   var entered = false
@@ -111,6 +151,10 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     self.hostView = hostView
     super.init()
     stage.addSubview(cards)
+    stage.onGeometryChanged = { [weak self] in
+      guard let self, self.entries.contains(where: { $0.slot.superview != nil }) else { return }
+      self.layout(animated: false)
+    }
     NotificationCenter.default.addObserver(
       self, selector: #selector(layoutChanged), name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil
     )
@@ -297,7 +341,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   private func attach(_ entry: ToastEntry) {
     guard ensureWindow() != nil else { return }
     cards.addSubview(entry.slot)
-    entry.card.alpha = 0
+    entry.slot.alpha = 0
     UIAccessibility.post(notification: .announcement, argument: entry.card.announcement)
   }
 
@@ -307,6 +351,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
 
   private func dismiss(_ entry: ToastEntry, reason: String, report: Bool) {
     guard !entry.leaving else { return }
+    entry.collapsedBackExit = !expanded && entry.lastActiveIndex > 0 && reason != "swipe"
     entry.leaving = true
     entry.card.cancelStatusMotion()
     entry.reason = reason
@@ -314,6 +359,12 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     entry.timer = nil
     if report {
       onEvent?(entry.id, entry.item.generation, "dismiss", reason)
+    }
+    if reduceMotion {
+      remove(entry, report: true)
+      layout(animated: false)
+      syncTimers()
+      return
     }
     entry.removal = Timer.scheduledTimer(
       withTimeInterval: ToasterMetrics.removeDelay, repeats: false
@@ -354,9 +405,12 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     layout(animated: true)
   }
 
-  private func contentWidth(in root: UIView) -> CGFloat {
-    config.contentWidth
-      ?? min(root.bounds.width, ToasterMetrics.fallbackMaxPageWidth) - ToasterMetrics.fallbackMargin
+  private func contentWidth(availableWidth: CGFloat) -> CGFloat {
+    let requested = config.contentWidth.flatMap { $0.isFinite ? $0 : nil }
+      ?? availableWidth - ToasterMetrics.fallbackMargin
+    let maximum = ToasterMetrics.fallbackMaxPageWidth - ToasterMetrics.fallbackMargin
+    let available = availableWidth - 2 * (ToasterMetrics.minSideInset + NativeOverlayToastCardView.horizontalPadding)
+    return max(0, min(requested, maximum, available))
   }
 
   /// How far the whole stack rides down to rest under the top obstruction.
@@ -374,8 +428,9 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
 
   private func layout(animated: Bool) {
     guard let root = window?.rootViewController?.view, !entries.isEmpty else { return }
-    let width = contentWidth(in: root)
     let safe = root.safeAreaInsets
+    let availableWidth = root.bounds.width - safe.left - safe.right
+    let width = contentWidth(availableWidth: availableWidth)
     let top = safe.top + ToasterMetrics.topOffset
     let animate = animated && !reduceMotion
 
@@ -415,7 +470,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     var expandedOffset: CGFloat = 0
     for entry in entries {
       let naturalSize = entry.card.naturalSize
-      let x = safe.left + (root.bounds.width - safe.left - safe.right - naturalSize.width) / 2
+      let x = safe.left + (availableWidth - naturalSize.width) / 2
       let displayHeight: CGFloat
       let targetY: CGFloat
       let targetScale: CGFloat
@@ -423,13 +478,30 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       let hideBody: Bool
       let interactive: Bool
 
+      let swipeExit = entry.leaving && entry.reason == "swipe"
+      var targetCardTransform: CGAffineTransform?
+
       if entry.leaving {
         displayHeight = entry.card.bounds.height > 0 ? entry.card.bounds.height : naturalSize.height
-        let hidden = -(displayHeight > 0 ? displayHeight : ToasterMetrics.fallbackHeight)
-          - safe.top - ToasterMetrics.enterOvershoot
-        let collapsedBackExit = !expanded && entry.lastActiveIndex > 0 && entry.reason != "swipe"
-        targetY = collapsedBackExit ? top - displayHeight * 0.4 : top + hidden
-        targetScale = collapsedBackExit ? ToasterMetrics.collapsedLeaveScale : ToasterMetrics.hiddenScale
+        let collapsedBackExit = entry.collapsedBackExit
+        let baseY = entry.lastTargetY ?? top
+        if swipeExit {
+          targetY = baseY
+          targetScale = ToasterMetrics.swipeExitScale
+          let exitDistance = max(
+            naturalSize.width + ToasterMetrics.swipeExitMargin,
+            root.bounds.width * 0.5 + naturalSize.width * 0.5
+          )
+          targetCardTransform = CGAffineTransform(
+            translationX: entry.swipeExitSign * exitDistance, y: 0
+          )
+        } else if collapsedBackExit {
+          targetY = baseY - ToasterMetrics.collapsedBackExitOffset
+          targetScale = ToasterMetrics.collapsedLeaveScale
+        } else {
+          targetY = baseY - ToasterMetrics.autoExitOffset
+          targetScale = ToasterMetrics.autoExitScale
+        }
         targetAlpha = 0
         hideBody = collapsedBackExit
         interactive = false
@@ -449,6 +521,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
           targetScale = 1
           hideBody = false
         }
+        entry.lastTargetY = targetY
         if isVisible {
           expandedOffset += naturalSize.height + ToasterMetrics.gutter
         }
@@ -487,8 +560,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       let canSwipe = interactive && !hideBody
       if entry.pan?.isEnabled != canSwipe {
         if !canSwipe && entry.dragged && !entry.leaving {
-          entry.card.layer.removeAllAnimations()
-          entry.card.transform = .identity
+          settle(entry.card)
           entry.dragged = false
         }
         entry.pan?.isEnabled = canSwipe
@@ -502,31 +574,34 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
         entry.slot.transform = targetTransform
         entry.card.applyDisplayHeight(displayHeight)
         entry.card.center = CGPoint(x: displaySize.width / 2, y: displaySize.height / 2)
+        if let targetCardTransform {
+          entry.card.transform = targetCardTransform
+        }
       }
 
       if animate {
         if entry.leaving {
-          let animator = toastExitAnimator()
+          let animator = swipeExit ? toastExitAnimator() : toastAutoExitAnimator()
           animator.addAnimations {
             applyGeometry()
-            entry.card.alpha = targetAlpha
+            entry.slot.alpha = targetAlpha
           }
           animator.startAnimation()
         } else {
           let spring = toastSpringAnimator()
           spring.addAnimations(applyGeometry)
           spring.startAnimation()
-          if entry.card.alpha != targetAlpha {
+          if entry.slot.alpha != targetAlpha {
             let fade = UIViewPropertyAnimator(
               duration: ToasterMetrics.enterFadeDuration, curve: .easeOut
             )
-            fade.addAnimations { entry.card.alpha = targetAlpha }
+            fade.addAnimations { entry.slot.alpha = targetAlpha }
             fade.startAnimation()
           }
         }
       } else {
         applyGeometry()
-        entry.card.alpha = targetAlpha
+        entry.slot.alpha = targetAlpha
       }
     }
   }
@@ -559,6 +634,14 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   }
 
   // MARK: Gestures
+
+  func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    if let pan = gestureRecognizer as? UIPanGestureRecognizer {
+      let velocity = pan.velocity(in: stage)
+      return abs(velocity.x) > abs(velocity.y)
+    }
+    return true
+  }
 
   func gestureRecognizer(
     _ gestureRecognizer: UIGestureRecognizer,
@@ -612,27 +695,29 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
     let active = activeEntries
     if !expanded && active.count > 1 && entry !== active.first { return }
     let card = entry.card
-    // Toasts land at the top, so the dismiss direction is up.
     let translation = gesture.translation(in: stage)
     switch gesture.state {
     case .began:
       card.layer.removeAllAnimations()
-      entry.dragStart = card.transform.ty
+      entry.dragStart = card.transform.tx
       entry.dragged = true
     case .changed:
-      let drag = translation.y <= 0
-        ? entry.dragStart + translation.y
-        : entry.dragStart + translation.y / ToasterMetrics.swipeResistance
-      card.transform = CGAffineTransform(translationX: 0, y: drag)
+      let dragX = entry.dragStart + translation.x
+      card.transform = CGAffineTransform(translationX: dragX, y: 0)
+      card.alpha = max(
+        ToasterMetrics.swipeMinOpacity,
+        1 - abs(dragX) / ToasterMetrics.swipeOpacityRange
+      )
     case .ended:
-      let distance = -translation.y
-      let velocity = -gesture.velocity(in: stage).y
+      let totalX = entry.dragStart + translation.x
+      let distance = abs(totalX)
+      let velocity = gesture.velocity(in: stage).x * (totalX >= 0 ? 1 : -1)
       let dismissed =
-        translation.y < 0 && abs(distance) > abs(translation.x)
-        && (distance >= ToasterMetrics.swipeDistance
-          || (distance >= ToasterMetrics.swipeFlickDistance
-            && velocity >= ToasterMetrics.swipeFlickVelocity))
+        distance >= ToasterMetrics.swipeDistance
+        || (distance >= ToasterMetrics.swipeFlickDistance
+          && velocity >= ToasterMetrics.swipeFlickVelocity)
       if dismissed {
+        entry.swipeExitSign = totalX >= 0 ? 1 : -1
         dismiss(entry, reason: "swipe", report: true)
       } else {
         settle(card)
@@ -649,10 +734,14 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   private func settle(_ card: UIView) {
     guard !reduceMotion else {
       card.transform = .identity
+      card.alpha = 1
       return
     }
     let animator = toastSpringAnimator()
-    animator.addAnimations { card.transform = .identity }
+    animator.addAnimations {
+      card.transform = .identity
+      card.alpha = 1
+    }
     animator.startAnimation()
   }
 }

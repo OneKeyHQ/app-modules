@@ -207,7 +207,8 @@ export interface IOverlayToasterConfig {
   cardBorderColor?: string;
   /**
    * Native: the width of the card's content box. The card adds its own
-   * padding around it.
+   * padding around it and constrains the result to the available area and
+   * a maximum outer width of 596 points or dp.
    */
   contentWidth?: number;
   /** Native: the tallest a card's content may grow. */
