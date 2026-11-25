@@ -2205,9 +2205,9 @@ static void testIosUpgradeSessionAndTokenReports(void) {
             [defaults setObject:@"synthetic-source-password" forKey:@"com.onekey.jcore.password"];
             [defaults setObject:@"synthetic-source-rid" forKey:@"com.onekey.jcore.registration_id"];
             JCOREConfiguration *unscopedStart = [JCOREConfiguration new];
-            ASSERT_TRUE([unscopedStart.fallbackRegistrationID isEqualToString:@"synthetic-source-rid"] &&
+            ASSERT_TRUE(unscopedStart.fallbackRegistrationID.length == 0 &&
                         unscopedStart.uid == 0 && unscopedStart.password.length == 0 && unscopedStart.registrationID.length == 0,
-                        "Pre-setup lookup must expose the unscoped ID without loading active credentials");
+                        "Pre-setup lookup must defer the unscoped ID and credentials until registration selection");
         }
         if (scenario == 2) {
             ASSERT_TRUE([[NSData dataWithContentsOfURL:legacyFile] isEqualToData:legacyCache], "Legacy cache must remain read-only");
@@ -2237,8 +2237,9 @@ static void testIosUpgradeSessionAndTokenReports(void) {
                 requestId:login.requestId uid:login.uid algorithm:login.algorithm statusCode:0 bodyData:loginAcknowledgement];
             ASSERT_TRUE(writeExactBytes(fd, reply.bytes, reply.length), "Upgrade fixture login ACK failed");
             BOOL sawApns = NO;
-            BOOL sawActivity = NO;
-            while (!sawApns || !sawActivity) {
+            BOOL sawActivityStart = NO;
+            BOOL sawActivityUpdate = NO;
+            while (!sawApns || !sawActivityStart || !sawActivityUpdate) {
                 JCOREWireFrame *frame = readSingleClientFrameOnServer(fd);
                 ASSERT_TRUE(frame != nil && frame.uid == expectedUID, "Upgrade reports must use the saved UID");
                 NSData *body = [NSData data];
@@ -2247,14 +2248,23 @@ static void testIosUpgradeSessionAndTokenReports(void) {
                     assertEnvironment(frame.bodyData, skipWireStrings(frame.bodyData, 1), 2);
                     sawApns = YES;
                 } else if (frame.command == JCOREWireCommandLiveActivity) {
-                    assertEnvironment(frame.bodyData, skipWireStrings(frame.bodyData, 2) + 1, 2);
                     NSUInteger aliasOffset = skipWireStrings(frame.bodyData, 1);
-                    NSUInteger aliasLength = skipWireStrings(frame.bodyData, 2) - aliasOffset - 2;
-                    NSString *alias = [[NSString alloc] initWithData:[frame.bodyData subdataWithRange:NSMakeRange(aliasOffset + 2, aliasLength)]
+                    NSUInteger flagOffset = skipWireStrings(frame.bodyData, 2);
+                    assertEnvironment(frame.bodyData, flagOffset + 1, 2);
+                    NSString *tokenHex = [[NSString alloc] initWithData:[frame.bodyData subdataWithRange:NSMakeRange(2, aliasOffset - 2)]
+                                                               encoding:NSUTF8StringEncoding];
+                    NSString *alias = [[NSString alloc] initWithData:[frame.bodyData subdataWithRange:NSMakeRange(aliasOffset + 2, flagOffset - aliasOffset - 2)]
                                                            encoding:NSUTF8StringEncoding];
-                    ASSERT_TRUE([alias isEqualToString:@"upgrade-activity"], "Queued Live Activity must retain its original ID");
-                    body = [JCOREWireProtocol buildLiveActivityResponsePayloadWithStatusCode:0 alias:@"upgrade-activity"];
-                    sawActivity = YES;
+                    uint8_t flag = ((const uint8_t *)frame.bodyData.bytes)[flagOffset];
+                    ASSERT_TRUE([tokenHex isEqualToString:@"746f6b656e"], "Queued Live Activity must retain its original token");
+                    if (flag == 0) {
+                        ASSERT_TRUE([alias isEqualToString:@"upgrade-attributes"], "Queued start token must retain its original attributes type");
+                        sawActivityStart = YES;
+                    } else {
+                        ASSERT_TRUE(flag == 1 && [alias isEqualToString:@"upgrade-activity"], "Queued update token must retain its original activity ID");
+                        sawActivityUpdate = YES;
+                    }
+                    body = [JCOREWireProtocol buildLiveActivityResponsePayloadWithStatusCode:0 alias:alias];
                 }
                 uint8_t version = frame.command == JCOREWireCommandHeartbeat ? 0 : frame.version;
                 NSData *ack = [JCOREWireProtocol encodeServerFrameWithCommand:frame.command version:version
@@ -2268,21 +2278,36 @@ static void testIosUpgradeSessionAndTokenReports(void) {
 
         [config configureWithAppKey:@"" channel:@"test" isProduction:NO advertisingIdentifier:nil];
         [session startIfNeeded];
-        __block BOOL activityAcknowledged = NO;
+        __block BOOL startAcknowledged = NO;
+        __block BOOL updateAcknowledged = NO;
+        NSMutableString *attributes = [NSMutableString stringWithString:@"upgrade-attributes"];
         NSMutableString *activity = [NSMutableString stringWithString:@"upgrade-activity"];
-        [JPUSHService registerLiveActivity:activity pushToken:[@"token" dataUsingEncoding:NSUTF8StringEncoding]
+        NSData *expectedToken = [@"token" dataUsingEncoding:NSUTF8StringEncoding];
+        NSMutableData *mutableToken = [expectedToken mutableCopy];
+        [JPUSHService registerLiveActivity:attributes pushToStartToken:mutableToken
             completion:^(NSInteger code, NSString *activityID, NSData *token, NSInteger sequence) {
-                ASSERT_TRUE(code == 0, "Live Activity queued before setup must complete with the server ACK");
-                activityAcknowledged = YES;
+                ASSERT_TRUE(code == 0 && [activityID isEqualToString:@"upgrade-attributes"] &&
+                            [token isEqualToData:expectedToken] && sequence == 1,
+                            "Start token ACK must echo the submitted attributes type and token");
+                startAcknowledged = YES;
             } seq:1];
+        [JPUSHService registerLiveActivity:activity pushToken:mutableToken
+            completion:^(NSInteger code, NSString *activityID, NSData *token, NSInteger sequence) {
+                ASSERT_TRUE(code == 0 && [activityID isEqualToString:@"upgrade-activity"] &&
+                            [token isEqualToData:expectedToken] && sequence == 2,
+                            "Update token ACK must echo the submitted activity ID and token");
+                updateAcknowledged = YES;
+            } seq:2];
+        [attributes setString:@"different-attributes"];
         [activity setString:@"different-activity"];
+        [mutableToken setData:[@"changed-token" dataUsingEncoding:NSUTF8StringEncoding]];
         [JPUSHService setupWithOption:nil appKey:appKey.uppercaseString channel:@"test" apsForProduction:YES];
         ASSERT_TRUE([[JPUSHService registrationID] isEqualToString:expectedRID], "Upgrade changed the Registration ID");
         for (NSString *obsoleteKey in @[@"com.onekey.jcore.uid", @"com.onekey.jcore.password",
                                         @"com.onekey.jcore.registration_id", @"com.onekey.jcore.device_id"]) {
             ASSERT_TRUE([defaults objectForKey:obsoleteKey] == nil, "Scoped migration left a stale unscoped value");
         }
-        runUntil(^BOOL{ return activityAcknowledged; }, 4, @"Upgrade Live Activity report not acknowledged");
+        runUntil(^BOOL{ return startAcknowledged && updateAcknowledged; }, 4, @"Upgrade Live Activity reports not acknowledged");
         runUntil(^BOOL{ return dispatch_semaphore_wait(reports, DISPATCH_TIME_NOW) == 0; }, 2, @"Upgrade reports were not observed");
         JCOREConfiguration *coldStart = [JCOREConfiguration new];
         ASSERT_TRUE([coldStart.fallbackRegistrationID isEqualToString:expectedRID] &&

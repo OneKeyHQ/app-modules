@@ -108,9 +108,11 @@ static NSString *JPushHexFromData(NSData *data) {
             pushToStartToken:(NSData *)pushToStartToken
                   completion:(JPUSHLiveActivityTokenCompletion)completion
                          seq:(NSInteger)seq {
-    NSString *tokenHex = JPushHexFromData(pushToStartToken);
+    NSString *identifier = [activityAttributes copy];
+    NSData *token = [pushToStartToken copy];
+    NSString *tokenHex = JPushHexFromData(token);
     [[JCORETcpSession shared] reportLiveActivityTokenHex:tokenHex
-                                  aliasOrAttributesType:activityAttributes ?: @""
+                                  aliasOrAttributesType:identifier ?: @""
                                             isPushToken:NO
                                completion:^(JCOREWireFrame *responseFrame, NSError *error) {
         if (completion != nil) {
@@ -119,7 +121,7 @@ static NSString *JPushHexFromData(NSData *data) {
                 ? error.code
                 : (parsed != nil ? parsed.mappedErrorCode : (NSInteger)responseFrame.statusCode);
             dispatch_async(dispatch_get_main_queue(), ^{
-                completion(resCode, activityAttributes, pushToStartToken, seq);
+                completion(resCode, identifier, token, seq);
             });
         }
     }];
@@ -139,9 +141,11 @@ static NSString *JPushHexFromData(NSData *data) {
                      pushToken:(NSData *)pushToken
                     completion:(JPUSHLiveActivityTokenCompletion)completion
                            seq:(NSInteger)seq {
-    NSString *tokenHex = JPushHexFromData(pushToken);
+    NSString *identifier = [liveActivityId copy];
+    NSData *token = [pushToken copy];
+    NSString *tokenHex = JPushHexFromData(token);
     [[JCORETcpSession shared] reportLiveActivityTokenHex:tokenHex
-                                  aliasOrAttributesType:liveActivityId ?: @""
+                                  aliasOrAttributesType:identifier ?: @""
                                             isPushToken:YES
                                completion:^(JCOREWireFrame *responseFrame, NSError *error) {
         if (completion != nil) {
@@ -150,7 +154,7 @@ static NSString *JPushHexFromData(NSData *data) {
                 ? error.code
                 : (parsed != nil ? parsed.mappedErrorCode : (NSInteger)responseFrame.statusCode);
             dispatch_async(dispatch_get_main_queue(), ^{
-                completion(resCode, liveActivityId, pushToken, seq);
+                completion(resCode, identifier, token, seq);
             });
         }
     }];

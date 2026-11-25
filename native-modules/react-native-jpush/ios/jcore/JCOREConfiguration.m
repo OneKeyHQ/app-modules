@@ -53,10 +53,7 @@ static NSDictionary *JCoreStoredRegistration(NSDictionary *registrations, NSStri
 static NSString *JCorePreSetupRegistrationID(NSUserDefaults *defaults) {
     NSDictionary *registrations = [defaults dictionaryForKey:kJCoreKeyRegistrations];
     NSString *lastAppKey = [defaults stringForKey:kJCoreKeyLastConfiguredAppKey];
-    if (lastAppKey.length > 0) {
-        return JCoreNonEmptyString(JCoreStoredRegistration(registrations, lastAppKey)[@"registrationID"]);
-    }
-    return registrations == nil ? [defaults stringForKey:kJCoreKeyRegistrationId] : nil;
+    return JCoreNonEmptyString(JCoreStoredRegistration(registrations, lastAppKey)[@"registrationID"]);
 }
 
 static NSDictionary *JCoreTokenRecord(id storedToken) {
