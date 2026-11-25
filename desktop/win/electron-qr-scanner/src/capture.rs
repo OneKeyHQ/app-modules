@@ -930,6 +930,7 @@ unsafe impl Send for SendReader {}
 #[derive(Default)]
 struct SessionSignalState {
     stopped: bool,
+    accepting_focus: bool,
     focus_requests: Vec<std::sync::mpsc::SyncSender<bool>>,
 }
 
@@ -949,6 +950,7 @@ impl SessionSignal {
     fn stop(&self) {
         if let Ok(mut state) = self.state.lock() {
             state.stopped = true;
+            state.accepting_focus = false;
             for reply in state.focus_requests.drain(..) {
                 let _ = reply.send(false);
             }
@@ -962,7 +964,7 @@ impl SessionSignal {
 
     fn request_focus(&self) -> Option<std::sync::mpsc::Receiver<bool>> {
         let mut state = self.state.lock().ok()?;
-        if state.stopped {
+        if state.stopped || !state.accepting_focus {
             return None;
         }
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
@@ -1485,6 +1487,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
     // Wait until stop(), dispose(), or a fatal stream/preview error, while
     // servicing focus requests on this COM-initialized camera thread.
     if let Ok(mut state) = stop_signal.state.lock() {
+        state.accepting_focus = true;
         loop {
             let requests: Vec<_> = state.focus_requests.drain(..).collect();
             let should_stop = state.stopped || current_gen.load(Ordering::Acquire) != generation;
@@ -1521,6 +1524,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
             state = next;
         }
     }
+    stop_signal.stop();
 
     // Teardown: halt new sample requests, flush, wait for in-flight callback,
     // restore Auto focus, drop reader, and shut down the media source to

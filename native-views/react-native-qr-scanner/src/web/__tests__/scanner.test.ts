@@ -865,6 +865,7 @@ describe('createWebQrScanner camera start', () => {
     let currentSettings = { focusMode: 'continuous' };
     let currentConstraints: MediaTrackConstraints = {
       width: { ideal: 1280 },
+      height: { ideal: 720 },
       advanced: [{ zoom: 2 } as MediaTrackConstraintSet],
     };
     const applyConstraints = jest.fn(async (next: MediaTrackConstraints) => {
@@ -892,20 +893,17 @@ describe('createWebQrScanner camera start', () => {
     await expect(scanner.focus({ x: 0.3, y: 0.4 })).resolves.toBe(true);
     expect(applyConstraints).toHaveBeenCalledTimes(2);
     expect(applyConstraints).toHaveBeenNthCalledWith(1, {
-      width: { ideal: 1280 },
       advanced: [
         { zoom: 2 },
         { focusMode: 'single-shot', pointsOfInterest: [{ x: 0.3, y: 0.4 }] },
       ],
     });
     expect(applyConstraints).toHaveBeenNthCalledWith(2, {
-      width: { ideal: 1280 },
       advanced: [{ zoom: 2 }, { focusMode: 'single-shot' }],
     });
 
     await jest.advanceTimersByTimeAsync(5000);
     expect(applyConstraints).toHaveBeenLastCalledWith({
-      width: { ideal: 1280 },
       advanced: [{ zoom: 2 }, { focusMode: 'continuous' }],
     });
     scanner.dispose();

@@ -73,6 +73,7 @@ type FocusTrackCapabilities = MediaTrackCapabilities & {
 
 type FocusTrackSettings = MediaTrackSettings & {
   focusMode?: string;
+  pointsOfInterest?: { x: number; y: number }[];
 };
 
 type FocusConstraintSet = MediaTrackConstraintSet & {
@@ -80,40 +81,80 @@ type FocusConstraintSet = MediaTrackConstraintSet & {
   pointsOfInterest?: { x: number; y: number }[];
 };
 
+const NON_IMAGE_CAPTURE_CONSTRAINT_KEYS = new Set([
+  'width',
+  'height',
+  'aspectRatio',
+  'frameRate',
+  'facingMode',
+  'resizeMode',
+  'deviceId',
+  'groupId',
+]);
+
+function stripFocusAndBasicVideoKeys(source: Record<string, unknown>): MediaTrackConstraintSet {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (
+      key === 'advanced' ||
+      key === 'focusMode' ||
+      key === 'pointsOfInterest' ||
+      NON_IMAGE_CAPTURE_CONSTRAINT_KEYS.has(key) ||
+      value === undefined
+    ) {
+      continue;
+    }
+    result[key] = value;
+  }
+  return result as MediaTrackConstraintSet;
+}
+
 function buildFocusConstraints(
   track: MediaStreamTrack,
   focusConstraint: FocusConstraintSet
 ): MediaTrackConstraints {
-  const current = (track.getConstraints?.() ?? {}) as MediaTrackConstraints & FocusConstraintSet;
-  const {
-    advanced: currentAdvanced,
-    focusMode: _topFocusMode,
-    pointsOfInterest: _topPointsOfInterest,
-    ...restTopLevel
-  } = current;
+  const current = (track.getConstraints?.() ?? {}) as Record<string, unknown>;
+  const topLevel = stripFocusAndBasicVideoKeys(current);
   const preservedAdvanced: MediaTrackConstraintSet[] = [];
-  if (Array.isArray(currentAdvanced)) {
-    for (const entry of currentAdvanced) {
+  if (Array.isArray(current.advanced)) {
+    for (const entry of current.advanced) {
       if (!entry || typeof entry !== 'object') continue;
-      const {
-        focusMode: _entryFocusMode,
-        pointsOfInterest: _entryPointsOfInterest,
-        ...restEntry
-      } = entry as FocusConstraintSet;
-      if (Object.keys(restEntry).length > 0) {
-        preservedAdvanced.push(restEntry);
+      const cleaned = stripFocusAndBasicVideoKeys(entry as Record<string, unknown>);
+      if (Object.keys(cleaned).length > 0) {
+        preservedAdvanced.push(cleaned);
       }
     }
   }
   return {
-    ...restTopLevel,
+    ...topLevel,
     advanced: [...preservedAdvanced, focusConstraint],
   };
 }
 
-function didApplyFocusMode(track: MediaStreamTrack, expectedMode: string): boolean {
-  const settings = track.getSettings?.() as FocusTrackSettings | undefined;
-  return settings?.focusMode === undefined || settings.focusMode === expectedMode;
+function didApplyFocusConstraint(
+  track: MediaStreamTrack,
+  expectedMode: string,
+  expectedPoint?: { x: number; y: number }
+): boolean {
+  if (typeof track.getSettings !== 'function') return true;
+  const settings = track.getSettings() as FocusTrackSettings | undefined;
+  if (!settings) return true;
+  if ('focusMode' in settings && settings.focusMode !== expectedMode) {
+    return false;
+  }
+  if (expectedPoint && 'pointsOfInterest' in settings) {
+    const points = settings.pointsOfInterest;
+    if (!Array.isArray(points) || points.length === 0) return false;
+    const first = points[0];
+    if (
+      !first ||
+      Math.abs(first.x - expectedPoint.x) > 1e-3 ||
+      Math.abs(first.y - expectedPoint.y) > 1e-3
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 type VideoWithFrameCallback = HTMLVideoElement & {
@@ -554,7 +595,8 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
           let appliedWithPoint = false;
           try {
             await applyMode(true);
-            appliedWithPoint = isCurrentTarget() && didApplyFocusMode(track, focusMode);
+            appliedWithPoint =
+              isCurrentTarget() && didApplyFocusConstraint(track, focusMode, normalizedPoint);
           } catch {
             appliedWithPoint = false;
           }
@@ -568,7 +610,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       } catch {
         return false;
       }
-      if (!isCurrentTarget() || !didApplyFocusMode(track, focusMode)) {
+      if (!isCurrentTarget() || !didApplyFocusConstraint(track, focusMode)) {
         return false;
       }
       if (requestId >= latestAppliedFocusRequestId) {
