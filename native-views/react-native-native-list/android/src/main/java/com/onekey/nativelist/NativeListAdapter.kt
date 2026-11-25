@@ -239,7 +239,7 @@ internal class NativeListAdapter(
         ) SELECTION_ECHO_PAYLOAD else if (isMarketQuoteUpdate(oldItem, newItem)) MARKET_QUOTE_PAYLOAD else null
 
       private fun isMarketQuoteUpdate(oldItem: NativeListItem, newItem: NativeListItem): Boolean {
-        if (oldItem.type != "market" || newItem.type != "market") return false
+        if (oldItem.rendererKey != NativeListRendererKey.MARKET || newItem.rendererKey != NativeListRendererKey.MARKET) return false
         if (!hasSameMarketMetricStructure(oldItem, newItem)) return false
         fun stableContent(item: NativeListItem): String {
           val value = JSONObject(item.json.toString())

@@ -4259,3 +4259,482 @@ it('clears an existing production title image when its replacement cannot be san
     environment.__DEV__ = original;
   }
 });
+
+describe.each([true, false])(
+  'bounded tables in development=%s',
+  (development) => {
+    const environment = globalThis as typeof globalThis & { __DEV__: boolean };
+    const columns = Array.from({ length: 7 }, (_, n) => ({
+      key: 'col-' + n,
+      text: String(n),
+    }));
+    const compact: DataRow = {
+      type: 'dataRow',
+      key: 'tx',
+      columns: columns.slice(0, 2),
+    };
+    const original = environment.__DEV__;
+    beforeEach(() => {
+      environment.__DEV__ = development;
+    });
+    afterEach(() => {
+      environment.__DEV__ = original;
+    });
+    it('requires nonblank spoken text when a subscript line relies on the generated label', () => {
+      const subscript = [{ text: '5', style: 'subscript' as const }];
+      const detail = {
+        ...compact,
+        tableColumns: [
+          { ...columns[0], secondaryTextSegments: subscript },
+          columns[1],
+        ],
+      };
+      for (const accessibilityLabel of [undefined, '  ']) {
+        const validate = () =>
+          validateSnapshot(snapshot([{ ...detail, accessibilityLabel }]));
+        if (development) expect(validate).toThrow(/secondaryText/);
+        else expect(validate().rows[0]).toEqual(detail);
+      }
+      expect(() =>
+        validateSnapshot(
+          snapshot([{ ...detail, accessibilityLabel: 'Complete balance' }])
+        )
+      ).not.toThrow();
+      const blankPrimary = {
+        ...detail,
+        tableColumns: [
+          { ...columns[0], text: '  ', textSegments: subscript },
+          columns[1],
+        ],
+      };
+      const validatePrimary = () => validateSnapshot(snapshot([blankPrimary]));
+      if (development) expect(validatePrimary).toThrow(/tableColumns.*text/);
+      else expect(validatePrimary().rows[0]).toEqual(blankPrimary);
+      expect(() =>
+        validateSnapshot(
+          snapshot([
+            {
+              ...detail,
+              tableColumns: [
+                {
+                  ...columns[0],
+                  secondaryText: '0.000001 ETH',
+                  secondaryTextSegments: subscript,
+                },
+                columns[1],
+              ],
+            },
+          ])
+        )
+      ).not.toThrow();
+    });
+
+    it('checks spoken text after merging table and label patches', () => {
+      const detail = { ...compact, tableColumns: columns.slice(0, 2) };
+      const before = snapshot([detail]);
+      const tableColumns = [
+        {
+          ...columns[0],
+          secondaryTextSegments: [{ text: '5', style: 'subscript' as const }],
+        },
+        columns[1],
+      ];
+      const patch: RowPatch = {
+        type: 'dataRow',
+        key: detail.key,
+        changes: { tableColumns },
+      };
+      const applyWithoutLabel = () => applyRowPatches(before, [patch]);
+      if (development) expect(applyWithoutLabel).toThrow(/secondaryText/);
+      else expect(applyWithoutLabel().rows[0]).toMatchObject({ tableColumns });
+
+      const withLabel = applyRowPatches(before, [
+        patch,
+        {
+          type: 'dataRow',
+          key: detail.key,
+          changes: { accessibilityLabel: 'Complete balance' },
+        },
+      ]);
+      expect(withLabel.rows[0]).toMatchObject({
+        tableColumns,
+        accessibilityLabel: 'Complete balance',
+      });
+
+      const clearLabel: RowPatch = {
+        type: 'dataRow',
+        key: detail.key,
+        changes: { accessibilityLabel: null },
+      };
+      const applyClear = () => applyRowPatches(withLabel, [clearLabel]);
+      if (development) expect(applyClear).toThrow(/secondaryText/);
+      else expect(applyClear().rows[0]).toEqual({ ...detail, tableColumns });
+
+      const completeColumns = [
+        { ...tableColumns[0], secondaryText: '0.000001 ETH' },
+        columns[1],
+      ];
+      const completed = applyRowPatches(withLabel, [
+        clearLabel,
+        {
+          type: 'dataRow',
+          key: detail.key,
+          changes: { tableColumns: completeColumns },
+        },
+      ]);
+      expect(completed.rows[0].accessibilityLabel).toBeUndefined();
+      expect(completed.rows[0]).toMatchObject({
+        tableColumns: completeColumns,
+      });
+    });
+
+    it('clears blank table labels in snapshots and label-only wire patches', () => {
+      const detail = { ...compact, tableColumns: columns.slice(0, 2) };
+      expect(
+        validateSnapshot(snapshot([{ ...detail, accessibilityLabel: '  ' }]))
+          .rows[0]
+      ).toEqual(detail);
+      const before = snapshot([{ ...detail, accessibilityLabel: 'Override' }]);
+      const result = applyOwnedNativePatches(before, [
+        {
+          type: 'dataRow',
+          key: detail.key,
+          changes: { accessibilityLabel: '  ' },
+        },
+      ]);
+      expect(result.snapshot.rows[0]).toEqual(detail);
+      expect(JSON.parse(result.json)[0].changes).toEqual({
+        accessibilityLabel: null,
+      });
+    });
+
+    it('keeps displayable table data in production snapshots and wire patches', () => {
+      const base = { ...compact, tableColumns: columns.slice(0, 2) };
+      const long = 'x'.repeat(4096);
+      const malformed = {
+        ...columns[0],
+        text: long + 'x',
+        unknown: 'discard',
+        leading: { kind: 'token' as const, unknown: true },
+        actionKey: 'copy',
+        accessibilityLabel: '  ',
+        textSegments: Array.from({ length: 65 }, () => ({ text: 'x' })),
+        secondaryTextSegments: [{ text: long.slice(1) }, { text: 'yz' }],
+      };
+      const changes = {
+        tableColumns: [malformed, columns[1]],
+        style: { columnGap: 72 },
+      };
+      const validate = () =>
+        validateSnapshot(snapshot([{ ...base, ...changes }, row('other')]));
+      const apply = () =>
+        applyOwnedNativePatches(snapshot([base]), [
+          { type: 'dataRow', key: base.key, changes },
+        ]);
+      if (development) {
+        for (const field of [
+          { unknown: true },
+          { leading: { kind: 'token' as const, unknown: true } },
+          { actionKey: 'copy', accessibilityLabel: '' },
+          { text: long + 'x' },
+          { textSegments: malformed.textSegments },
+          { secondaryTextSegments: malformed.secondaryTextSegments },
+        ]) {
+          expect(() =>
+            validateSnapshot(
+              snapshot([
+                {
+                  ...base,
+                  tableColumns: [{ ...columns[0], ...field }, columns[1]],
+                },
+              ])
+            )
+          ).toThrow();
+        }
+        expect(() =>
+          validateSnapshot(snapshot([{ ...base, style: changes.style }]))
+        ).toThrow(/columnGap/);
+        expect(apply).toThrow();
+      } else {
+        const expected = {
+          tableColumns: [
+            {
+              key: columns[0].key,
+              text: long,
+              leading: { kind: 'token' },
+              textSegments: malformed.textSegments.slice(0, 64),
+              secondaryTextSegments: [{ text: long.slice(1) }, { text: 'y' }],
+            },
+            columns[1],
+          ],
+          style: { columnGap: 64 },
+        };
+        expect(validate().rows).toEqual([
+          { ...base, ...expected },
+          row('other'),
+        ]);
+        const result = apply();
+        expect(result.snapshot.rows[0]).toEqual({ ...base, ...expected });
+        expect(JSON.parse(result.json)[0].changes).toEqual(expected);
+        expect(malformed.text.length).toBe(4097);
+        const runs = [{ text: 'x'.repeat(4095) + '💰', style: 'subscript' }];
+        const withoutPlainText = { key: columns[0].key, textSegments: runs };
+        const raw = [
+          withoutPlainText,
+          columns[1],
+        ] as unknown as DataRow['tableColumns'];
+        const accepted = validateSnapshot(
+          snapshot([{ ...base, tableColumns: raw }])
+        );
+        expect(accepted.rows[0]).toMatchObject({
+          tableColumns: [
+            {
+              key: columns[0].key,
+              text: '',
+              textSegments: [{ text: 'x'.repeat(4095), style: 'subscript' }],
+            },
+            columns[1],
+          ],
+        });
+      }
+    });
+
+    it('updates visible quotes while retaining the inactive Web presentation', () => {
+      const selector = {
+        ...marketRow(),
+        tableColumns: columns,
+        webTable: {
+          columns: [{ key: 'price', width: 80 }],
+          cells: [
+            { key: 'price', kind: 'text' as const, primary: [{ text: '$1' }] },
+          ],
+        },
+      };
+      const next = {
+        ...selector,
+        price: '$2',
+        tableColumns: [{ ...columns[0], text: '$2' }, ...columns.slice(1)],
+      };
+      const before = validateSnapshot(snapshot([selector]));
+      const after = validateSnapshot(snapshot([next]));
+      const patches = planNativeListPatches(before, after);
+      expect(patches).toHaveLength(1);
+      expect(applyRowPatches(before, patches!).rows).toEqual(after.rows);
+    });
+
+    it('requires a table patch array before normalizing nested images', () => {
+      const before = snapshot([
+        {
+          ...compact,
+          tableColumns: [
+            { ...columns[0], actionKey: 'copy', accessibilityLabel: 'Copy' },
+            columns[1],
+          ],
+        },
+      ]);
+      const apply = () =>
+        applyRowPatches(before, [
+          {
+            type: 'dataRow',
+            key: compact.key,
+            // @ts-expect-error Malformed input at the JSON boundary.
+            changes: { tableColumns: { uri: '', width: 24, height: 24 } },
+          },
+        ]);
+      if (development) expect(apply).toThrow(/tableColumns/);
+      else expect(apply().rows).toEqual(before.rows);
+    });
+
+    it.each([
+      {
+        scenario: 'image-like column metadata',
+        extra: {
+          uri: '',
+          height: 24,
+          leading: {
+            kind: 'token' as const,
+            image: { uri: '', width: 24, height: 24 },
+          },
+        },
+        retained: { leading: { kind: 'token' } },
+        devError: /table column field/,
+      },
+      {
+        scenario: 'empty runs at the segment limit',
+        extra: {
+          textSegments: [
+            ...Array.from({ length: 64 }, () => ({ text: '' })),
+            { text: '$42' },
+          ],
+          secondaryTextSegments: [{ text: '', style: 'subscript' as const }],
+        },
+        retained: {},
+        devError: /64 segments/,
+      },
+    ])(
+      'preserves table values for $scenario in snapshots and wire patches',
+      ({ extra, retained, devError }) => {
+        const initial = { ...columns[0], width: 80 };
+        const updated = { ...initial, text: '$42', secondaryText: 'USD' };
+        const tableColumns = [{ ...updated, ...extra }, columns[1]];
+        const before = snapshot([
+          { ...compact, tableColumns: [initial, columns[1]] },
+        ]);
+        const validate = () =>
+          validateSnapshot(snapshot([{ ...compact, tableColumns }]));
+        const apply = () =>
+          applyOwnedNativePatches(before, [
+            { type: 'dataRow', key: compact.key, changes: { tableColumns } },
+          ]);
+        if (development) {
+          expect(validate).toThrow(devError);
+          expect(apply).toThrow(devError);
+        } else {
+          const expected = [{ ...updated, ...retained }, columns[1]];
+          expect(validate().rows[0]).toEqual({
+            ...compact,
+            tableColumns: expected,
+          });
+          const result = apply();
+          expect(result.snapshot.rows[0]).toEqual({
+            ...compact,
+            tableColumns: expected,
+          });
+          expect(JSON.parse(result.json)).toEqual([
+            {
+              type: 'dataRow',
+              key: compact.key,
+              changes: { tableColumns: expected },
+            },
+          ]);
+        }
+      }
+    );
+
+    it('normalizes unavailable cell images identically in snapshots and patches', () => {
+      const before = validateSnapshot(
+        snapshot([{ ...compact, tableColumns: columns.slice(0, 2) }])
+      );
+      for (const uri of development
+        ? ['']
+        : ['', 'ftp://example.org/coin.png']) {
+        const tableColumns = [
+          {
+            ...columns[0],
+            text: 'updated',
+            leading: {
+              kind: 'token' as const,
+              image: { uri, width: 24, height: 24 },
+            },
+          },
+          columns[1],
+        ];
+        const expected = validateSnapshot(
+          snapshot([{ ...compact, tableColumns }])
+        );
+        expect(
+          applyRowPatches(before, [
+            { key: compact.key, type: 'dataRow', changes: { tableColumns } },
+          ]).rows
+        ).toEqual(expected.rows);
+      }
+    });
+
+    it('rejects nameless icons and bounds both formatted lines', () => {
+      const invalidIcon = {
+        ...compact,
+        tableColumns: [
+          { ...columns[0], leading: { kind: 'icon' as const, name: '  ' } },
+          columns[1],
+        ],
+      };
+      if (development)
+        expect(() => validateSnapshot(snapshot([invalidIcon]))).toThrow();
+      else
+        expect(validateSnapshot(snapshot([invalidIcon])).rows[0]).toMatchObject(
+          {
+            tableColumns: [{ leading: { kind: 'token' } }, columns[1]],
+          }
+        );
+    });
+
+    it('bounds detail and selector columns separately and rejects duplicate identities', () => {
+      const detail = { ...compact, tableColumns: columns.slice(0, 6) };
+      const selector = { ...marketRow(), tableColumns: columns };
+      expect(validateSnapshot(snapshot([detail, selector])).rows).toEqual([
+        detail,
+        selector,
+      ]);
+      expect(() =>
+        validateSnapshot(snapshot([{ ...detail, tableColumns: columns }]))
+      ).toThrow();
+      expect(() =>
+        validateSnapshot(
+          snapshot([{ ...selector, tableColumns: [...columns, columns[0]] }])
+        )
+      ).toThrow();
+      expect(() =>
+        validateSnapshot(
+          snapshot([{ ...detail, tableColumns: [columns[0], columns[0]] }])
+        )
+      ).toThrow();
+    });
+    it('validates table geometry and patches selector prices with their fallback', () => {
+      const selector = {
+        ...marketRow(),
+        tableColumns: columns,
+        style: { columnGap: 4 },
+      };
+      expect(() =>
+        validateSnapshot(
+          snapshot([
+            {
+              ...selector,
+              tableColumns: [{ ...columns[0], width: 0 }, columns[1]],
+            },
+          ])
+        )
+      ).toThrow();
+      const next = {
+        ...selector,
+        price: '$101',
+        tableColumns: columns.map((col, i) =>
+          i === 2 ? { ...col, text: '$101' } : col
+        ),
+      };
+      const before = snapshot([selector]);
+      const after = snapshot([next]);
+      const patches = planNativeListPatches(before, after)!;
+      expect(patches).toHaveLength(1);
+      expect(applyRowPatches(before, patches).rows).toEqual(after.rows);
+    });
+    it('patches values and requires structural snapshots for widths and reorder', () => {
+      const detail = { ...compact, tableColumns: columns.slice(0, 6) };
+      const before = snapshot([detail]);
+      const changed = detail.tableColumns.map((col, i) =>
+        i === 3 ? { ...col, text: '$37' } : col
+      );
+      const after = snapshot([
+        {
+          ...detail,
+          tableColumns: changed,
+          columns: [columns[0], { ...columns[1], text: '$37' }],
+        },
+      ]);
+      const patches = planNativeListPatches(before, after)!;
+      expect(patches).toHaveLength(1);
+      expect(applyRowPatches(before, patches).rows).toEqual(after.rows);
+      for (const structural of [
+        changed.slice().reverse(),
+        changed.map((col) => ({ ...col, width: 42 })),
+      ]) {
+        expect(
+          planNativeListPatches(
+            before,
+            snapshot([{ ...detail, tableColumns: structural }])
+          )
+        ).toBeUndefined();
+      }
+    });
+  }
+);

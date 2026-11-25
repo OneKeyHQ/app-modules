@@ -224,7 +224,9 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
   }
 }
 
-private class NativeListTableColumnView(context: android.content.Context, private val fonts: NativeListFonts) : LinearLayout(context) {
+internal class NativeListTableColumnView(
+  context: android.content.Context, private val fonts: NativeListFonts, private val wrapSecondary: Boolean = false,
+) : LinearLayout(context) {
   private val primaryLine = LinearLayout(context)
   private val primary = NativeListTextView(context)
   private val titleIcon = OneKeyIconView(context)
@@ -286,7 +288,8 @@ private class NativeListTableColumnView(context: android.content.Context, privat
     addView(primaryLine, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
     addView(
       secondaryLine,
-      LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) },
+      LayoutParams(if (wrapSecondary) LayoutParams.WRAP_CONTENT else LayoutParams.MATCH_PARENT,
+        LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) },
     )
   }
 
@@ -550,13 +553,13 @@ private class NativeListTableColumnView(context: android.content.Context, privat
 
   private fun applyStyle(style: JSONObject) {
     style.optJSONObject("columns")?.let {
-      if (it.has("alignment")) {
+      if (!wrapSecondary && it.has("alignment")) {
         primaryLine.layoutParams.width = LayoutParams.MATCH_PARENT
         primary.layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
       }
     }
     style.optJSONObject("columnSecondary")?.let {
-      if (it.has("alignment"))
+      if (!wrapSecondary && it.has("alignment"))
         secondary.layoutParams =
           LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4) }
     }
@@ -573,7 +576,7 @@ private class NativeListTableColumnView(context: android.content.Context, privat
   private fun sp(value: Float): Float = NativeListScale.font(resources, value)
 }
 
-private fun nativeListDataColumnText(column: JSONObject, field: String): String {
+internal fun nativeListDataColumnText(column: JSONObject, field: String): String {
   val segments = column.optJSONArray("${field}Segments")
   if (segments == null || segments.length() == 0) return column.optString(field)
   return buildString {

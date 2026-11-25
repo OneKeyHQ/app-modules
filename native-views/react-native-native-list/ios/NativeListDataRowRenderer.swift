@@ -189,7 +189,7 @@ final class NativeListDataRowCell: NativeListRendererCell {
   }
 }
 
-private final class NativeListTableColumnView: UIStackView {
+final class NativeListTableColumnView: UIStackView {
   private let primaryLine = UIStackView()
   private let primaryLabel = NativeListTextLabel()
   private let titleIconView = NativeListIconImageView()
@@ -572,7 +572,7 @@ private final class NativeListTableColumnView: UIStackView {
   }
 }
 
-private func nativeListDataColumnText(_ column: [String: Any], _ field: String) -> String {
+func nativeListDataColumnText(_ column: [String: Any], _ field: String) -> String {
   let segments = column.dictionaries("\(field)Segments")
   return segments.isEmpty ? column.string(field) : segments.map { $0.string("text") }.joined()
 }

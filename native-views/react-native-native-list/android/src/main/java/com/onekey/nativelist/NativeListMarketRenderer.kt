@@ -27,7 +27,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal class NativeListMarketRowView(context: ThemedReactContext, fonts: NativeListFonts) :
-  NativeListRendererRowView(context, fonts) {
+  NativeListMarketGestureRowView(context, fonts) {
   private val leadingFrame = NativeListLeadingVisual(context, fonts)
   private val leadingActionIcon = OneKeyIconView(context)
   private val mainColumn = LinearLayout(context)
@@ -50,14 +50,6 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
   private val marketBadgeGlyphs = List(3) { OneKeyIconView(context) }
   private val marketOriginalPaintFlags = mutableMapOf<TextView, Int>()
   private var imageSignature = ""
-  private var longPress: Runnable? = null
-  private val handler = Handler(Looper.getMainLooper())
-  private var held = false
-  private var longPressFired = false
-  private var startX = 0f
-  private var startY = 0f
-  private var touchX = 0f
-  private var touchY = 0f
   override val assetFields = listOf("leading", "badges")
 
   override fun usesSourceScale(item: NativeListItem, provided: Boolean) = true
@@ -227,8 +219,7 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
     layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String,
   ) {
-    cancelMarketHold()
-    longPressFired = false
+    bindMarketGesture(item)
     removeAllViews()
     marketOriginalPaintFlags.forEach { (view, flags) -> view.paintFlags = flags }
     marketOriginalPaintFlags.clear()
@@ -289,88 +280,8 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
     }
   }
 
-  private fun cancelMarketHold() {
-    longPress?.let(handler::removeCallbacks)
-    longPress = null
-  }
-
-  override fun onRowTouch(event: MotionEvent) {
-    when (event.actionMasked) {
-      MotionEvent.ACTION_DOWN -> {
-        val item = tag as? NativeListItem
-        if (item?.isRowPressEnabled == true) {
-          held = true
-          longPressFired = false
-          startX = event.x
-          startY = event.y
-          touchX = event.x
-          touchY = event.y
-          item.json.optString("pressInActionKey").takeIf(String::isNotEmpty)?.let {
-            emitAction(it, this, "row")
-          }
-          item.json.optString("longPressActionKey").takeIf(String::isNotEmpty)?.let { key ->
-            val epoch = bindingEpoch
-            val task = Runnable {
-              val current = tag as? NativeListItem
-              if (held && current?.key == item.key && bindingEpoch == epoch) {
-                longPress = null
-                longPressFired = true
-                val location = IntArray(2)
-                getLocationInWindow(location)
-                onAction?.invoke(
-                  current,
-                  key,
-                  null,
-                  NativeListActionOrigin(
-                    this,
-                    this,
-                    bindingEpoch,
-                    "row",
-                    windowPointPixels =
-                      android.graphics.PointF(location[0] + touchX, location[1] + touchY),
-                  ),
-                )
-              }
-            }
-            longPress = task
-            handler.postDelayed(task, 800)
-          }
-        }
-      }
-      MotionEvent.ACTION_MOVE -> {
-        touchX = event.x
-        touchY = event.y
-        if (
-          event.x < 0 ||
-            event.y < 0 ||
-            event.x >= width ||
-            event.y >= height ||
-            kotlin.math.abs(event.x - startX) > dp(10) ||
-            kotlin.math.abs(event.y - startY) > dp(10)
-        ) {
-          cancelMarketHold()
-          held = false
-          setTouchPressed(false)
-        }
-      }
-      MotionEvent.ACTION_UP,
-      MotionEvent.ACTION_CANCEL -> {
-        cancelMarketHold()
-        held = false
-      }
-    }
-  }
-
-  override fun consumesRowClick(): Boolean {
-    val value = longPressFired
-    longPressFired = false
-    return value
-  }
-
   override fun recycleContent() {
-    cancelMarketHold()
-    held = false
-    longPressFired = false
+    resetMarketGesture()
     leadingFrame.recycle()
     badgeSlots.forEach { it.recycle() }
     (metricPrimaryViews + metricSecondaryViews).forEach { it.text = "" }
@@ -1058,5 +969,108 @@ internal class NativeListMarketRowView(context: ThemedReactContext, fonts: Nativ
         }
       }
     }
+  }
+}
+
+internal abstract class NativeListMarketGestureRowView(context: ThemedReactContext, fonts: NativeListFonts) :
+  NativeListRendererRowView(context, fonts) {
+  private var longPress: Runnable? = null
+  private val handler = Handler(Looper.getMainLooper())
+  private var held = false
+  private var longPressFired = false
+  private var startX = 0f
+  private var startY = 0f
+  private var touchX = 0f
+  private var touchY = 0f
+
+  protected fun bindMarketGesture(item: NativeListItem) {
+    // The release still belongs to a hold that fired before a same-row content bind.
+    if (item.type == "market" && (tag as? NativeListItem)?.key == item.key) cancelMarketHold()
+    else resetMarketGesture()
+  }
+
+  protected fun resetMarketGesture() {
+    cancelMarketHold()
+    held = false
+    longPressFired = false
+  }
+
+  private fun cancelMarketHold() {
+    longPress?.let(handler::removeCallbacks)
+    longPress = null
+  }
+
+  override fun onRowTouch(event: MotionEvent) {
+    val item = tag as? NativeListItem ?: return
+    if (item.type != "market") return
+    when (event.actionMasked) {
+      MotionEvent.ACTION_DOWN -> {
+        if (item.isRowPressEnabled) {
+          held = true
+          longPressFired = false
+          startX = event.x
+          startY = event.y
+          touchX = event.x
+          touchY = event.y
+          item.json.optString("pressInActionKey").takeIf(String::isNotEmpty)?.let {
+            emitAction(it, this, "row")
+          }
+          item.json.optString("longPressActionKey").takeIf(String::isNotEmpty)?.let { key ->
+            val epoch = bindingEpoch
+            val task = Runnable {
+              val current = tag as? NativeListItem
+              if (held && current?.key == item.key && bindingEpoch == epoch) {
+                longPress = null
+                longPressFired = true
+                val location = IntArray(2)
+                getLocationInWindow(location)
+                onAction?.invoke(
+                  current,
+                  key,
+                  null,
+                  NativeListActionOrigin(
+                    this,
+                    this,
+                    bindingEpoch,
+                    "row",
+                    windowPointPixels =
+                      android.graphics.PointF(location[0] + touchX, location[1] + touchY),
+                  ),
+                )
+              }
+            }
+            longPress = task
+            handler.postDelayed(task, 800)
+          }
+        }
+      }
+      MotionEvent.ACTION_MOVE -> {
+        touchX = event.x
+        touchY = event.y
+        if (
+          event.x < 0 ||
+            event.y < 0 ||
+            event.x >= width ||
+            event.y >= height ||
+            kotlin.math.abs(event.x - startX) > dp(10) ||
+            kotlin.math.abs(event.y - startY) > dp(10)
+        ) {
+          cancelMarketHold()
+          held = false
+          setTouchPressed(false)
+        }
+      }
+      MotionEvent.ACTION_CANCEL -> resetMarketGesture()
+      MotionEvent.ACTION_UP -> {
+        cancelMarketHold()
+        held = false
+      }
+    }
+  }
+
+  override fun consumesRowClick(): Boolean {
+    val value = longPressFired
+    longPressFired = false
+    return value
   }
 }

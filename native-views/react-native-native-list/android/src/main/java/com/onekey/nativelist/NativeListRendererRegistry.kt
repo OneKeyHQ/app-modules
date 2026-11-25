@@ -8,6 +8,7 @@ internal object NativeListRendererRegistry {
       NativeListRendererKey.SECTION_HEADER to ::NativeListSectionHeaderRowView,
       NativeListRendererKey.WALLET_GROUP to ::NativeListWalletGroupRowView,
       NativeListRendererKey.IDENTITY to ::NativeListIdentityRowView,
+      NativeListRendererKey.BOUNDED_TABLE to ::NativeListBoundedTableView,
       NativeListRendererKey.MARKET to ::NativeListMarketRowView,
       NativeListRendererKey.MESSAGE to ::NativeListMessageRowView,
       NativeListRendererKey.RAIL to ::NativeListRailRowView,

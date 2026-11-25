@@ -40,6 +40,7 @@ import type {
   SelectionTarget,
   TextTone,
   TrailingAccessory,
+  ValueTextSegment,
   VisibleRangeChangedEvent,
 } from '../models';
 import type {
@@ -338,7 +339,12 @@ export function isWebRowReorderable(
   if (row.type === 'rail' && row.draggable) return true;
   if (row.type === 'identity' && row.draggable) return true;
   if (row.type === 'walletGroup' && row.draggable) return true;
-  if (row.type === 'market' && row.webTable?.draggable) return true;
+  if (
+    row.type === 'market' &&
+    rowRendererKey(row) === 'marketTable' &&
+    row.webTable?.draggable
+  )
+    return true;
   return (
     (row.type === 'identity' || row.type === 'action') &&
     Boolean(row.trailing?.some((accessory) => accessory.kind === 'drag'))
@@ -2008,6 +2014,7 @@ export class NativeListWebEngine {
     metricCard: [],
     market: [],
     marketTable: [],
+    boundedTable: [],
     identity: [],
     sectionHeader: [],
   };
@@ -3048,24 +3055,28 @@ export class NativeListWebEngine {
       else if (selected === false || selected === null)
         selection.delete(patch.key);
     });
-    const tableValuesOnly = patches.every((patch) => {
-      const index = this.rows.findIndex((row) => row.key === patch.key);
-      const before = this.rows[index],
-        after = next.rows[index];
-      return (
-        patch.type === 'market' &&
-        before?.type === 'market' &&
-        after?.type === 'market' &&
-        Object.keys(patch.changes).every(
-          (key) => MARKET_QUOTE_PATCH_FIELDS.has(key) || key === 'webTable'
-        ) &&
-        canPatchMarketTableValues(before, after)
-      );
-    });
-    if (
-      !restoredReorder &&
-      (webMarketImageBindDeltaForPatches(patches) === 0 || tableValuesOnly)
-    ) {
+    const quoteValuesOnly =
+      patches.length > 0 &&
+      patches.every((patch) => {
+        if (patch.type !== 'market') return false;
+        const index = this.rows.findIndex((row) => row.key === patch.key);
+        const before = this.rows[index];
+        const after = next.rows[index];
+        if (
+          before?.type !== 'market' ||
+          after?.type !== 'market' ||
+          after.tableColumns
+        )
+          return false;
+        return (
+          isWebMarketQuotePatch(patch) ||
+          (Object.keys(patch.changes).every(
+            (key) => MARKET_QUOTE_PATCH_FIELDS.has(key) || key === 'webTable'
+          ) &&
+            canPatchMarketTableValues(before, after))
+        );
+      });
+    if (!restoredReorder && quoteValuesOnly) {
       this.snapshot = next;
       this.rows = effectiveRows(next);
       this.selectedKeys = selection;
@@ -4543,6 +4554,23 @@ export class NativeListWebEngine {
   }
 
   private rowLabel(row: RowModel): string {
+    if ((row.type === 'dataRow' || row.type === 'market') && row.tableColumns) {
+      const spokenLine = (
+        text: string | undefined,
+        segments: readonly ValueTextSegment[] | undefined
+      ) =>
+        !segments?.length ||
+        segments.some((run) => run.style === 'subscript' && run.text.length > 0)
+          ? text
+          : segments.map((run) => run.text).join('');
+      return row.tableColumns
+        .flatMap((cell) => [
+          spokenLine(cell.text, cell.textSegments),
+          spokenLine(cell.secondaryText, cell.secondaryTextSegments),
+        ])
+        .filter(Boolean)
+        .join(', ');
+    }
     if (row.type === 'walletGroup') return row.parent.title;
     if ('title' in row) return row.title;
     if ('message' in row && row.message) return row.message;
@@ -4751,6 +4779,7 @@ export class NativeListWebEngine {
     const row = this.rowAtElement(element);
     if (
       row?.type !== 'market' ||
+      rowRendererKey(row) !== 'marketTable' ||
       !row.webTable?.contextMenuActionKey ||
       !element ||
       !isRowPressEnabled(row)
@@ -4822,7 +4851,7 @@ export class NativeListWebEngine {
     this.marketPointer = {
       pointerId: event.pointerId,
       pointerType: event.pointerType,
-      compact: row.type === 'identity' || !row.webTable,
+      compact: rowRendererKey(row) !== 'marketTable',
       rowKey: row.key,
       startX: event.clientX,
       startY: event.clientY,
@@ -4836,7 +4865,9 @@ export class NativeListWebEngine {
     if (state.compact && state.pointerType === 'touch') return;
     const row = this.rows.find((item) => item.key === state.rowKey);
     const threshold =
-      row?.type === 'market' && !row.webTable ? 3 : MARKET_MOVE_CANCEL_PX;
+      row?.type === 'market' && rowRendererKey(row) !== 'marketTable'
+        ? 3
+        : MARKET_MOVE_CANCEL_PX;
     if (
       Math.abs(event.clientX - state.startX) > threshold ||
       Math.abs(event.clientY - state.startY) > threshold

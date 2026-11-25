@@ -5983,6 +5983,233 @@ describe('Web migration layout and table regressions', () => {
     }
   );
 
+  it.each([undefined, { width: 32 }])(
+    'fits bounded bitmaps and ignores hidden Web table interactions (%j)',
+    (imageStyle) => {
+      const { window } = new JSDOM('<!doctype html><body></body>');
+      const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');
+      Object.defineProperty(globalThis, 'Element', {
+        configurable: true,
+        value: window.document.defaultView!.Element,
+      });
+      const market = {
+        type: 'market',
+        key: 'quote',
+        variant: 'token',
+        leading: { kind: 'token' },
+        title: 'ETH',
+        price: '$1',
+        change: { text: '+1%', tone: 'positive' },
+        style: { image: imageStyle },
+        tableColumns: [
+          { key: 'asset', text: 'ETH', leading: { kind: 'token', image } },
+          { key: 'price', text: '$1' },
+        ],
+        webTable: {
+          draggable: true,
+          contextMenuActionKey: 'menu',
+          columns: [{ key: 'price', width: 80 }],
+          cells: [{ key: 'price', kind: 'text', primary: [{ text: '$1' }] }],
+        },
+      } as const;
+      const state = {
+        ...snapshot({ kind: 'linear' }, [market]),
+        capabilities: { reorderable: true },
+      };
+      const onRowAction = jest.fn();
+      const engine = new NativeListWebEngine(
+        window.document.body,
+        state,
+        { onRowAction },
+        false
+      );
+      try {
+        const bitmap = window.document.querySelector<HTMLImageElement>(
+          'img.ok-native-list-visual-main'
+        )!;
+        expect(bitmap.parentElement?.style.width).toBe(
+          (imageStyle?.width ?? 24) + 'px'
+        );
+        expect(bitmap.style.width).toBe('100%');
+        expect(bitmap.style.height).toBe('100%');
+        expect(isWebRowReorderable(state, market)).toBe(false);
+        bitmap.dispatchEvent(
+          new window.document.defaultView!.MouseEvent('contextmenu', {
+            bubbles: true,
+          })
+        );
+        expect(onRowAction).not.toHaveBeenCalled();
+      } finally {
+        engine.destroy();
+        if (original) Object.defineProperty(globalThis, 'Element', original);
+        else Reflect.deleteProperty(globalThis, 'Element');
+      }
+    }
+  );
+
+  it('announces complete subscript amounts and uses segments for ordinary lines', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const columns = [
+      {
+        key: 'asset',
+        text: 'fallback',
+        textSegments: [
+          { text: 'E' },
+          { text: '', style: 'subscript' as const },
+          { text: 'TH' },
+        ],
+      },
+      {
+        key: 'price',
+        text: '$0.000001',
+        textSegments: [
+          { text: '$0.0' },
+          { text: '5', style: 'subscript' as const },
+          { text: '1' },
+        ],
+        secondaryText: '0.000002 ETH',
+        secondaryTextSegments: [
+          { text: '0.0' },
+          { text: '5', style: 'subscript' as const },
+          { text: '2 ETH' },
+        ],
+      },
+      {
+        key: 'change',
+        text: '24h',
+        secondaryTextSegments: [
+          { text: '+' },
+          { text: '2%' },
+          { text: '', style: 'subscript' as const },
+        ],
+      },
+    ];
+    const detail = {
+      type: 'dataRow' as const,
+      key: 'detail',
+      columns,
+      tableColumns: columns,
+    };
+    const engine = new NativeListWebEngine(
+      document.body,
+      snapshot({ kind: 'sectioned' }, [
+        detail,
+        {
+          ...detail,
+          key: 'custom',
+          accessibilityLabel: 'My quote',
+        },
+      ]),
+      {},
+      false
+    );
+    try {
+      const label = (key: string) =>
+        document
+          .querySelector('[data-native-list-row-key="' + key + '"]')
+          ?.getAttribute('aria-label');
+      expect(label('detail')).toBe('ETH, $0.000001, 0.000002 ETH, 24h, +2%');
+      expect(
+        document.querySelector('[data-native-list-row-key="detail"]')
+          ?.textContent
+      ).toContain('$0.051');
+      expect(label('custom')).toBe('My quote');
+      engine.applyPatches([
+        {
+          type: 'dataRow',
+          key: 'custom',
+          changes: { accessibilityLabel: '  ' },
+        },
+      ]);
+      expect(label('custom')).toBe(label('detail'));
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  it('keeps an inline table action independent of the row and updates the recycled cell', () => {
+    const { document } = new JSDOM('<!doctype html><body></body>').window;
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');
+    Object.defineProperty(globalThis, 'Element', {
+      configurable: true,
+      value: document.defaultView!.Element,
+    });
+    const host = document.body.appendChild(document.createElement('div'));
+    const onRowAction = jest.fn();
+    const row = {
+      type: 'dataRow',
+      key: 'pool',
+      style: { container: { contentVerticalAlignment: 'top' } },
+      columns: [
+        { key: 'pool', text: 'Pool' },
+        { key: 'fee', text: '1%' },
+      ],
+      tableColumns: [
+        { key: 'pool', text: 'USDC/ETH', width: 140 },
+        {
+          key: 'address',
+          text: '0x123',
+          actionKey: 'copy',
+          accessibilityLabel: 'Copy address',
+        },
+      ],
+    } as const;
+    const engine = new NativeListWebEngine(
+      host,
+      snapshot({ kind: 'sectioned' }, [row]),
+      { onRowAction },
+      false
+    );
+    try {
+      const button = host.querySelector(
+        'button[data-native-list-action="copy"]'
+      ) as HTMLButtonElement;
+      expect(button.style.alignSelf).toBe('stretch');
+      expect(button.style.alignItems).toBe('flex-start');
+      button.click();
+      expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
+        'copy',
+      ]);
+      expect(button.previousElementSibling?.getAttribute('style')).toContain(
+        '140px'
+      );
+      engine.applyPatches([
+        {
+          type: 'dataRow',
+          key: row.key,
+          changes: {
+            style: { container: { contentVerticalAlignment: 'bottom' } },
+            tableColumns: [
+              row.tableColumns[0],
+              {
+                ...row.tableColumns[1],
+                text: '0x456',
+                actionKey: 'explore',
+                accessibilityLabel: 'Open explorer',
+              },
+            ],
+          },
+        },
+      ]);
+      const updated = host.querySelector(
+        'button[data-native-list-action="explore"]'
+      ) as HTMLButtonElement;
+      expect(updated).toBe(button);
+      expect(updated.style.alignSelf).toBe('stretch');
+      expect(updated.style.alignItems).toBe('flex-end');
+      expect(updated.textContent).toContain('0x456');
+      updated.click();
+      expect(onRowAction.mock.calls.map(([event]) => event.actionKey)).toEqual([
+        'copy',
+        'explore',
+      ]);
+    } finally {
+      engine.destroy();
+      if (original) Object.defineProperty(globalThis, 'Element', original);
+      else Reflect.deleteProperty(globalThis, 'Element');
+    }
+  });
+
   it('keeps favorite focus and row/image identity through table quote patches', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const originalElement = Object.getOwnPropertyDescriptor(

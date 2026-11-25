@@ -102,6 +102,8 @@ export type RowBoxStyle = Readonly<{
   horizontalPadding?: number;
   verticalPadding?: number;
   leadingGap?: number;
+  /** Space between adjacent cells in a bounded table. */
+  columnGap?: number;
   /** Gap between the template's text rows. Omission preserves its default. */
   lineGap?: number;
   titleBadgeGap?: number;
@@ -146,6 +148,7 @@ export const ROW_BOX_STYLE_KEYS_BY_TYPE = {
     'image',
   ],
   dataRow: [
+    'columnGap',
     'horizontalPadding',
     'verticalPadding',
     'leadingGap',
@@ -154,6 +157,7 @@ export const ROW_BOX_STYLE_KEYS_BY_TYPE = {
     'image',
   ],
   market: [
+    'columnGap',
     'horizontalPadding',
     'verticalPadding',
     'leadingGap',
@@ -697,9 +701,30 @@ export type DataColumn = Readonly<{
   secondaryTone?: TextTone;
 }>;
 
+export type NativeListTableColumn = Pick<
+  DataColumn,
+  | 'key'
+  | 'text'
+  | 'textSegments'
+  | 'secondaryText'
+  | 'secondaryTextSegments'
+  | 'alignment'
+  | 'tone'
+  | 'secondaryTone'
+> &
+  Readonly<{
+    width?: number;
+    leading?: LeadingVisual;
+  }> &
+  (
+    | Readonly<{ actionKey: string; accessibilityLabel: string }>
+    | Readonly<{ actionKey?: undefined; accessibilityLabel?: undefined }>
+  );
+
 export type DataRow = RowBase &
   Readonly<{
     type: 'dataRow';
+    tableColumns?: readonly NativeListTableColumn[];
     leading?: LeadingVisual;
     columns: readonly DataColumn[];
     trailing?: readonly TrailingAccessory[];
@@ -798,6 +823,7 @@ export type WebMarketTablePresentation = Readonly<{
 export type MarketRow = RowBase &
   Readonly<{
     type: 'market';
+    tableColumns?: readonly NativeListTableColumn[];
     variant: 'token' | 'stock' | 'perp';
     /** Web-only bounded table presentation; native reads the ordinary Market fields. */
     webTable?: WebMarketTablePresentation;
@@ -1216,6 +1242,7 @@ export type RowPatch =
       changes: PatchClearableChanges<
         DataRow,
         | CommonPatchFields
+        | 'tableColumns'
         | 'leading'
         | 'columns'
         | 'trailing'
@@ -1233,6 +1260,7 @@ export type RowPatch =
       changes: PatchClearableChanges<
         MarketRow,
         | CommonPatchFields
+        | 'tableColumns'
         | 'leadingAction'
         | 'leading'
         | 'title'

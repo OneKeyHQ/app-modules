@@ -208,6 +208,83 @@ class NativeListReorderCancellationTest : InstrumentationTestCase() {
     start.run()
   }
 
+  fun testBoundedMarketGesturesAndAccessibleQuoteUpdate() {
+    val actions = mutableListOf<String>()
+    val market = JSONObject().put("type", "market").put("key", "bounded")
+      .put("title", "ETH").put("variant", "token").put("price", "$42")
+      .put("leading", JSONObject().put("kind", "token").put("fallbackText", "ETH"))
+      .put("change", JSONObject().put("text", "+1%").put("tone", "positive"))
+      .put("accessibilityLabel", "Before").put("pressActionKey", "open")
+      .put("pressInActionKey", "warm").put("longPressActionKey", "menu")
+      .put("style", JSONObject().put("container", JSONObject().put("height", 80).put("contentVerticalAlignment", "bottom")))
+      .put("tableColumns", JSONArray().put(JSONObject().put("key", "symbol").put("text", "ETH"))
+        .put(JSONObject().put("key", "star").put("text", "Star").put("actionKey", "favorite").put("accessibilityLabel", "Favorite")))
+    onMain {
+      list.onRowAction = { actions.add(JSONObject(it).getString("actionKey")) }
+      list.applySnapshot(JSONObject().put("schemaVersion", 1).put("generation", 2)
+        .put("layout", JSONObject().put("kind", "linear")).put("rows", JSONArray().put(market)).toString())
+    }
+    awaitRows(listOf("bounded"))
+    fun touch(action: Int, x: Float, down: Long) {
+      val event = android.view.MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, 10f, 0)
+      holder(0).rowView.dispatchTouchEvent(event)
+      event.recycle()
+    }
+    val down = SystemClock.uptimeMillis()
+    onMain {
+      val row = holder(0).rowView as NativeListBoundedTableView
+      val cell = row.getChildAt(0) as android.view.ViewGroup
+      assertEquals(cell.height, cell.getChildAt(0).bottom)
+      touch(android.view.MotionEvent.ACTION_DOWN, 12f, down)
+    }
+    SystemClock.sleep(900)
+    onMain {
+      assertEquals(listOf("warm", "menu"), actions)
+      list.applyPatches(JSONArray().put(JSONObject().put("key", "bounded").put("type", "market")
+        .put("changes", JSONObject().put("accessibilityLabel", "While held"))).toString())
+    }
+    for (attempt in 0 until 100) {
+      var updated = false
+      onMain { updated = holder(0).rowView.contentDescription == "While held" }
+      if (updated) break
+      SystemClock.sleep(20)
+    }
+    onMain {
+      assertEquals("While held", holder(0).rowView.contentDescription)
+      touch(android.view.MotionEvent.ACTION_UP, 12f, down)
+    }
+    instrumentation.waitForIdleSync()
+    onMain {
+      assertEquals(listOf("warm", "menu"), actions)
+      val row = holder(0).rowView as NativeListBoundedTableView
+      val x = row.getChildAt(1).left + 8f
+      val start = SystemClock.uptimeMillis()
+      touch(android.view.MotionEvent.ACTION_DOWN, x, start)
+      touch(android.view.MotionEvent.ACTION_UP, x, start)
+    }
+    instrumentation.waitForIdleSync()
+    onMain {
+      assertEquals(listOf("warm", "menu", "favorite"), actions)
+    }
+    val canceled = SystemClock.uptimeMillis()
+    onMain { touch(android.view.MotionEvent.ACTION_DOWN, 12f, canceled) }
+    SystemClock.sleep(900)
+    onMain {
+      touch(android.view.MotionEvent.ACTION_CANCEL, 12f, canceled)
+      holder(0).rowView.performClick()
+      assertEquals(listOf("warm", "menu", "favorite", "warm", "menu", "open"), actions)
+      list.applyPatches(JSONArray().put(JSONObject().put("key", "bounded").put("type", "market")
+        .put("changes", JSONObject().put("accessibilityLabel", "Updated"))).toString())
+    }
+    for (attempt in 0 until 100) {
+      var updated = false
+      onMain { updated = holder(0).rowView.contentDescription == "Updated" }
+      if (updated) return
+      SystemClock.sleep(20)
+    }
+    fail("Visible table row did not receive its updated accessibility label")
+  }
+
   fun testIdentityLongPressKeepsGesturePointAndProgrammaticAnchor() {
     val actions = mutableListOf<JSONObject>()
     fun fixture(key: String, generation: Int) = JSONObject()

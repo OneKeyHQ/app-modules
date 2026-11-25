@@ -9,6 +9,7 @@ enum NativeListRendererRegistry {
       ),
       .walletGroup: (NativeListWalletGroupCell.self, { NativeListWalletGroupCell(frame: .zero) }),
       .identity: (NativeListIdentityCell.self, { NativeListIdentityCell(frame: .zero) }),
+      .boundedTable: (NativeListBoundedTableCell.self, { NativeListBoundedTableCell(frame: .zero) }),
       .market: (NativeListMarketCell.self, { NativeListMarketCell(frame: .zero) }),
       .message: (NativeListMessageCell.self, { NativeListMessageCell(frame: .zero) }),
       .rail: (NativeListRailCell.self, { NativeListRailCell(frame: .zero) }),

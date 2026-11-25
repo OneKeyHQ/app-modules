@@ -2815,3 +2815,39 @@ Internal Pod edges use unversioned CocoaPods dependencies, matching the npm
 internal `*` policy while retaining external constraints. Real specification
 readback is `>= 0`; normal SDK example and consumer Pod installs passed. This
 does not retroactively make alpha.445's invalid `*` Pod requirement usable.
+
+### Bounded table presentation (OK-67420)
+
+A dataRow or market row may supply ordered tableColumns to replace its ordinary
+content on Web, iOS and Android. The ordinary template fields remain required.
+A detail row accepts 2–6 cells and a market row accepts 2–7. Keys are unique
+within a row. Width is in logical layout units and includes the cell's visual
+and text. Adjacent cells are separated by style.columnGap (default 8 logical units, range 0–64). Unspecified widths share the remaining space equally after gaps. The caller
+computes widths from its container and owns horizontal scrolling. Each formatted line accepts up to 64 segments totaling at most 4096 characters.
+Only the active presentation supplies table-specific interactions. A cell
+supports formatted primary and secondary text, alignment, tones and an optional
+leading visual. An actionable cell supplies actionKey and accessibilityLabel
+together. Unless an explicit row accessibility label is supplied, the row announces
+the primary and secondary lines in column order. Ordinary segments announce their
+concatenated text. Empty subscript runs do not affect the spoken line. For a line
+with a nonempty subscript run, the row announces the corresponding plain text
+(`text` or `secondaryText`). Development validation requires nonblank plain text for each such line after
+merging unless the row supplies a nonblank accessibility label. In production
+the formatted line still renders when its spoken text is missing. A blank row
+label clears the override and restores the generated label. Activating a cell
+delivers the existing row action event with `anchor.source = "leadingAction"`
+and `anchor.slot` equal to its zero-based column index, including right-hand cells.
+
+In production, snapshots and patches discard unknown column and visual fields,
+drop incomplete cell actions, and truncate each text line to 4096 characters
+and each formatted line to 64 segments and 4096 characters in total.
+Image-like extra fields on a column are discarded while its nested leading
+image is normalized. If the retained segments contain no text, display and
+generated announcements use the corresponding plain text for that line.
+Column geometry and identity still require a valid structural snapshot.
+
+Replacing cell values can use a row patch. Entering or leaving table mode or
+changing cell keys, order, widths or alignment requires a structural snapshot.
+The table takes precedence over webTable. Without it, existing templates and
+their limits apply. Runtime acceptance requires narrow/wide comparisons,
+recycling, inline actions and real native builds on both mobile platforms.

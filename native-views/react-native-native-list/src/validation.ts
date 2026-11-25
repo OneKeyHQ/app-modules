@@ -7,6 +7,7 @@ import type {
   LeadingVisual,
   MarketRow,
   MarketRowStyle,
+  NativeListTableColumn,
   NativeListListStyle,
   NativeListSnapshot,
   NativeListTextStyle,
@@ -43,6 +44,21 @@ const MARKET_METRIC_FIELDS = [
   'alignment',
   'tone',
   'secondaryTone',
+] as const;
+
+const TABLE_COLUMN_FIELDS = [
+  'key',
+  'text',
+  'secondaryText',
+  'textSegments',
+  'secondaryTextSegments',
+  'tone',
+  'secondaryTone',
+  'alignment',
+  'width',
+  'actionKey',
+  'accessibilityLabel',
+  'leading',
 ] as const;
 
 function isDevelopment(): boolean {
@@ -420,6 +436,7 @@ function assertBoxStyle(style: RowBoxStyle, path: string): void {
   for (const field of [
     'horizontalPadding',
     'verticalPadding',
+    'columnGap',
     'leadingGap',
     'titleBadgeGap',
     'trailingGap',
@@ -1007,6 +1024,104 @@ function assertWebMarketTable(
   });
 }
 
+function assertTableColumns(
+  columns: readonly NativeListTableColumn[] | undefined,
+  type: 'market' | 'dataRow',
+  path: string,
+  requireSpokenText = false
+): void {
+  if (columns === undefined) return;
+  const limit = type === 'market' ? 7 : 6;
+  if (!Array.isArray(columns) || columns.length < 2 || columns.length > limit)
+    fail(path, `must contain 2...${limit} columns`);
+  const keys = new Set<string>();
+  for (const [index, column] of columns.entries()) {
+    const field = `${path}[${index}]`;
+    const value = protocolObject(column, field);
+    if (isDevelopment())
+      assertUnknownKeys(
+        value,
+        TABLE_COLUMN_FIELDS,
+        field,
+        'table column field'
+      );
+    protocolKey(column.key, field + '.key');
+    if (keys.has(column.key)) fail(field, 'duplicate column key');
+    keys.add(column.key);
+    if (
+      column.width !== undefined &&
+      !(
+        Number.isFinite(column.width) &&
+        column.width > 0 &&
+        column.width <= 4096
+      )
+    )
+      fail(field + '.width', 'must be positive and at most 4096');
+    if (
+      column.actionKey !== undefined ||
+      column.accessibilityLabel !== undefined
+    ) {
+      protocolKey(column.actionKey, field + '.actionKey');
+      protocolKey(column.accessibilityLabel, field + '.accessibilityLabel');
+    }
+    if (column.leading !== undefined) {
+      const leading = protocolObject(column.leading, field + '.leading');
+      if (isDevelopment())
+        assertUnknownKeys(
+          leading,
+          VISUAL_FIELDS,
+          field + '.leading',
+          'visual field'
+        );
+      if (
+        ![
+          'token',
+          'account',
+          'wallet',
+          'network',
+          'image',
+          'icon',
+          'stackedImages',
+        ].includes(String(leading.kind))
+      )
+        fail(field + '.leading.kind', 'unsupported visual kind');
+      if (leading.kind === 'icon')
+        protocolKey(leading.name, field + '.leading.name');
+      assertLeadingVisual(column.leading, field + '.leading');
+    }
+    assertText(column.text, field + '.text');
+    assertText(column.secondaryText, field + '.secondaryText');
+    assertMetricColumn(column, field);
+    for (const textField of ['text', 'secondaryText'] as const) {
+      const key = `${textField}Segments` as const;
+      const segments: readonly ValueTextSegment[] | undefined = column[key];
+      if (
+        segments &&
+        (segments.length > 64 ||
+          segments.reduce(
+            (length, segment) => length + segment.text.length,
+            0
+          ) > MAX_TEXT_LENGTH)
+      )
+        fail(
+          field + '.' + key,
+          'supports up to 64 segments totaling at most 4096 characters'
+        );
+      if (
+        requireSpokenText &&
+        segments?.some(
+          (run) => run.style === 'subscript' && run.text.length > 0
+        ) &&
+        !column[textField]?.trim()
+      )
+        fail(
+          `${field}.${textField}`,
+          'must contain nonblank spoken text for subscript segments'
+        );
+    }
+  }
+}
+
 function assertMarketMetrics(
   metrics: MarketRow['metrics'],
   path: string
@@ -1022,42 +1137,47 @@ function assertMarketMetrics(
       protocolKey(value.key, `${columnPath}.key`);
       if (keys.has(column.key)) fail(`${columnPath}.key`, 'must be unique');
       keys.add(column.key);
-      if (typeof value.text !== 'string')
-        fail(`${columnPath}.text`, 'must be a string');
-      for (const field of ['textSegments', 'secondaryTextSegments'] as const) {
-        const segments = column[field];
-        if (segments !== undefined && !Array.isArray(segments))
-          fail(`${columnPath}.${field}`, 'must be an array');
-        segments?.forEach((segment: ValueTextSegment, segmentIndex: number) => {
-          const segmentPath = `${columnPath}.${field}[${segmentIndex}]`;
-          protocolObject(segment, segmentPath);
-          if (typeof segment.text !== 'string')
-            fail(`${segmentPath}.text`, 'must be a string');
-          if (segment.style !== undefined && segment.style !== 'subscript')
-            fail(`${segmentPath}.style`, 'must be subscript');
-        });
-      }
-      if (
-        value.weight !== undefined &&
-        ![1, 2, 3].includes(value.weight as number)
-      )
-        fail(`${columnPath}.weight`, 'must be 1, 2, or 3');
-      if (
-        value.alignment !== undefined &&
-        !['start', 'center', 'end'].includes(value.alignment as string)
-      )
-        fail(`${columnPath}.alignment`, 'must be start, center, or end');
-      if (
-        value.secondaryText !== undefined &&
-        typeof value.secondaryText !== 'string'
-      )
-        fail(`${columnPath}.secondaryText`, 'must be a string');
-      assertTextTone(value.tone as string | undefined, `${columnPath}.tone`);
-      assertTextTone(
-        value.secondaryTone as string | undefined,
-        `${columnPath}.secondaryTone`
-      );
+      assertMetricColumn(column, columnPath);
     }
+  );
+}
+
+function assertMetricColumn(
+  column: NonNullable<MarketRow['metrics']>[number],
+  columnPath: string
+) {
+  const value = protocolObject(column, columnPath);
+  if (typeof value.text !== 'string')
+    fail(`${columnPath}.text`, 'must be a string');
+  for (const field of ['textSegments', 'secondaryTextSegments'] as const) {
+    const segments = column[field];
+    if (segments !== undefined && !Array.isArray(segments))
+      fail(`${columnPath}.${field}`, 'must be an array');
+    segments?.forEach((segment: ValueTextSegment, segmentIndex: number) => {
+      const segmentPath = `${columnPath}.${field}[${segmentIndex}]`;
+      protocolObject(segment, segmentPath);
+      if (typeof segment.text !== 'string')
+        fail(`${segmentPath}.text`, 'must be a string');
+      if (segment.style !== undefined && segment.style !== 'subscript')
+        fail(`${segmentPath}.style`, 'must be subscript');
+    });
+  }
+  if (value.weight !== undefined && ![1, 2, 3].includes(value.weight as number))
+    fail(`${columnPath}.weight`, 'must be 1, 2, or 3');
+  if (
+    value.alignment !== undefined &&
+    !['start', 'center', 'end'].includes(value.alignment as string)
+  )
+    fail(`${columnPath}.alignment`, 'must be start, center, or end');
+  if (
+    value.secondaryText !== undefined &&
+    typeof value.secondaryText !== 'string'
+  )
+    fail(`${columnPath}.secondaryText`, 'must be a string');
+  assertTextTone(value.tone as string | undefined, `${columnPath}.tone`);
+  assertTextTone(
+    value.secondaryTone as string | undefined,
+    `${columnPath}.secondaryTone`
   );
 }
 
@@ -2642,6 +2762,7 @@ const ROW_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ],
   dataRow: [
     ...COMMON_ROW_FIELDS,
+    'tableColumns',
     'leading',
     'columns',
     'trailing',
@@ -2654,6 +2775,7 @@ const ROW_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ],
   market: [
     ...COMMON_ROW_FIELDS,
+    'tableColumns',
     'variant',
     'webTable',
     'metrics',
@@ -2812,6 +2934,7 @@ const PATCH_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ],
   dataRow: [
     ...COMMON_PATCH_FIELDS,
+    'tableColumns',
     'leading',
     'badges',
     'trailing',
@@ -2824,6 +2947,7 @@ const PATCH_FIELDS: Readonly<Record<string, readonly string[]>> = {
   ],
   market: [
     ...COMMON_PATCH_FIELDS,
+    'tableColumns',
     'longPressActionKey',
     'subtitleSegments',
     'leading',
@@ -2946,6 +3070,7 @@ const PROTOCOL_NUMBER_FIELDS = new Set([
   'borderWidth',
   'horizontalPadding',
   'verticalPadding',
+  'columnGap',
   'leadingGap',
   'lineGap',
   'titleBadgeGap',
@@ -3212,6 +3337,17 @@ function assertRowProtocol(row: RowModel, path: string): void {
         fail(path, 'invalid wallet member identity');
       keys.add(member.key);
     });
+  }
+  if (row.type === 'dataRow' || row.type === 'market') {
+    const hasExplicitLabel =
+      typeof row.accessibilityLabel === 'string' &&
+      row.accessibilityLabel.trim().length > 0;
+    assertTableColumns(
+      row.tableColumns,
+      row.type,
+      path + '.tableColumns',
+      isDevelopment() && !hasExplicitLabel
+    );
   }
   if (row.type === 'dataRow') {
     if (!Array.isArray(row.columns))
@@ -3773,6 +3909,8 @@ const NESTED_DECORATION_FIELDS: Readonly<Record<string, readonly string[]>> = {
 
 function sanitizeDecoration(value: unknown, field: string): unknown {
   if (value === undefined || value === null) return undefined;
+  if (field === 'tableColumns' && Array.isArray(value))
+    return sanitizeTableColumns(value);
   if (field === 'titleSegments')
     return passesTitleRunRules(() => assertTitleSegments(value, field))
       ? value
@@ -4044,6 +4182,11 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
     if (key === 'hoverActionKey' && (typeof item !== 'string' || !item.trim()))
       continue;
     if (key === 'accessibilityLabel' && typeof item !== 'string') continue;
+    if (field === 'style' && key === 'columnGap') {
+      if (typeof item === 'number' && Number.isFinite(item))
+        next[key] = Math.min(64, Math.max(0, item));
+      continue;
+    }
     if (
       (field === 'style' || PROTOCOL_NUMBER_FIELDS.has(key)) &&
       typeof item !== 'object' &&
@@ -4162,6 +4305,66 @@ function sanitizeDecoration(value: unknown, field: string): unknown {
   return next;
 }
 
+/** Keep UTF-16 surrogate pairs intact when the native wire limit splits one. */
+function truncateTableText(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const last = text.charCodeAt(limit - 1);
+  const next = text.charCodeAt(limit);
+  const splitsPair =
+    last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
+  return text.slice(0, splitsPair ? limit - 1 : limit);
+}
+
+function sanitizeTableColumns(columns: unknown[]) {
+  return columns.map((column) => {
+    if (!isRecord(column)) return column;
+    const next = pickFields(column, TABLE_COLUMN_FIELDS);
+    for (const key of Object.keys(next))
+      if (next[key] == null) delete next[key];
+    if (next.leading !== undefined)
+      next.leading = sanitizeDecoration(next.leading, 'leading');
+    if (
+      typeof next.actionKey !== 'string' ||
+      !next.actionKey.trim() ||
+      typeof next.accessibilityLabel !== 'string' ||
+      !next.accessibilityLabel.trim()
+    ) {
+      delete next.actionKey;
+      delete next.accessibilityLabel;
+    }
+    for (const field of ['text', 'secondaryText'] as const) {
+      const text = next[field];
+      if (typeof text === 'string')
+        next[field] = truncateTableText(text, MAX_TEXT_LENGTH);
+      const key = `${field}Segments` as const;
+      if (!(key in next)) continue;
+      const segments = next[key];
+      if (!Array.isArray(segments)) {
+        delete next[key];
+        continue;
+      }
+      const bounded: ValueTextSegment[] = [];
+      let remaining = MAX_TEXT_LENGTH;
+      for (const run of segments.slice(0, 64)) {
+        if (!isRecord(run) || typeof run.text !== 'string') continue;
+        const part = truncateTableText(run.text, remaining);
+        bounded.push(
+          run.style === 'subscript'
+            ? { text: part, style: 'subscript' }
+            : { text: part }
+        );
+        remaining -= part.length;
+        if (remaining === 0 || part.length < run.text.length) break;
+      }
+      if (bounded.some((run) => run.text.length > 0)) next[key] = bounded;
+      else delete next[key];
+      if (field === 'text' && next.text === undefined && bounded.length)
+        next.text = '';
+    }
+    return next;
+  });
+}
+
 function sanitizeMarketMetrics(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
   return value.map((metric) => {
@@ -4233,6 +4436,7 @@ function normalizeEmptyImages(value: unknown, field = ''): unknown {
   }
   const object = value as Record<string, unknown>;
   if (
+    field !== 'tableColumns' &&
     typeof object.uri === 'string' &&
     !object.uri.trim() &&
     'width' in object &&
@@ -4251,6 +4455,11 @@ function normalizeEmptyImages(value: unknown, field = ''): unknown {
       ].includes(key);
     if (
       item === undefined ||
+      (key === 'accessibilityLabel' &&
+        (object.type === 'dataRow' || object.type === 'market') &&
+        Array.isArray(object.tableColumns) &&
+        typeof item === 'string' &&
+        !item.trim()) ||
       (item === null &&
         optional &&
         !(object.type === 'market' && key === 'metrics')) ||
@@ -4816,6 +5025,11 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
         fail(`${path}.changes.${field}`, 'unsupported patch field');
       continue;
     }
+    if (field === 'tableColumns' && !Array.isArray(value))
+      fail(
+        path + '.changes.tableColumns',
+        'expected an array; use a snapshot to change table geometry'
+      );
     if (value === null) {
       if (patch.type === 'market' && field === 'metrics')
         fail(
@@ -4857,6 +5071,16 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
       : patch.type === 'market' && field === 'metrics'
       ? sanitizeMarketMetrics(normalized)
       : sanitizeDecoration(normalized, field);
+    if (
+      (patch.type === 'dataRow' || patch.type === 'market') &&
+      field === 'tableColumns'
+    ) {
+      assertTableColumns(
+        canonical as readonly NativeListTableColumn[],
+        patch.type,
+        path + '.tableColumns'
+      );
+    }
     if (canonical !== undefined) changes[field] = canonical;
     // A rejected title decoration clears the old one instead of leaving it drawn.
     else if (
@@ -5017,6 +5241,21 @@ function sameOptionalPresence(left: unknown, right: unknown): boolean {
   return (left === undefined) === (right === undefined);
 }
 
+function sameTableGeometry(
+  a: readonly NativeListTableColumn[] | undefined,
+  b: readonly NativeListTableColumn[]
+) {
+  return (
+    a?.length === b.length &&
+    b.every(
+      (column, i) =>
+        column.key === a[i].key &&
+        column.width === a[i].width &&
+        (column.alignment ?? 'start') === (a[i].alignment ?? 'start')
+    )
+  );
+}
+
 /** Plan value-only patches; callers own valid immutable snapshots and commit state. */
 export function planNativeListPatches(
   previous: NativeListSnapshot,
@@ -5039,7 +5278,41 @@ export function planNativeListPatches(
     if (oldRow.key !== row.key || oldRow.type !== row.type) return undefined;
     if (oldRow === row) continue;
 
-    if (oldRow.type === 'identity' && row.type === 'identity') {
+    if (
+      (oldRow.type === 'dataRow' || oldRow.type === 'market') &&
+      (row.type === 'dataRow' || row.type === 'market') &&
+      row.tableColumns
+    ) {
+      if (!sameTableGeometry(oldRow.tableColumns, row.tableColumns))
+        return undefined;
+      if (sameJsonValue(oldRow, row)) continue;
+      const values = {
+        tableColumns: row.tableColumns,
+        revision: row.revision,
+        accessibilityLabel: row.accessibilityLabel,
+      };
+      if (
+        !sameOptionalPresence(oldRow.revision, row.revision) ||
+        !sameOptionalPresence(oldRow.accessibilityLabel, row.accessibilityLabel)
+      )
+        return undefined;
+      if (sameJsonValue({ ...oldRow, ...values }, row)) {
+        patches.push({ type: row.type, key: row.key, changes: values });
+      } else if (row.type === 'dataRow' && oldRow.type === 'dataRow') {
+        const changes = { ...values, columns: row.columns };
+        if (!sameJsonValue({ ...oldRow, ...changes }, row)) return undefined;
+        patches.push({ type: row.type, key: row.key, changes });
+      } else if (row.type === 'market' && oldRow.type === 'market') {
+        const changes = {
+          ...values,
+          price: row.price,
+          priceSegments: row.priceSegments,
+          change: row.change,
+        };
+        if (!sameJsonValue({ ...oldRow, ...changes }, row)) return undefined;
+        patches.push({ type: row.type, key: row.key, changes });
+      }
+    } else if (oldRow.type === 'identity' && row.type === 'identity') {
       const {
         subtitle: oldSubtitle,
         subtitleSegments: oldSubtitleSegments,
@@ -5105,6 +5378,25 @@ function mergeAndValidateSingleRow(
   if (previous.type !== patch.type)
     fail(`patches[${index}].type`, 'does not match row type');
   const changes = { ...patch.changes } as Record<string, unknown>;
+  if (
+    (previous.type === 'market' || previous.type === 'dataRow') &&
+    changes.tableColumns &&
+    !sameTableGeometry(
+      previous.tableColumns,
+      changes.tableColumns as readonly NativeListTableColumn[]
+    )
+  )
+    fail(
+      `patches[${index}].changes.tableColumns`,
+      'use a snapshot to change table geometry'
+    );
+  if (
+    (previous.type === 'market' || previous.type === 'dataRow') &&
+    previous.tableColumns &&
+    typeof changes.accessibilityLabel === 'string' &&
+    !changes.accessibilityLabel.trim()
+  )
+    changes.accessibilityLabel = null;
   if (previous.type === 'market') {
     if (
       typeof changes.price === 'string' &&
@@ -5113,6 +5405,7 @@ function mergeAndValidateSingleRow(
     )
       changes.priceSegments = null;
     if (
+      !previous.tableColumns &&
       (previous.webTable !== undefined || 'webTable' in changes) &&
       ['price', 'priceSegments', 'change'].some((field) => field in changes) &&
       changes.webTable === undefined
