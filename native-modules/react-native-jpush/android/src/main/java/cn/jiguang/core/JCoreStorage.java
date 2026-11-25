@@ -6,6 +6,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.provider.Settings;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -14,6 +15,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -34,6 +36,11 @@ public final class JCoreStorage {
     private static final String KEY_REG_ID = "registration_id";
     private static final String KEY_DEVICE_ID = "device_id";
     private static final String KEY_SERVER_REGISTERED = "server_registered";
+    private static final String KEY_RETIRED_LEGACY_REGISTRATION_PREFIX = "legacy_registration_retired.";
+    private static final String LEGACY_USER_PREFS = "cn.jiguang.sdk.user.profile";
+    private static final String LEGACY_CONFIG_PREFS = "cn.jpush.preferences.v2";
+    // JCore 5.2.0 uses this fixed format constant for both the AES key and IV.
+    private static final String LEGACY_REGISTRATION_AES_KEY = "DFA84B10B7ACDD25";
     private static final String KEY_PUSH_STOPPED = "push_stopped";
     private static final String KEY_PENDING_RESUME_APP_KEY = "pending_push_resume_app_key";
     private static final String UNCONFIGURED_RESUME_APP_KEY = "__jpush_unconfigured__";
@@ -75,6 +82,21 @@ public final class JCoreStorage {
     private static volatile Context sAppContext;
     private static volatile boolean sDebugMode = false;
     private static PushResumeClaim inFlightResume;
+    private static String lastLegacyRegistrationCheck = "";
+
+    static final class Registration {
+        final long uid;
+        final String password;
+        final String id;
+        final String deviceId;
+
+        Registration(long uid, String password, String id, String deviceId) {
+            this.uid = uid;
+            this.password = password;
+            this.id = id;
+            this.deviceId = deviceId;
+        }
+    }
 
     static final class PushResumeClaim {
         final String appKey;
@@ -296,13 +318,19 @@ public final class JCoreStorage {
 
     public static synchronized void setAppKey(Context context, String appKey) {
         if (!isEmpty(appKey)) {
+            String previousAppKey = getStringPref(context, KEY_APP_KEY, "");
             String pending = getStringPref(context, KEY_PENDING_RESUME_APP_KEY, "");
             if (UNCONFIGURED_RESUME_APP_KEY.equals(pending)) {
                 putStringPref(context, KEY_PENDING_RESUME_APP_KEY, appKey);
             } else if (!pending.isEmpty() && !pending.equals(appKey)) {
                 clearPendingPushResume(context);
             }
-            putStringPref(context, KEY_APP_KEY, appKey);
+            if (!previousAppKey.isEmpty() && !previousAppKey.equalsIgnoreCase(appKey)) {
+                lastLegacyRegistrationCheck = "";
+                persistRegistration(context, null, "", appKey);
+            } else {
+                putStringPref(context, KEY_APP_KEY, appKey);
+            }
         }
     }
 
@@ -407,30 +435,137 @@ public final class JCoreStorage {
     }
 
     public static synchronized void clearRegistration(Context context) {
-        putStringPref(context, KEY_FCM_BOUND_IDENTITY, "");
-        putBooleanPref(context, KEY_SERVER_REGISTERED, false);
-        putLongPref(context, KEY_UID, 0L);
-        putStringPref(context, KEY_PASSWORD, "");
-        putStringPref(context, KEY_REG_ID, "");
+        persistRegistration(context, null, getAppKey(context), null);
     }
 
-    public static boolean isServerRegistered(Context context) {
+    static synchronized boolean clearRegistrationForAppKey(Context context, String appKey) {
+        if (!appKey.equals(getAppKey(context))) return false;
+        clearRegistration(context);
+        return true;
+    }
+
+    static synchronized boolean commitServerRegistration(Context context, String appKey, Registration registration) {
+        if (!appKey.equals(getAppKey(context)) || !isCompleteRegistration(registration.uid, registration.password, registration.id)) {
+            return false;
+        }
+        persistRegistration(context, registration, appKey, null);
+        return true;
+    }
+
+    static synchronized Registration loadRegistrationForLogin(Context context, String appKey) {
+        if (!appKey.equals(getAppKey(context))) return null;
+        migrateLegacyRegistrationIfNeeded(context);
+        return isServerRegistered(context) ? readSourceRegistration(context) : null;
+    }
+
+    public static synchronized void migrateLegacyRegistrationIfNeeded(Context context) {
+        String appKey = getAppKey(context);
+        Context app = getAppContext(context);
+        if (app == null || appKey.isEmpty() || lastLegacyRegistrationCheck.equalsIgnoreCase(appKey)) {
+            return;
+        }
+        lastLegacyRegistrationCheck = appKey;
+        if (getBooleanPref(context, legacyRetiredKey(appKey), false)) return;
+        Registration legacy = readLegacyRegistration(app, appKey);
+        if (legacy != null) {
+            persistRegistration(context, legacy, appKey, null);
+        }
+    }
+
+    private static Registration readSourceRegistration(Context context) {
+        long uid = getUid(context);
+        String password = getPassword(context);
+        String id = getRegistrationId(context);
+        return isCompleteRegistration(uid, password, id) ? new Registration(uid, password, id, null) : null;
+    }
+
+    private static boolean isCompleteRegistration(long uid, String password, String id) {
+        return uid > 0 && !isEmpty(password) && !password.trim().isEmpty() && !"null".equals(password)
+            && !isEmpty(id) && !id.trim().isEmpty() && !"null".equals(id);
+    }
+
+    private static Registration readLegacyRegistration(Context context, String appKey) {
+        try {
+            SharedPreferences config = context.getSharedPreferences(LEGACY_CONFIG_PREFS, Context.MODE_PRIVATE);
+            String encryptedAppKey = config.getString("device_config_appkey_n", "");
+            String registeredAppKey = isEmpty(encryptedAppKey)
+                ? config.getString("device_config_appkey", "")
+                : decodeLegacyRegistrationValue(encryptedAppKey);
+            if (!appKey.equalsIgnoreCase(registeredAppKey)) return null;
+
+            SharedPreferences profile = context.getSharedPreferences(LEGACY_USER_PREFS, Context.MODE_PRIVATE);
+            long uid = Long.parseLong(decodeLegacyRegistrationValue(profile.getString("key_uid_e", "")));
+            String id = decodeLegacyRegistrationValue(profile.getString("key_rid_e", ""));
+            String encryptedPassword = profile.getString("key_ww", "");
+            String password = isEmpty(encryptedPassword)
+                ? profile.getString("key_pwd", "")
+                : decodeLegacyRegistrationValue(encryptedPassword);
+            return isCompleteRegistration(uid, password, id) ? new Registration(uid, password, id, null) : null;
+        } catch (RuntimeException unavailableOrInvalidPreferences) {
+            return null;
+        }
+    }
+
+    private static String decodeLegacyRegistrationValue(String value) {
+        if (isEmpty(value) || value.length() > 4096 || value.length() % 4 != 0
+            || !value.matches("[A-Za-z0-9+/]+={0,2}")) {
+            return "";
+        }
+        byte[] plain = JCoreCrypto.aesCbcDecrypt(JCoreCrypto.base64Decode(value),
+            LEGACY_REGISTRATION_AES_KEY, LEGACY_REGISTRATION_AES_KEY, 16);
+        return new String(plain, StandardCharsets.UTF_8);
+    }
+
+    private static String legacyRetiredKey(String appKey) {
+        return KEY_RETIRED_LEGACY_REGISTRATION_PREFIX + appKey.toLowerCase(Locale.ROOT);
+    }
+
+    private static void persistRegistration(Context context, Registration registration, String retiredAppKey, String nextAppKey) {
+        long uid = registration != null ? registration.uid : 0L;
+        String password = registration != null ? registration.password : "";
+        String id = registration != null ? registration.id : "";
+        String deviceId = registration != null ? registration.deviceId : null;
+        String retiredKey = retiredAppKey.isEmpty() ? null : legacyRetiredKey(retiredAppKey);
+        SharedPreferences shared = prefs(context);
+        if (shared != null) {
+            SharedPreferences.Editor editor = shared.edit();
+            editor.putLong(KEY_UID, uid);
+            editor.putString(KEY_PASSWORD, password);
+            editor.putString(KEY_REG_ID, id);
+            editor.putBoolean(KEY_SERVER_REGISTERED, registration != null);
+            editor.putString(KEY_FCM_BOUND_IDENTITY, "");
+            if (!isEmpty(deviceId)) editor.putString(KEY_DEVICE_ID, deviceId);
+            if (retiredKey != null) editor.putBoolean(retiredKey, true);
+            if (nextAppKey != null) editor.putString(KEY_APP_KEY, nextAppKey);
+            editor.apply();
+        }
+        MEMORY_FALLBACK.put(KEY_UID, uid);
+        MEMORY_FALLBACK.put(KEY_PASSWORD, password);
+        MEMORY_FALLBACK.put(KEY_REG_ID, id);
+        MEMORY_FALLBACK.put(KEY_SERVER_REGISTERED, registration != null);
+        MEMORY_FALLBACK.put(KEY_FCM_BOUND_IDENTITY, "");
+        if (!isEmpty(deviceId)) MEMORY_FALLBACK.put(KEY_DEVICE_ID, deviceId);
+        if (retiredKey != null) MEMORY_FALLBACK.put(retiredKey, true);
+        if (nextAppKey != null) MEMORY_FALLBACK.put(KEY_APP_KEY, nextAppKey);
+    }
+
+    public static synchronized boolean isServerRegistered(Context context) {
         return getBooleanPref(context, KEY_SERVER_REGISTERED, false);
     }
 
-    public static void setServerRegistered(Context context, boolean registered) {
+    public static synchronized void setServerRegistered(Context context, boolean registered) {
         putBooleanPref(context, KEY_SERVER_REGISTERED, registered);
     }
 
-    public static long getUid(Context context) {
+    public static synchronized long getUid(Context context) {
         return getLongPref(context, KEY_UID, 0L);
     }
 
-    public static String getPassword(Context context) {
+    public static synchronized String getPassword(Context context) {
         return getStringPref(context, KEY_PASSWORD, "");
     }
 
-    public static String getRegistrationId(Context context) {
+    public static synchronized String getRegistrationId(Context context) {
         return getStringPref(context, KEY_REG_ID, "");
     }
 

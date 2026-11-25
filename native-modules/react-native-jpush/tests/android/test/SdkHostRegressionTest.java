@@ -2418,6 +2418,7 @@ public final class SdkHostRegressionTest {
                 Thread server = new Thread(() -> {
                     try (Socket socket = listener.accept()) {
                         socket.setSoTimeout(3000);
+                        if (mode == 2) acknowledgeRegistration(socket, 860001L, "policy-password", "policy-rid");
                         JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 860001L);
                         check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Policy fixture must login normally");
                         writeLoopbackAck(socket, login, 860001L, 8601, 0, JCoreWireCodec.buildLoginResponsePayload(8601, 520, "", 1700000000));
@@ -3074,6 +3075,165 @@ public final class SdkHostRegressionTest {
     private static final String PENDING_RESUME_APP_KEY = "pending_push_resume_app_key";
     private static volatile Runnable resumeLogBarrier;
 
+    private static void acknowledgeRegistration(Socket socket, long uid, String password, String id) throws Exception {
+        JCoreWireCodec.DecodedFrame register = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), 0L);
+        check(register != null && register.command == JCoreWireCodec.CMD_REGISTER, "Expected a fresh registration");
+        writeLoopbackAck(socket, register, uid, 0, 0, JCoreWireCodec.buildRegisterResponsePayload(uid, password, id));
+    }
+
+    private static SharedPreferences fixturePreferences(Map<String, Object> values) {
+        ClassLoader loader = SdkHostRegressionTest.class.getClassLoader();
+        return (SharedPreferences) Proxy.newProxyInstance(loader, new Class<?>[] {SharedPreferences.class},
+            (pref, method, args) -> {
+                if ("edit".equals(method.getName())) {
+                    Map<String, Object> pending = new LinkedHashMap<>();
+                    return Proxy.newProxyInstance(loader, new Class<?>[] {SharedPreferences.Editor.class},
+                        (editor, operation, fields) -> {
+                            if (operation.getName().startsWith("put")) {
+                                pending.put((String) fields[0], fields[1]);
+                                return editor;
+                            }
+                            if ("apply".equals(operation.getName())) values.putAll(pending);
+                            return null;
+                        });
+                }
+                return values.getOrDefault(args[0], args[1]);
+            });
+    }
+
+    @org.junit.Test
+    @SuppressWarnings("unchecked")
+    public void testUpgradePrefersOriginalRegistrationAndRetiresRejectedSession() throws Exception {
+        final String legacyAppKey = "f00000000000000000000001";
+        final long legacyUid = 900345678L;
+        final String legacyId = "synthetic-android-legacy-rid";
+        final String legacyPassword = "synthetic-android-legacy-password";
+        final long sourceUid = 900345679L;
+        final String sourceId = "synthetic-android-source-rid";
+        final String sourcePassword = "synthetic-android-source-password";
+        final long freshUid = 900345680L;
+        final String freshId = "synthetic-android-fresh-rid";
+        final String freshPassword = "synthetic-android-fresh-password";
+        Field contextField = JCoreStorage.class.getDeclaredField("sAppContext");
+        contextField.setAccessible(true);
+        Field cacheField = JCoreStorage.class.getDeclaredField("MEMORY_FALLBACK");
+        cacheField.setAccessible(true);
+        Field checkedField = JCoreStorage.class.getDeclaredField("lastLegacyRegistrationCheck");
+        checkedField.setAccessible(true);
+        Map<String, Object> cache = (Map<String, Object>) cacheField.get(null);
+        Map<String, Object> originalCache = new LinkedHashMap<>(cache);
+        Object originalContext = contextField.get(null);
+        Object originalChecked = checkedField.get(null);
+        JCoreTcpEngine engine = JCoreTcpEngine.getInstance();
+        try {
+            for (String scenario : Arrays.asList("legacy only", "both", "source only", "different AppKey", "corrupt", "fresh", "rejected")) {
+                boolean hasLegacy = !"source only".equals(scenario) && !"fresh".equals(scenario);
+                boolean hasSource = Arrays.asList("both", "source only", "different AppKey", "rejected").contains(scenario);
+                boolean migrate = Arrays.asList("legacy only", "both", "rejected").contains(scenario);
+                boolean rejected = "rejected".equals(scenario);
+                String appKey = "different AppKey".equals(scenario) ? "f00000000000000000000002" : legacyAppKey.toUpperCase(java.util.Locale.ROOT);
+                Map<String, Object> source = Collections.synchronizedMap(new LinkedHashMap<>());
+                source.put("app_key", appKey);
+                if (hasSource) {
+                    source.put("uid", sourceUid);
+                    source.put("registration_id", sourceId);
+                    source.put("password", sourcePassword);
+                    source.put("server_registered", true);
+                }
+                Map<String, Object> config = new LinkedHashMap<>();
+                Map<String, Object> profile = new LinkedHashMap<>();
+                if (hasLegacy) {
+                    // These synthetic ciphertexts were emitted by the original JCore 5.2.0 JAR on Android.
+                    config.put("device_config_appkey_n", "ApohZpKZpp3X7DVjOF0qUqd1ivrAqUHLHOUXgVxQlCY=");
+                    profile.put("key_uid_e", "ikdrMchNpwHN6H/2Wtp8kQ==");
+                    profile.put("key_rid_e", "bGBUqVLOtMv+GUnmnhaebd1N3BuI1P/5/cojjfNfHPY=");
+                    profile.put("key_ww", "corrupt".equals(scenario) ? "%INVALID%" :
+                        "bGBUqVLOtMv+GUnmnhaebVza3Lxz4jwcmEvklr5KhZSuDjN88OHwVOYxzPkY8kI2");
+                }
+                Map<String, Object> originalProfile = new LinkedHashMap<>(profile);
+                Map<String, SharedPreferences> prefs = new LinkedHashMap<>();
+                prefs.put("cn.jiguang.sdk.clean.prefs", fixturePreferences(source));
+                prefs.put("cn.jiguang.sdk.user.profile", fixturePreferences(profile));
+                prefs.put("cn.jpush.preferences.v2", fixturePreferences(config));
+                Context context = new Context() {
+                    @Override public SharedPreferences getSharedPreferences(String name, int mode) { return prefs.get(name); }
+                };
+                engine.stop(context);
+                cache.clear();
+                contextField.set(null, context);
+                checkedField.set(null, "");
+                engine.setAutoReconnectEnabled(false);
+                engine.setDefaultRequestTimeoutMs(1500L);
+                AtomicReference<Throwable> serverError = new AtomicReference<>();
+                CountDownLatch finish = new CountDownLatch(1);
+                try (ServerSocket listener = new ServerSocket(0, 2, InetAddress.getByName("127.0.0.1"))) {
+                    listener.setSoTimeout(3000);
+                    Thread server = new Thread(() -> {
+                        try (Socket socket = listener.accept()) {
+                            socket.setSoTimeout(3000);
+                            if (!migrate && !hasSource) acknowledgeRegistration(socket, freshUid, freshPassword, freshId);
+                            long firstUid = migrate ? legacyUid : hasSource ? sourceUid : freshUid;
+                            String firstPassword = migrate ? legacyPassword : hasSource ? sourcePassword : freshPassword;
+                            JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), firstUid);
+                            check(login != null && login.command == JCoreWireCodec.CMD_LOGIN && login.uid == firstUid,
+                                scenario + " must log in with the selected UID");
+                            JCoreWireCodec.LoginRequest payload = JCoreWireCodec.parseLoginRequest(login.body);
+                            check(payload != null && JCoreCrypto.md5Hex(firstPassword).equals(payload.passwordMd5)
+                                && appKey.equals(payload.appKey), scenario + " must send the matching password and AppKey");
+                            long uid = firstUid;
+                            if (rejected) {
+                                writeLoopbackAck(socket, login, firstUid, 0, 108, new byte[0]);
+                                acknowledgeRegistration(socket, freshUid, freshPassword, freshId);
+                                uid = freshUid;
+                                login = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), freshUid);
+                                check(login != null && login.command == JCoreWireCodec.CMD_LOGIN && login.uid == freshUid,
+                                    "Re-registration must be followed by Login with the replacement UID");
+                            }
+                            writeLoopbackAck(socket, login, uid, 8901, 0, JCoreWireCodec.buildLoginResponsePayload(8901, 520, "", 1700000000));
+                            JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(socket.getInputStream(), uid);
+                            check(heartbeat != null && heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Expected initial heartbeat");
+                            writeLoopbackAck(socket, heartbeat, uid, 8901, 0, new byte[0]);
+                            check(finish.await(3000L, TimeUnit.MILLISECONDS), "Upgrade fixture did not finish");
+                        } catch (Throwable error) { serverError.set(error); }
+                    }, "test-registration-upgrade");
+                    server.setDaemon(true);
+                    server.start();
+                    try {
+                        engine.setCustomEndpoint("127.0.0.1", listener.getLocalPort());
+                        JPushInterface.init(context);
+                        if (migrate && !rejected) check(legacyId.equals(JPushInterface.getRegistrationID(context)),
+                            "Initialized host must see the legacy ID before login");
+                        check(engine.awaitHandshake(3000L) && engine.isLoggedIn(), scenario + " must login: " + serverError.get());
+                        String expectedId = rejected || (!migrate && !hasSource) ? freshId : migrate ? legacyId : sourceId;
+                        check(expectedId.equals(JPushInterface.getRegistrationID(context)), scenario + " selected the wrong public ID");
+                        check(expectedId.equals(source.get("registration_id")) && Boolean.TRUE.equals(source.get("server_registered")),
+                            scenario + " must persist the selected ID and registered flag");
+                        check(profile.equals(originalProfile), "Legacy profile must be read-only");
+                        if (rejected) {
+                            engine.stop(context);
+                            cache.clear();
+                            checkedField.set(null, "");
+                            JCoreStorage.migrateLegacyRegistrationIfNeeded(context);
+                            check(freshId.equals(JPushInterface.getRegistrationID(context)), "Restart must not restore a rejected legacy ID");
+                        }
+                    } finally {
+                        finish.countDown();
+                        engine.stop(context);
+                        server.join(3500L);
+                    }
+                    check(serverError.get() == null && !server.isAlive(), scenario + " server failed: " + serverError.get());
+                }
+            }
+        } finally {
+            engine.setAutoReconnectEnabled(true);
+            engine.setDefaultRequestTimeoutMs(5000L);
+            cache.clear();
+            cache.putAll(originalCache);
+            contextField.set(null, originalContext);
+            checkedField.set(null, originalChecked);
+        }
+    }
+
     public static void recordResumeFixtureLog(String tag, String message) {
         Runnable barrier = resumeLogBarrier;
         if (barrier != null && "Push resume requested".equals(message)) barrier.run();
@@ -3446,6 +3606,8 @@ public final class SdkHostRegressionTest {
                         check(old.getInputStream().read() == -1, "Old connection must close without sending resume");
                     }
                     try (Socket replacement = listener.accept()) {
+                        replacement.setSoTimeout(3000);
+                        acknowledgeRegistration(replacement, RESUME_FIXTURE_UID, "resume-password", "resume-new-rid");
                         acknowledgeResumeFixtureLogin(replacement, 8812);
                         JCoreWireCodec.DecodedFrame request =
                             JCoreWireCodec.readClientFrameFromStream(replacement.getInputStream(), RESUME_FIXTURE_UID);

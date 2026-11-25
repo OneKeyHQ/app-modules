@@ -25,6 +25,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
 @property (nonatomic, assign) uint8_t version;
 @property (nonatomic, assign) NSUInteger policyGeneration;
 @property (nonatomic, strong) NSData *bodyData;
+@property (nonatomic, copy, nullable) NSData *(^buildBody)(void);
 @property (nonatomic, copy, nullable) JCORETcpResponseHandler completion;
 @end
 
@@ -156,6 +157,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         }
         // Stop control is the final write on the old connection; all content is already gated.
         if (generation == config.policyGeneration && config.collectionAuthorized && config.pushStopped &&
+            [self->_loggedInAppKey isEqualToString:config.appKey] &&
             self->_connected && self->_loggedIn && self->_connection != nil) {
             nw_connection_t connection = self->_connection;
             NSData *packet = [JCOREWireProtocol encodeFrameWithCommand:JCOREWireCommandPushCtrl version:1
@@ -557,11 +559,10 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             return;
         }
         JCORERegisterResponse *parsed = [JCOREWireProtocol parseRegisterResponse:responseFrame];
-        if (error == nil && parsed != nil && parsed.statusCode == 0 && parsed.uid > 0 && parsed.registrationID.length > 0) {
-            [config updateRegistrationWithUid:parsed.uid
-                                     password:parsed.password ?: @""
-                               registrationID:parsed.registrationID
-                                     deviceID:parsed.deviceID];
+        if (error == nil && parsed != nil && parsed.statusCode == 0 && parsed.uid > 0 &&
+            parsed.password.length > 0 && parsed.registrationID.length > 0) {
+            if (![config commitRegistrationWithUid:parsed.uid password:parsed.password registrationID:parsed.registrationID
+                                          deviceID:parsed.deviceID policyGeneration:strongSelf->_policyGeneration]) return;
             [JCOREConfiguration logInfo:[NSString stringWithFormat:@"TCP register success uid=%llu registrationId=%@",
                                          parsed.uid, parsed.registrationID]];
             [strongSelf postNotificationOnMain:kJPFNetworkDidRegisterNotification
@@ -611,8 +612,9 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         if (login != nil && login.statusCode == 108) {
             // Status 108: uid unregistered/invalid on server -> clear credentials and re-register immediately
             [JCOREConfiguration logWarn:@"TCP login rejected code=108, resetting registration and re-registering"];
-            [config resetRegistration];
-            [strongSelf sendRegisterRequestLocked];
+            if ([config resetRegistrationForPolicyGeneration:strongSelf->_policyGeneration]) {
+                [strongSelf sendRegisterRequestLocked];
+            }
             return;
         }
         if (login != nil && login.statusCode == 1012) {
@@ -1035,6 +1037,25 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             version:(uint8_t)version
            bodyData:(NSData *)bodyData
          completion:(JCORETcpResponseHandler)completion {
+    [self enqueueCommand:command version:version bodyData:bodyData buildBody:nil completion:completion];
+}
+
+- (void)reportLiveActivityTokenHex:(NSString *)tokenHex
+             aliasOrAttributesType:(NSString *)aliasOrAttributesType
+                       isPushToken:(BOOL)isPushToken
+                        completion:(JCORETcpResponseHandler)completion {
+    [self enqueueCommand:JCOREWireCommandLiveActivity version:1 bodyData:nil buildBody:^NSData *{
+        return [JCOREWireProtocol buildLiveActivityPayloadWithTokenHex:tokenHex
+                                                 aliasOrAttributesType:aliasOrAttributesType
+                                                           isPushToken:isPushToken];
+    } completion:completion];
+}
+
+- (void)enqueueCommand:(uint8_t)command
+                version:(uint8_t)version
+               bodyData:(NSData *)bodyData
+              buildBody:(NSData *(^)(void))buildBody
+             completion:(JCORETcpResponseHandler)completion {
     NSUInteger generation = [JCOREConfiguration shared].policyGeneration;
     dispatch_async(_sessionQueue, ^{
         if (![[JCOREConfiguration shared] allowsPolicyGeneration:generation] || self->_userDisconnected) {
@@ -1054,6 +1075,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             queued.command = command;
             queued.version = version;
             queued.bodyData = bodyData ?: [NSData data];
+            queued.buildBody = buildBody;
             queued.completion = completion;
             [self->_queuedRequests addObject:queued];
             if (!self->_connected && !self->_connecting && !self->_userDisconnected) {
@@ -1061,7 +1083,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
             }
             return;
         }
-        [self sendRawCommandLocked:command version:version bodyData:bodyData completion:completion];
+        [self sendRawCommandLocked:command version:version bodyData:buildBody != nil ? buildBody() : bodyData completion:completion];
     });
 }
 
@@ -1078,7 +1100,7 @@ NSString *const kJPFServiceErrorNotification = @"kJPFServiceErrorNotification";
         }
         [self sendRawCommandLocked:item.command
                            version:item.version
-                          bodyData:item.bodyData
+                          bodyData:item.buildBody != nil ? item.buildBody() : item.bodyData
                         completion:item.completion];
     }
 }

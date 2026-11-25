@@ -575,8 +575,8 @@ static NSString *JCoreReadString(NSData *data, NSUInteger *offset) {
     JCoreAppendString(body, clientString);       // 3. client
     JCoreAppendString(body, tokenString);        // 4. token
     JCoreAppendString(body, advertisingString);  // 5. advertising
-    JCoreAppendUInt8(body, config.buildType);    // 6. buildType (0=debug, 1=release)
-    JCoreAppendUInt8(body, config.apsType);      // 7. apsType (0=dev, 1=prod)
+    JCoreAppendUInt8(body, config.buildType);    // 6. buildType (1=debug, 2=release)
+    JCoreAppendUInt8(body, config.apsType);      // 7. apsType (1=dev, 2=prod)
     JCoreAppendUInt8(body, 1);                   // 8. platform (1=iOS)
     JCoreAppendString(body, deviceString);       // 9. device ("1$${deviceID}")
     JCoreAppendUInt32(body, 1);                  // 10. integrateBusiness (1=push)

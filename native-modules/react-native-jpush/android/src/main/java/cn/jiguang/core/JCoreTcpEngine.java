@@ -824,10 +824,8 @@ public final class JCoreTcpEngine {
             readerThread.setDaemon(true);
             readerThread.start();
 
-            String appKey = JCoreStorage.getAppKey(context);
-            if (appKey.isEmpty()) {
-                appKey = "onekey_default_appkey";
-            }
+            String configuredAppKey = JCoreStorage.getAppKey(context);
+            String appKey = configuredAppKey.isEmpty() ? "onekey_default_appkey" : configuredAppKey;
             String channel = JCoreStorage.getChannel(context);
             String pkgName = "so.onekey.app.wallet";
             if (context != null) {
@@ -842,21 +840,20 @@ public final class JCoreTcpEngine {
             String deviceId = JCoreStorage.getDeviceId(context);
             String countryCode = JCoreStorage.getCountryCode(context);
 
-            // Registered Device Fast-Login check: skip Register (cmd=0) if already server-registered
-            boolean fastLogin = JCoreStorage.isServerRegistered(context)
-                && JCoreStorage.getUid(context) > 0L
-                && !JCoreStorage.getPassword(context).isEmpty()
-                && !JCoreStorage.getRegistrationId(context).isEmpty();
-
-            if (!fastLogin) {
-                if (!performRegisterHandshake(context, appKey, channel, pkgName, deviceId, owner)) {
-                    closeOwnedSocket(owner);
-                    return false;
-                }
+            JCoreStorage.Registration registration;
+            synchronized (this) {
+                if (!owns(owner, context)) return false;
+                registration = JCoreStorage.loadRegistrationForLogin(context, configuredAppKey);
             }
-
-            long uid = JCoreStorage.getUid(context);
-            String password = JCoreStorage.getPassword(context);
+            if (registration == null) {
+                registration = performRegisterHandshake(context, configuredAppKey, appKey, channel, pkgName, deviceId, owner);
+            }
+            if (registration == null) {
+                closeOwnedSocket(owner);
+                return false;
+            }
+            long uid = registration.uid;
+            String password = registration.password;
             byte romPlatformMask = getRomPlatformMask(context);
             byte[] loginBody = JCoreWireCodec.buildLoginPayload(
                 password,
@@ -886,15 +883,15 @@ public final class JCoreTcpEngine {
             // Handle Login statusCode == 108 (clear registration and immediately re-register + login)
             if (loginResp.statusCode == 108) {
                 synchronized (this) {
-                    if (!owns(owner, context)) return false;
-                    JCoreStorage.clearRegistration(context);
+                    if (!owns(owner, context) || !JCoreStorage.clearRegistrationForAppKey(context, configuredAppKey)) return false;
                 }
-                if (!performRegisterHandshake(context, appKey, channel, pkgName, deviceId, owner)) {
+                registration = performRegisterHandshake(context, configuredAppKey, appKey, channel, pkgName, deviceId, owner);
+                if (registration == null) {
                     closeOwnedSocket(owner);
                     return false;
                 }
-                uid = JCoreStorage.getUid(context);
-                password = JCoreStorage.getPassword(context);
+                uid = registration.uid;
+                password = registration.password;
                 romPlatformMask = getRomPlatformMask(context);
                 loginBody = JCoreWireCodec.buildLoginPayload(
                     password,
@@ -992,8 +989,9 @@ public final class JCoreTcpEngine {
         return (byte) (JCoreStorage.hasBoundFcmToken(context) ? (8 | 32) : 8);
     }
 
-    private boolean performRegisterHandshake(
+    private JCoreStorage.Registration performRegisterHandshake(
         Context context,
+        String configuredAppKey,
         String appKey,
         String channel,
         String pkgName,
@@ -1002,7 +1000,7 @@ public final class JCoreTcpEngine {
     ) {
         final int registerSeed;
         synchronized (this) {
-            if (!owns(owner, context)) return false;
+            if (!owns(owner, context)) return null;
             registerSeed = JCoreCrypto.nextRegisterSeed();
             JCoreWireCodec.setLastRegisterSeed(registerSeed);
         }
@@ -1016,7 +1014,7 @@ public final class JCoreTcpEngine {
             defaultRequestTimeoutMs
         );
         if (regFrame == null) {
-            return false;
+            return null;
         }
         JCoreWireCodec.RegisterResponse regResp = JCoreWireCodec.parseRegisterResponse(regFrame);
         if (regResp == null || regResp.statusCode != 0 || regResp.uid <= 0L) {
@@ -1027,23 +1025,19 @@ public final class JCoreTcpEngine {
                     started = false;
                 }
             }
-            return false;
+            return null;
         }
+        JCoreStorage.Registration registration = new JCoreStorage.Registration(
+            regResp.uid, regResp.password, regResp.registrationId, regResp.deviceId);
         synchronized (this) {
-            if (!owns(owner, context)) return false;
-            JCoreStorage.updateRegistration(
-                context,
-                regResp.uid,
-                regResp.password,
-                regResp.registrationId,
-                regResp.deviceId
-            );
-            JCoreStorage.setServerRegistered(context, true);
+            if (!owns(owner, context) || !JCoreStorage.commitServerRegistration(context, configuredAppKey, registration)) {
+                return null;
+            }
         }
-        if (!owns(owner, context)) return false;
+        if (!owns(owner, context)) return null;
         JLogger.i("TCP register success uid=" + regResp.uid + " registrationId=" + regResp.registrationId);
         ActionHelper.getInstance().dispatchRegisterEvent(context, regResp.registrationId);
-        return true;
+        return registration;
     }
 
     private void flushPreLoginQueue(final Context context, final Attempt expectedOwner) {

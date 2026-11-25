@@ -114,6 +114,25 @@ static JCOREWireFrame *readSingleClientFrameOnServer(int clientFd) {
     return frames.firstObject;
 }
 
+static void assertEnvironment(NSData *body, NSUInteger offset, uint8_t expected) {
+    const uint8_t *bytes = body.bytes;
+    ASSERT_TRUE(body.length >= offset + 2 && bytes[offset] == expected && bytes[offset + 1] == expected,
+                "Unexpected buildType/apsType at offset %lu, expected %u in both fields",
+                (unsigned long)offset, expected);
+}
+
+static NSUInteger skipWireStrings(NSData *body, NSUInteger count) {
+    NSUInteger offset = 0;
+    for (NSUInteger i = 0; i < count; i++) {
+        ASSERT_TRUE(body.length >= offset + 2, "Missing wire string length");
+        const uint8_t *bytes = body.bytes;
+        NSUInteger length = ((NSUInteger)bytes[offset] << 8) | bytes[offset + 1];
+        offset += 2 + length;
+        ASSERT_TRUE(body.length >= offset, "Truncated wire string");
+    }
+    return offset;
+}
+
 static void testCryptoPrimitives(void) {
     NSString *seedKey0 = [JCORECrypto generateSeedKey:123456789ULL];
     NSString *seedKey0Again = [JCORECrypto seedKeyForSeed:123456789ULL];
@@ -545,6 +564,7 @@ static void testEndToEndMockServerHandshake(void) {
         ASSERT_TRUE(regFrame != nil && regFrame.command == JCOREWireCommandRegister && regFrame.version == 30,
                     "Expected Register(cmd=0, ver=30), got cmd=%u ver=%u", regFrame.command, regFrame.version);
         ASSERT_TRUE(regFrame.sessionId > 0, "Expected non-zero random register seed in bytes 12..15");
+        assertEnvironment(regFrame.bodyData, skipWireStrings(regFrame.bodyData, 5), 2);
         serverRegistered = YES;
 
         NSData *regRespBody = [JCOREWireProtocol buildRegisterResponsePayloadWithStatusCode:0
@@ -591,6 +611,7 @@ static void testEndToEndMockServerHandshake(void) {
             ASSERT_TRUE(req.sessionId == assignedSessionId, "Expected sessionId=0x%x in client header, got 0x%x", assignedSessionId, req.sessionId);
             if (req.command == JCOREWireCommandDeviceToken) {
                 ASSERT_TRUE(req.version == 3, "DeviceToken version must be 3");
+                assertEnvironment(req.bodyData, skipWireStrings(req.bodyData, 1), 2);
                 serverDeviceToken = [JCOREWireProtocol parseDeviceTokenFromFrame:req];
                 NSData *ack = [JCOREWireProtocol encodeServerFrameWithCommand:JCOREWireCommandDeviceToken
                                                                       version:req.version
@@ -675,6 +696,7 @@ static void testEndToEndMockServerHandshake(void) {
                 off += 2 + aLen;
                 uint8_t laFlag = 0;
                 [req.bodyData getBytes:&laFlag range:NSMakeRange(off, 1)];
+                assertEnvironment(req.bodyData, off + 1, 2);
                 if (laFlag == 0) {
                     serverSawLiveActivityStart = YES;
                 } else if (laFlag == 1) {
@@ -768,6 +790,8 @@ static void testEndToEndMockServerHandshake(void) {
     // Reset client state & point SIS override to our loopback mock server
     [JCOREConfiguration shared].pushStopped = NO;
     [JCOREConfiguration shared].collectionAuthorized = YES;
+    [[JCOREConfiguration shared] configureWithAppKey:@"1f2027d3cfb1b51dac664c42"
+        channel:@"App Store" isProduction:YES advertisingIdentifier:nil];
     [[JCOREConfiguration shared] resetRegistration];
     ASSERT_TRUE([[JPUSHService registrationID] isEqualToString:@""],
                 "Expected empty registrationID before TCP Register (cmd=0), got %@", [JPUSHService registrationID]);
@@ -818,7 +842,7 @@ static void testEndToEndMockServerHandshake(void) {
     [JPUSHService setupWithOption:@{}
                            appKey:@"1f2027d3cfb1b51dac664c42"
                           channel:@"App Store"
-                 apsForProduction:NO];
+                 apsForProduction:YES];
     [JPUSHService turnONPush];
 
     uint8_t rawToken[32];
@@ -1728,6 +1752,7 @@ static void testTokenAcknowledgementAndConnectedPolicy(void) {
     NSData *deviceTokenB = [NSData dataWithBytes:"\x05\x06\x07\x08" length:4];
     NSData *voipToken = [NSData dataWithBytes:"\xa0\xa1\xa2\xa3" length:4];
     config.collectionAuthorized = NO;
+    [config configureWithAppKey:@"1f2027d3cfb1b51dac664c42" channel:@"test" isProduction:YES advertisingIdentifier:nil];
     config.deviceTokenHex = @"01020304";
     config.voipTokenHex = @"a0a1a2a3";
     [config updateRegistrationWithUid:900100200 password:@"fixture-password" registrationID:@"fixture-rid"];
@@ -1775,6 +1800,11 @@ static void testTokenAcknowledgementAndConnectedPolicy(void) {
                 if (request == nil) { break; }
                 uint16_t status = 0;
                 if (request.command == JCOREWireCommandDeviceToken) {
+                    assertEnvironment(request.bodyData, skipWireStrings(request.bodyData, 1), 2);
+                    if (deviceCount == 0 && connectionIndex == 0) {
+                        ASSERT_TRUE([[JCOREWireProtocol parseDeviceTokenFromFrame:request] isEqualToString:@"01020304"],
+                                    "First login must re-report the saved token before another APNs callback");
+                    }
                     deviceCount++;
                     if (connectionIndex == 0 && deviceCount == 1) { status = 500; }
                     if (connectionIndex == 0 && deviceCount == 3) {
@@ -1837,7 +1867,7 @@ static void testTokenAcknowledgementAndConnectedPolicy(void) {
         close(listenFd);
         dispatch_semaphore_signal(serverDone);
     });
-    [JPUSHService setupWithOption:@{} appKey:@"1f2027d3cfb1b51dac664c42" channel:@"test" apsForProduction:NO];
+    [JPUSHService setupWithOption:@{} appKey:@"1f2027d3cfb1b51dac664c42" channel:@"test" apsForProduction:YES];
     config.collectionAuthorized = YES;
     runUntil(^BOOL{ return dispatch_semaphore_wait(initialReports, DISPATCH_TIME_NOW) == 0; }, 3, @"Initial token reports missing");
     NSDate *timeoutDeadline = [NSDate dateWithTimeIntervalSinceNow:0.4];
@@ -1909,6 +1939,7 @@ static void testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume(void) {
     config.voipTokenHex = nil;
     config.collectionAuthorized = NO;
     config.pushStopped = YES;
+    [config configureWithAppKey:@"1f2027d3cfb1b51dac664c42" channel:@"test" isProduction:NO advertisingIdentifier:nil];
     [config updateRegistrationWithUid:900100255 password:@"hb-pwd-2026" registrationID:@"hb-rid-2026"];
     config.requestTimeoutInterval = 0.25;
     config.requestResendInterval = 0.1;
@@ -2132,6 +2163,142 @@ static void testSisSetupAndAppKeyReplacement(void) {
     printf("[PASS] Suite 10: concurrent SIS commits and discovery restart on AppKey replacement verified\n");
 }
 
+static void testIosUpgradeSessionAndTokenReports(void) {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *registrationsKey = @"com.onekey.jcore.registrations_by_app_key";
+    NSArray<NSString *> *keys = @[registrationsKey, @"com.onekey.jcore.uid", @"com.onekey.jcore.password",
+        @"com.onekey.jcore.registration_id", @"com.onekey.jcore.device_id"];
+    NSMutableDictionary *saved = [NSMutableDictionary dictionary];
+    for (NSString *key in keys) {
+        saved[key] = [defaults objectForKey:key];
+        [defaults removeObjectForKey:key];
+    }
+
+    // Synthetic tuple written by the original JCore 5.2.1 simulator library.
+    NSData *legacyCache = [[NSData alloc] initWithBase64EncodedString:
+        @"Bfxoo7d2Za8SnEnaIfNHvGRfKMdJJNZv1BISNfIuHhvL+JcUylsFp1ib7REz/lNsSMy/DDRiCWoSuTUu7XFH36jor7eClJEM7F4SKXW3quC7Nn8ZHaKamDSvZpf7bg/vO5yZ/9vfY5RkuLjfY4k81A=="
+        options:0];
+    NSString *appKey = [[[NSUUID.UUID.UUIDString stringByReplacingOccurrencesOfString:@"-" withString:@""] substringToIndex:24] lowercaseString];
+    NSURL *library = [[NSFileManager defaultManager] URLsForDirectory:NSLibraryDirectory inDomains:NSUserDomainMask].firstObject;
+    NSURL *legacyDir = [library URLByAppendingPathComponent:appKey isDirectory:YES];
+    NSURL *legacyFile = [legacyDir URLByAppendingPathComponent:@"io.jiguang.plist"];
+    ASSERT_TRUE([[NSFileManager defaultManager] createDirectoryAtURL:legacyDir withIntermediateDirectories:YES attributes:nil error:nil] &&
+                [legacyCache writeToURL:legacyFile atomically:YES], "Could not stage original SDK cache fixture");
+
+    JCOREConfiguration *config = [JCOREConfiguration shared];
+    JCORETcpSession *session = [JCORETcpSession shared];
+    config.appKey = nil;
+    config.collectionAuthorized = YES;
+    config.pushStopped = NO;
+    config.deviceTokenHex = @"0102";
+    config.voipTokenHex = nil;
+    for (NSUInteger scenario = 0; scenario < 3; scenario++) {
+        BOOL expectLegacy = scenario < 2;
+        NSString *expectedRID = expectLegacy ? @"synthetic-legacy-rid" : @"synthetic-source-rid";
+        uint64_t expectedUID = expectLegacy ? 900123456 : 900123457;
+        if (scenario > 0) {
+            [defaults removeObjectForKey:registrationsKey];
+            [defaults setObject:@900123457 forKey:@"com.onekey.jcore.uid"];
+            [defaults setObject:@"synthetic-source-password" forKey:@"com.onekey.jcore.password"];
+            [defaults setObject:@"synthetic-source-rid" forKey:@"com.onekey.jcore.registration_id"];
+        }
+        if (scenario == 2) {
+            ASSERT_TRUE([[NSData dataWithContentsOfURL:legacyFile] isEqualToData:legacyCache], "Legacy cache must remain read-only");
+            ASSERT_TRUE([[NSFileManager defaultManager] removeItemAtURL:legacyFile error:nil], "Could not remove test cache");
+        }
+
+        int listener = socket(AF_INET, SOCK_STREAM, 0);
+        struct sockaddr_in address = {0};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t length = sizeof(address);
+        ASSERT_TRUE(listener >= 0 && bind(listener, (struct sockaddr *)&address, length) == 0 &&
+                    listen(listener, 1) == 0 && getsockname(listener, (struct sockaddr *)&address, &length) == 0,
+                    "Could not start upgrade fixture listener");
+        [[JCORESisResolver shared] setCustomConnectHost:@"127.0.0.1" port:ntohs(address.sin_port) useSSL:NO];
+        dispatch_semaphore_t reports = dispatch_semaphore_create(0);
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            int fd = accept(listener, NULL, NULL);
+            ASSERT_TRUE(fd >= 0, "Upgrade fixture accept failed");
+            struct timeval timeout = {.tv_sec = 3};
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+            JCOREWireFrame *login = readSingleClientFrameOnServer(fd);
+            ASSERT_TRUE(login.command == JCOREWireCommandLogin && login.uid == expectedUID,
+                        "Upgrade must log in with the saved UID before sending any Register command");
+            NSData *loginAcknowledgement = [JCOREWireProtocol buildLoginResponsePayloadWithSessionId:123 serverVersion:600 serverTimestamp:1];
+            NSData *reply = [JCOREWireProtocol encodeServerFrameWithCommand:login.command version:login.version
+                requestId:login.requestId uid:login.uid algorithm:login.algorithm statusCode:0 bodyData:loginAcknowledgement];
+            ASSERT_TRUE(writeExactBytes(fd, reply.bytes, reply.length), "Upgrade fixture login ACK failed");
+            BOOL sawApns = NO;
+            BOOL sawActivity = NO;
+            while (!sawApns || !sawActivity) {
+                JCOREWireFrame *frame = readSingleClientFrameOnServer(fd);
+                ASSERT_TRUE(frame != nil && frame.uid == expectedUID, "Upgrade reports must use the saved UID");
+                NSData *body = [NSData data];
+                if (frame.command == JCOREWireCommandDeviceToken) {
+                    ASSERT_TRUE([[JCOREWireProtocol parseDeviceTokenFromFrame:frame] isEqualToString:@"0102"], "Upgrade lost the saved APNs token");
+                    assertEnvironment(frame.bodyData, skipWireStrings(frame.bodyData, 1), 2);
+                    sawApns = YES;
+                } else if (frame.command == JCOREWireCommandLiveActivity) {
+                    assertEnvironment(frame.bodyData, skipWireStrings(frame.bodyData, 2) + 1, 2);
+                    body = [JCOREWireProtocol buildLiveActivityResponsePayloadWithStatusCode:0 alias:@"upgrade-activity"];
+                    sawActivity = YES;
+                }
+                uint8_t version = frame.command == JCOREWireCommandHeartbeat ? 0 : frame.version;
+                NSData *ack = [JCOREWireProtocol encodeServerFrameWithCommand:frame.command version:version
+                    requestId:frame.requestId uid:frame.uid algorithm:frame.algorithm statusCode:0 bodyData:body];
+                ASSERT_TRUE(writeExactBytes(fd, ack.bytes, ack.length), "Upgrade fixture report ACK failed");
+            }
+            dispatch_semaphore_signal(reports);
+            close(fd);
+            close(listener);
+        });
+
+        [config configureWithAppKey:@"" channel:@"test" isProduction:NO advertisingIdentifier:nil];
+        [session startIfNeeded];
+        __block BOOL activityAcknowledged = NO;
+        [JPUSHService registerLiveActivity:@"upgrade-activity" pushToken:[@"token" dataUsingEncoding:NSUTF8StringEncoding]
+            completion:^(NSInteger code, NSString *activityID, NSData *token, NSInteger sequence) {
+                ASSERT_TRUE(code == 0, "Live Activity queued before setup must complete with the server ACK");
+                activityAcknowledged = YES;
+            } seq:1];
+        [JPUSHService setupWithOption:nil appKey:appKey.uppercaseString channel:@"test" apsForProduction:YES];
+        ASSERT_TRUE([[JPUSHService registrationID] isEqualToString:expectedRID], "Upgrade changed the Registration ID");
+        runUntil(^BOOL{ return activityAcknowledged; }, 4, @"Upgrade Live Activity report not acknowledged");
+        runUntil(^BOOL{ return dispatch_semaphore_wait(reports, DISPATCH_TIME_NOW) == 0; }, 2, @"Upgrade reports were not observed");
+        JCOREConfiguration *coldStart = [JCOREConfiguration new];
+        [coldStart configureWithAppKey:appKey channel:@"test" isProduction:YES advertisingIdentifier:nil];
+        ASSERT_TRUE(coldStart.uid == expectedUID && [coldStart.registrationID isEqualToString:expectedRID] &&
+                    [coldStart.password isEqualToString:expectLegacy ? @"synthetic-legacy-password" : @"synthetic-source-password"],
+                    "Upgrade session must survive a fresh configuration");
+        [session disconnect];
+        config.appKey = nil;
+    }
+    ASSERT_TRUE([legacyCache writeToURL:legacyFile atomically:YES], "Could not restore legacy cache fixture");
+    JCOREConfiguration *reset = [JCOREConfiguration new];
+    [reset configureWithAppKey:appKey channel:@"test" isProduction:YES advertisingIdentifier:nil];
+    [reset resetRegistration];
+    JCOREConfiguration *afterReset = [JCOREConfiguration new];
+    [afterReset configureWithAppKey:appKey channel:@"test" isProduction:NO advertisingIdentifier:nil];
+    ASSERT_TRUE(afterReset.uid == 0 && afterReset.registrationID.length == 0, "Reset must not resurrect a legacy session");
+    [afterReset configureWithAppKey:@"f00000000000000000000002" channel:@"test" isProduction:NO advertisingIdentifier:nil];
+    ASSERT_TRUE(afterReset.uid == 0, "An unscoped source tuple must not be adopted by another AppKey");
+    [config configureWithAppKey:@"" channel:@"test" isProduction:NO advertisingIdentifier:nil];
+    NSData *sandboxPayload = [JCOREWireProtocol buildDeviceTokenPayloadWithTokenHex:@"01"];
+    assertEnvironment(sandboxPayload, skipWireStrings(sandboxPayload, 1), 1);
+    NSData *sandboxRegister = [JCOREWireProtocol buildRegisterPayloadWithAppKey:@"test" channel:@"test" bundleIdHash:@"com.example"];
+    assertEnvironment(sandboxRegister, skipWireStrings(sandboxRegister, 5), 1);
+    NSData *sandboxActivity = [JCOREWireProtocol buildLiveActivityPayloadWithTokenHex:@"01" aliasOrAttributesType:@"activity" isPushToken:YES];
+    assertEnvironment(sandboxActivity, skipWireStrings(sandboxActivity, 2) + 1, 1);
+    [[JCORESisResolver shared] clearCustomConnectEndpoint];
+    [[NSFileManager defaultManager] removeItemAtURL:legacyDir error:nil];
+    for (NSString *key in keys) {
+        if (saved[key] != nil) [defaults setObject:saved[key] forKey:key];
+        else [defaults removeObjectForKey:key];
+    }
+    printf("[PASS] Suite 11: Legacy and earlier-source upgrade fast-login, APNs re-report, pre-setup Live Activity report, and AppKey isolation verified\n");
+}
+
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         testCryptoPrimitives();
@@ -2144,6 +2311,7 @@ int main(int argc, const char * argv[]) {
         testTokenAcknowledgementAndConnectedPolicy();
         testHeartbeatGeneralAckTimeoutReconnectAndPushCtrlResume();
         testSisSetupAndAppKeyReplacement();
+        testIosUpgradeSessionAndTokenReports();
     }
     return 0;
 }

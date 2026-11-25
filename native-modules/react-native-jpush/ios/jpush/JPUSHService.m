@@ -109,12 +109,9 @@ static NSString *JPushHexFromData(NSData *data) {
                   completion:(JPUSHLiveActivityTokenCompletion)completion
                          seq:(NSInteger)seq {
     NSString *tokenHex = JPushHexFromData(pushToStartToken);
-    NSData *body = [JCOREWireProtocol buildLiveActivityPayloadWithTokenHex:tokenHex
-                                                     aliasOrAttributesType:activityAttributes ?: @""
-                                                               isPushToken:NO];
-    [[JCORETcpSession shared] sendCommand:JCOREWireCommandLiveActivity
-                                  version:1
-                                 bodyData:body
+    [[JCORETcpSession shared] reportLiveActivityTokenHex:tokenHex
+                                  aliasOrAttributesType:activityAttributes ?: @""
+                                            isPushToken:NO
                                completion:^(JCOREWireFrame *responseFrame, NSError *error) {
         if (completion != nil) {
             JCORELiveActivityResponse *parsed = [JCOREWireProtocol parseLiveActivityResponse:responseFrame];
@@ -143,12 +140,9 @@ static NSString *JPushHexFromData(NSData *data) {
                     completion:(JPUSHLiveActivityTokenCompletion)completion
                            seq:(NSInteger)seq {
     NSString *tokenHex = JPushHexFromData(pushToken);
-    NSData *body = [JCOREWireProtocol buildLiveActivityPayloadWithTokenHex:tokenHex
-                                                     aliasOrAttributesType:liveActivityId ?: @""
-                                                               isPushToken:YES];
-    [[JCORETcpSession shared] sendCommand:JCOREWireCommandLiveActivity
-                                  version:1
-                                 bodyData:body
+    [[JCORETcpSession shared] reportLiveActivityTokenHex:tokenHex
+                                  aliasOrAttributesType:liveActivityId ?: @""
+                                            isPushToken:YES
                                completion:^(JCOREWireFrame *responseFrame, NSError *error) {
         if (completion != nil) {
             JCORELiveActivityResponse *parsed = [JCOREWireProtocol parseLiveActivityResponse:responseFrame];
