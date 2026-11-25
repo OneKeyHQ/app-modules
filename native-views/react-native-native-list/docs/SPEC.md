@@ -2851,7 +2851,10 @@ Updates that retain its key preserve the press even when the two buttons swap
 positions. Clearing the buttons may retain either valid placement on a passive
 column. On iOS, the default row height accommodates below-text buttons,
 wrapped labels and padding, with a minimum of 56 points, including for small
-rows. Explicit heights retain precedence. Android uses the default subdued
+rows. Explicit heights retain precedence. Ordinary iOS snapshots skip the old/new
+row-height comparison used by structural tail animations. Each list may reuse up
+to 256 measured table heights across layout passes with matching row content,
+allocated width and font families. Android uses the default subdued
 tint if the supplied icon tint cannot be parsed. A tap on an enabled
 icon counts as handled with the keyboard open, including in offset windows.
 A disabled row disables both buttons. Development rejects whole-cell actions

@@ -21,11 +21,29 @@ private final class NativeListReorderLongPress: UILongPressGestureRecognizer {
 }
 
 final class NativeListView: UIView {
+  private final class MeasuredTableHeight {
+    let content: String
+    let width: CGFloat
+    let height: CGFloat
+
+    init(content: String, width: CGFloat, height: CGFloat) {
+      self.content = content
+      self.width = width
+      self.height = height
+    }
+  }
+
+  private let tableHeights: NSCache<NSString, MeasuredTableHeight> = {
+    let cache = NSCache<NSString, MeasuredTableHeight>()
+    cache.countLimit = 256
+    return cache
+  }()
   private var fonts = NativeListFontFamilies()
 
   func setFontFamiliesJson(_ json: String) {
     guard let next = NativeListFontFamilies(json: json), next != fonts else { return }
     fonts = next
+    tableHeights.removeAllObjects()
     if interactiveReorderSource != nil { cancelInteractiveReorderForStructuralUpdate() }
     sectionIndexView.refreshFonts(fonts)
     sectionIndexPreview.refreshFonts(fonts)
@@ -1288,7 +1306,8 @@ final class NativeListView: UIView {
       || !dictionariesEqual(config?.listStyle, next.listStyle)
       || config?.layout != next.layout
     let tailGeometryChanged = config.map { current in
-      current.disclosure?.expanded != next.disclosure?.expanded
+      guard !animateStructure, structuralTail != nil, !themeChanged else { return false }
+      return current.disclosure?.expanded != next.disclosure?.expanded
         || current.disclosure?.expandedTrailingInset != next.disclosure?.expandedTrailingInset
         || current.orientation != next.orientation
         || current.stickyHeaders != next.stickyHeaders
@@ -1304,6 +1323,7 @@ final class NativeListView: UIView {
             || rowHeight(old) != rowHeight(new)
         }
     } ?? false
+    if themeChanged { tableHeights.removeAllObjects() }
     if config?.generation != next.generation { endReachedGeneration = nil }
     acceptRowIndex(for: next, replacing: config)
     config = next
@@ -3133,10 +3153,22 @@ final class NativeListView: UIView {
       ? floor((availableWidth - CGFloat((config?.gridColumns ?? 2) - 1) * (config?.itemSpacing ?? 0)) / CGFloat(config?.gridColumns ?? 2))
       : availableWidth
     let rowWidth = allocatedWidth ?? (config?.orientation == "horizontal" ? 280 : columnWidth)
+    let isTable = item.rendererKey == .boundedTable
+    if isTable, let cached = tableHeights.object(forKey: item.key as NSString),
+       cached.width == rowWidth, cached.content == item.content {
+      return cached.height
+    }
     if let height = NativeListRendererRegistry.measure(
       item, width: rowWidth, theme: config?.theme, layout: config?.layout ?? "linear", fonts: fonts)
     {
-      return max(0, height + (NativeListRendererRegistry.appliesSizePreset(item) ? (item.data.string("size") == "small" ? -8 : item.data.string("size") == "large" ? 12 : 0) : 0))
+      let size = item.data.string("size")
+      let adjustment: CGFloat = size == "small" ? -8 : size == "large" ? 12 : 0
+      let finalHeight = max(0, height + (NativeListRendererRegistry.appliesSizePreset(item) ? adjustment : 0))
+      if isTable, NativeListBoundedTableCell.hasBelowActions(item.data.dictionaries("tableColumns")) {
+        tableHeights.setObject(MeasuredTableHeight(content: item.content, width: rowWidth, height: finalHeight),
+          forKey: item.key as NSString)
+      }
+      return finalHeight
     }
     return 56
   }
@@ -3192,6 +3224,7 @@ final class NativeListView: UIView {
     guard !disposed else { return }
     setTopScrollEdge(effect: .none, overlayHeight: 0)
     disposed = true
+    tableHeights.removeAllObjects()
 
     disposeActionAnchor()
     interactiveReorderAnimator?.stopAnimation(true)

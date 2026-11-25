@@ -174,6 +174,70 @@ final class NativeListMarketMetricsTests: XCTestCase {
     }
   }
 
+  func testOrdinaryTableSnapshotMeasuresOnlyRequestedLayoutInputs() throws {
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 160))
+    defer { view.dispose() }
+    let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    // Drive layout requests explicitly so UIKit prefetching cannot change the measurement count.
+    collection.delegate = nil
+    view.layoutIfNeeded()
+
+    let selector = #selector(UIView.systemLayoutSizeFitting(_:))
+    let cls = NativeListTableColumnView.self
+    let method = try XCTUnwrap(class_getInstanceMethod(cls, selector))
+    let original = method_getImplementation(method)
+    let encoding = try XCTUnwrap(method_getTypeEncoding(method))
+    let fit = unsafeBitCast(original, to: (@convention(c) (UIView, Selector, CGSize) -> CGSize).self)
+    var fits = 0
+    let count: @convention(block) (UIView, CGSize) -> CGSize = { label, size in
+      if label.superview == nil { fits += 1 }
+      return fit(label, selector, size)
+    }
+    let hook = imp_implementationWithBlock(count)
+    class_replaceMethod(cls, selector, hook, encoding)
+    defer {
+      class_replaceMethod(cls, selector, original, encoding)
+      imp_removeBlock(hook)
+    }
+
+    func refresh(_ generation: Int) throws {
+      let rows: [[String: Any]] = (0..<100).map { index in
+        let address: [String: Any] = ["key": "address", "text": "Holder", "actionPlacement": "below",
+          "actions": [["name": "Copy3Outline", "actionKey": "copy", "accessibilityLabel": "Copy"]]]
+        return ["key": "holder-\(index)", "type": "dataRow", "tableColumns": [address,
+          ["key": "rank", "text": "\(index)"], ["key": "share", "text": "1%"],
+          ["key": "value", "text": "$\(generation)"]]]
+      }
+      let snapshot: [String: Any] = ["schemaVersion": 1, "generation": generation,
+        "layout": ["kind": "linear"], "rows": rows]
+      view.applySnapshotJson(String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self))
+    }
+    func requestHeight() -> CGFloat {
+      view.collectionView(collection, layout: collection.collectionViewLayout,
+        sizeForItemAt: IndexPath(item: 99, section: 0)).height
+    }
+    try refresh(1)
+    fits = 0
+    try refresh(2)
+    XCTAssertEqual(fits, 0, "An ordinary snapshot must not measure offscreen rows to compare tail geometry")
+    XCTAssertGreaterThan(requestHeight(), 0)
+    let first = fits
+    XCTAssertGreaterThan(first, 0)
+    _ = requestHeight()
+    XCTAssertEqual(fits, first)
+    try refresh(3)
+    _ = requestHeight()
+    XCTAssertGreaterThan(fits, first)
+    let afterContent = fits
+    collection.bounds.size.width -= 80
+    _ = requestHeight()
+    XCTAssertGreaterThan(fits, afterContent)
+    let afterWidth = fits
+    view.setFontFamiliesJson(#"{"regular":"Courier","medium":"Courier-Bold"}"#)
+    _ = requestHeight()
+    XCTAssertGreaterThan(fits, afterWidth)
+  }
+
   func testBoundedTableAnnouncesCompleteSubscriptAmountsAndExplicitLabel() throws {
     var data = try item().data
     data["tableColumns"] = [

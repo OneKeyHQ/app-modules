@@ -153,7 +153,7 @@ final class NativeListBoundedTableCell: NativeListRendererCell {
     style["lineGap"] = style["lineGap"] ?? 0
     return style
   }
-  private static func hasBelowActions(_ columns: [[String: Any]]) -> Bool {
+  static func hasBelowActions(_ columns: [[String: Any]]) -> Bool {
     columns.contains { $0.string("actionPlacement") == "below" && !$0.dictionaries("actions").isEmpty }
   }
 
