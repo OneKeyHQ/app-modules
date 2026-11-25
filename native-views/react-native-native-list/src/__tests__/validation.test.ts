@@ -4280,6 +4280,117 @@ describe.each([true, false])(
     afterEach(() => {
       environment.__DEV__ = original;
     });
+    it('requires nonblank spoken text when a subscript line relies on the generated label', () => {
+      const subscript = [{ text: '5', style: 'subscript' as const }];
+      const detail = {
+        ...compact,
+        tableColumns: [
+          { ...columns[0], secondaryTextSegments: subscript },
+          columns[1],
+        ],
+      };
+      expect(() => validateSnapshot(snapshot([detail]))).toThrow(
+        /secondaryText/
+      );
+      expect(() =>
+        validateSnapshot(snapshot([{ ...detail, accessibilityLabel: '  ' }]))
+      ).toThrow(/secondaryText/);
+      expect(() =>
+        validateSnapshot(
+          snapshot([{ ...detail, accessibilityLabel: 'Complete balance' }])
+        )
+      ).not.toThrow();
+      expect(() =>
+        validateSnapshot(
+          snapshot([
+            {
+              ...detail,
+              tableColumns: [
+                { ...columns[0], text: '  ', textSegments: subscript },
+                columns[1],
+              ],
+            },
+          ])
+        )
+      ).toThrow(/tableColumns.*text/);
+      expect(() =>
+        validateSnapshot(
+          snapshot([
+            {
+              ...detail,
+              tableColumns: [
+                {
+                  ...columns[0],
+                  secondaryText: '0.000001 ETH',
+                  secondaryTextSegments: subscript,
+                },
+                columns[1],
+              ],
+            },
+          ])
+        )
+      ).not.toThrow();
+    });
+
+    it('checks spoken text after merging table and label patches', () => {
+      const detail = { ...compact, tableColumns: columns.slice(0, 2) };
+      const before = snapshot([detail]);
+      const tableColumns = [
+        {
+          ...columns[0],
+          secondaryTextSegments: [{ text: '5', style: 'subscript' as const }],
+        },
+        columns[1],
+      ];
+      const patch: RowPatch = {
+        type: 'dataRow',
+        key: detail.key,
+        changes: { tableColumns },
+      };
+      const applyWithoutLabel = () => applyRowPatches(before, [patch]);
+      if (development) expect(applyWithoutLabel).toThrow(/secondaryText/);
+      else expect(applyWithoutLabel().rows).toEqual(before.rows);
+
+      const withLabel = applyRowPatches(before, [
+        patch,
+        {
+          type: 'dataRow',
+          key: detail.key,
+          changes: { accessibilityLabel: 'Complete balance' },
+        },
+      ]);
+      expect(withLabel.rows[0]).toMatchObject({
+        tableColumns,
+        accessibilityLabel: 'Complete balance',
+      });
+
+      const clearLabel: RowPatch = {
+        type: 'dataRow',
+        key: detail.key,
+        changes: { accessibilityLabel: null },
+      };
+      const applyClear = () => applyRowPatches(withLabel, [clearLabel]);
+      if (development) expect(applyClear).toThrow(/secondaryText/);
+      else expect(applyClear().rows).toEqual(withLabel.rows);
+
+      const completeColumns = [
+        { ...tableColumns[0], secondaryText: '0.000001 ETH' },
+        columns[1],
+      ];
+      const completed = applyRowPatches(withLabel, [
+        clearLabel,
+        {
+          type: 'dataRow',
+          key: detail.key,
+          changes: { tableColumns: completeColumns },
+        },
+      ]);
+      expect(completed.rows[0].accessibilityLabel).toBeUndefined();
+      expect(completed.rows[0]).toMatchObject({
+        tableColumns: completeColumns,
+      });
+    });
+
     it('updates visible quotes while retaining the inactive Web presentation', () => {
       const selector = {
         ...marketRow(),

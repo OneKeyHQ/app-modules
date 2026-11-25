@@ -4559,7 +4559,8 @@ export class NativeListWebEngine {
         text: string | undefined,
         segments: readonly ValueTextSegment[] | undefined
       ) =>
-        !segments?.length || segments.some((run) => run.style === 'subscript')
+        !segments?.length ||
+        segments.some((run) => run.style === 'subscript' && run.text.length > 0)
           ? text
           : segments.map((run) => run.text).join('');
       return row.tableColumns

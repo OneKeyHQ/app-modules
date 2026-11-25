@@ -104,7 +104,10 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
     fun spokenLine(column: JSONObject, field: String): String {
       val segments = column.optJSONArray("${field}Segments") ?: return column.optString(field)
       val indices = 0 until segments.length()
-      if (indices.isEmpty() || indices.any { segments.getJSONObject(it).optString("style") == "subscript" }) {
+      if (indices.isEmpty() || indices.any {
+          val run = segments.getJSONObject(it)
+          run.optString("style") == "subscript" && run.optString("text").isNotEmpty()
+        }) {
         return column.optString(field)
       }
       return indices.joinToString("") { segments.getJSONObject(it).optString("text") }

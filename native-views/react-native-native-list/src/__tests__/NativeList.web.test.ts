@@ -6053,7 +6053,11 @@ describe('Web migration layout and table regressions', () => {
       {
         key: 'asset',
         text: 'fallback',
-        textSegments: [{ text: 'E' }, { text: 'TH' }],
+        textSegments: [
+          { text: 'E' },
+          { text: '', style: 'subscript' as const },
+          { text: 'TH' },
+        ],
       },
       {
         key: 'price',
@@ -6073,12 +6077,11 @@ describe('Web migration layout and table regressions', () => {
       {
         key: 'change',
         text: '24h',
-        secondaryTextSegments: [{ text: '+' }, { text: '2%' }],
-      },
-      {
-        key: 'missing-plain-text',
-        text: 'Balance',
-        secondaryTextSegments: [{ text: '5', style: 'subscript' as const }],
+        secondaryTextSegments: [
+          { text: '+' },
+          { text: '2%' },
+          { text: '', style: 'subscript' as const },
+        ],
       },
     ];
     const detail = {
@@ -6105,9 +6108,7 @@ describe('Web migration layout and table regressions', () => {
         document
           .querySelector('[data-native-list-row-key="' + key + '"]')
           ?.getAttribute('aria-label');
-      expect(label('detail')).toBe(
-        'ETH, $0.000001, 0.000002 ETH, 24h, +2%, Balance'
-      );
+      expect(label('detail')).toBe('ETH, $0.000001, 0.000002 ETH, 24h, +2%');
       expect(
         document.querySelector('[data-native-list-row-key="detail"]')
           ?.textContent

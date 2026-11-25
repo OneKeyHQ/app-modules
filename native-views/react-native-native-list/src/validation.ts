@@ -1012,7 +1012,8 @@ function assertWebMarketTable(
 function assertTableColumns(
   columns: readonly NativeListTableColumn[] | undefined,
   type: 'market' | 'dataRow',
-  path: string
+  path: string,
+  requireSpokenText = false
 ): void {
   if (columns === undefined) return;
   const limit = type === 'market' ? 7 : 6;
@@ -1087,7 +1088,8 @@ function assertTableColumns(
     assertText(column.text, field + '.text');
     assertText(column.secondaryText, field + '.secondaryText');
     assertMetricColumn(column, field);
-    for (const key of ['textSegments', 'secondaryTextSegments'] as const) {
+    for (const textField of ['text', 'secondaryText'] as const) {
+      const key = `${textField}Segments` as const;
       const segments: readonly ValueTextSegment[] | undefined = column[key];
       if (
         segments &&
@@ -1100,6 +1102,17 @@ function assertTableColumns(
         fail(
           field + '.' + key,
           'supports up to 64 segments totaling at most 4096 characters'
+        );
+      if (
+        requireSpokenText &&
+        segments?.some(
+          (run) => run.style === 'subscript' && run.text.length > 0
+        ) &&
+        !column[textField]?.trim()
+      )
+        fail(
+          `${field}.${textField}`,
+          'must contain nonblank spoken text for subscript segments'
         );
     }
   }
@@ -3322,7 +3335,15 @@ function assertRowProtocol(row: RowModel, path: string): void {
     });
   }
   if (row.type === 'dataRow' || row.type === 'market') {
-    assertTableColumns(row.tableColumns, row.type, path + '.tableColumns');
+    const hasExplicitLabel =
+      typeof row.accessibilityLabel === 'string' &&
+      row.accessibilityLabel.trim().length > 0;
+    assertTableColumns(
+      row.tableColumns,
+      row.type,
+      path + '.tableColumns',
+      !hasExplicitLabel
+    );
     if (row.tableColumns)
       assertBoundedStyleNumber(
         row.style?.columnGap,

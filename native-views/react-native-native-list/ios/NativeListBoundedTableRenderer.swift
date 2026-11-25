@@ -133,7 +133,9 @@ final class NativeListBoundedTableCell: NativeListRendererCell {
     if let label = item.data["accessibilityLabel"] as? String { return label }
     func spokenLine(_ column: [String: Any], _ field: String) -> String {
       let segments = column.dictionaries("\(field)Segments")
-      if segments.isEmpty || segments.contains(where: { $0.string("style") == "subscript" }) {
+      if segments.isEmpty || segments.contains(where: {
+        $0.string("style") == "subscript" && !$0.string("text").isEmpty
+      }) {
         return column.string(field)
       }
       return segments.map { $0.string("text") }.joined()

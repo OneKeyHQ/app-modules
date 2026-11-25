@@ -2828,12 +2828,13 @@ Only the active presentation supplies table-specific interactions. A cell
 supports formatted primary and secondary text, alignment, tones and an optional
 leading visual. An actionable cell supplies actionKey and accessibilityLabel
 together. Unless an explicit row accessibility label is supplied, the row announces
-the primary and secondary lines in column order. Lines made of ordinary segments
-announce the concatenated segment text. When a line contains a subscript run, it
-announces the corresponding plain text (`text` or `secondaryText`). Supply the
-full amount there when a subscript abbreviates digits. A subscript line with no
-plain text is omitted from the generated row label.
-Activating it delivers the existing row action event with its slot.
+the primary and secondary lines in column order. Ordinary segments announce their
+concatenated text. Empty subscript runs do not affect the spoken line. For a line
+with a nonempty subscript run, the row announces the corresponding plain text
+(`text` or `secondaryText`). Snapshot validation and row-patch validation after
+merging require nonblank plain text for each such line unless the row supplies a
+nonblank explicit accessibility label. Activating an actionable cell delivers
+the existing row action event with its slot.
 
 Replacing cell values can use a row patch. Entering or leaving table mode or
 changing cell keys, order, widths or alignment requires a structural snapshot.
