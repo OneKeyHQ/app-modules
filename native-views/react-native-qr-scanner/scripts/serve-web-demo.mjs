@@ -1,4 +1,4 @@
-// Bundles demo-web/main.ts with esbuild (from app-monorepo or local node_modules)
+// Bundles demo-web/main.ts with esbuild (from local/workspace node_modules or ESBUILD_PATH)
 // and serves the interactive closed-loop Web QR scanner demo on http://127.0.0.1:4173.
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -15,30 +15,34 @@ const fixturesDir = join(pkgRoot, 'test-fixtures');
 const port = Number(process.env.PORT || 4173);
 
 function loadEsbuild() {
+  const req = createRequire(import.meta.url);
   const candidates = [
+    process.env.ESBUILD_PATH,
+    'esbuild',
+    join(pkgRoot, 'node_modules/esbuild'),
     join(repoRoot, 'node_modules/esbuild'),
-    '/Volumes/T7Shield/Project/app-monorepo/node_modules/esbuild',
-  ];
+  ].filter(Boolean);
   for (const candidate of candidates) {
     try {
-      return createRequire(import.meta.url)(candidate);
+      return req(candidate);
     } catch {
       // try next
     }
   }
-  throw new Error('Could not resolve esbuild');
+  throw new Error(
+    'Could not resolve esbuild. Install esbuild in the workspace or set ESBUILD_PATH=/path/to/esbuild.'
+  );
 }
 
 function findZxingWasm() {
   const candidates = [
-    join(repoRoot, 'node_modules/zxing-wasm/dist/reader/zxing_reader.wasm'),
     join(pkgRoot, 'node_modules/zxing-wasm/dist/reader/zxing_reader.wasm'),
-    '/Volumes/T7Shield/Project/app-monorepo/node_modules/zxing-wasm/dist/reader/zxing_reader.wasm',
+    join(repoRoot, 'node_modules/zxing-wasm/dist/reader/zxing_reader.wasm'),
   ];
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
   }
-  throw new Error('Could not locate zxing_reader.wasm');
+  throw new Error('Could not locate zxing_reader.wasm in workspace node_modules');
 }
 
 mkdirSync(distDir, { recursive: true });
@@ -53,8 +57,8 @@ await esbuild.build({
   platform: 'browser',
   target: ['es2022'],
   nodePaths: [
+    join(pkgRoot, 'node_modules'),
     join(repoRoot, 'node_modules'),
-    '/Volumes/T7Shield/Project/app-monorepo/node_modules',
   ],
   inject: [join(demoDir, 'shims.ts')],
 });
@@ -68,6 +72,43 @@ const MIME = {
   '.wasm': 'application/wasm',
 };
 
+function parseByteRange(rangeHeader, fileSize) {
+  if (fileSize <= 0) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return null;
+  const [, startStr, endStr] = match;
+  if (!startStr && !endStr) return null;
+
+  let start;
+  let end;
+  if (!startStr) {
+    // Suffix range: bytes=-<suffix>
+    const suffix = Number(endStr);
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) return null;
+    start = Math.max(0, fileSize - suffix);
+    end = fileSize - 1;
+  } else {
+    start = Number(startStr);
+    end = endStr ? Number(endStr) : fileSize - 1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return null;
+    if (start < 0 || start >= fileSize) return null;
+    end = Math.min(end, fileSize - 1);
+    if (start > end) return null;
+  }
+  return { start, end };
+}
+
+function pipeFileStream(filePath, res, options) {
+  const stream = createReadStream(filePath, options);
+  stream.on('error', () => {
+    if (!res.headersSent) {
+      res.writeHead(500);
+    }
+    res.end();
+  });
+  stream.pipe(res);
+}
+
 function serveFile(req, res, filePath) {
   if (!existsSync(filePath)) {
     res.writeHead(404);
@@ -78,16 +119,23 @@ function serveFile(req, res, filePath) {
   const contentType = MIME[extname(filePath)] || 'application/octet-stream';
   const range = req.headers.range;
   if (range) {
-    const [startStr, endStr] = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(startStr, 10);
-    const end = endStr ? parseInt(endStr, 10) : stat.size - 1;
+    const parsed = parseByteRange(range, stat.size);
+    if (!parsed) {
+      res.writeHead(416, {
+        'Content-Range': `bytes */${stat.size}`,
+        'Accept-Ranges': 'bytes',
+      });
+      res.end('Range Not Satisfiable');
+      return;
+    }
+    const { start, end } = parsed;
     res.writeHead(206, {
       'Content-Range': `bytes ${start}-${end}/${stat.size}`,
       'Accept-Ranges': 'bytes',
       'Content-Length': end - start + 1,
       'Content-Type': contentType,
     });
-    createReadStream(filePath, { start, end }).pipe(res);
+    pipeFileStream(filePath, res, { start, end });
     return;
   }
   res.writeHead(200, {
@@ -95,7 +143,7 @@ function serveFile(req, res, filePath) {
     'Content-Type': contentType,
     'Accept-Ranges': 'bytes',
   });
-  createReadStream(filePath).pipe(res);
+  pipeFileStream(filePath, res);
 }
 
 const server = createServer((req, res) => {

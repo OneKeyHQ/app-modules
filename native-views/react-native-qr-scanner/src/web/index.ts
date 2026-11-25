@@ -10,7 +10,13 @@ export {
   subscribeWebCameraChanges,
 } from './cameras';
 export type { QrCameraInfo, QrCameraPosition } from './cameras';
-export type { WebQrScanner, WebQrScannerOptions, WebScanSource } from './scanner';
+export type {
+  WebQrFrameSymbolsEvent,
+  WebQrScanner,
+  WebQrScannerOptions,
+  WebScanSource,
+} from './scanner';
+export type { RgbaImage } from './imageOps';
 export {
   createMultiSymbolCoordinator,
   dedupeSymbolsByText,

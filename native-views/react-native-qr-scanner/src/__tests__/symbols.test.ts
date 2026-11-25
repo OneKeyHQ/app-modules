@@ -203,8 +203,8 @@ describe('createMultiSymbolCoordinator', () => {
 
   test('two competing animated URs in one frame: selected second UR still receives all its parts', () => {
     const { coordinator, onCommitText } = setup(140);
-    const urA1 = { text: 'UR:BYTES/1-3/AAA1', centerX: 0.25, centerY: 0.5 };
-    const urB1 = { text: 'UR:CRYPTO-PSBT/1-2/BBB1', centerX: 0.75, centerY: 0.5 };
+    const urA1 = { text: 'UR:BYTES/1-3/LPADAO', centerX: 0.25, centerY: 0.5 };
+    const urB1 = { text: 'UR:CRYPTO-PSBT/1-2/LPADAO', centerX: 0.75, centerY: 0.5 };
 
     coordinator.receiveFrame([urA1, urB1]);
     expect(coordinator.phase).toBe('selecting');
@@ -213,11 +213,30 @@ describe('createMultiSymbolCoordinator', () => {
     expect(coordinator.phase).toBe('ur-streaming');
     expect(onCommitText).toHaveBeenCalledWith(urB1.text, 'ur');
 
-    // Subsequent frame still lists competing UR A first and selected UR B second
-    const urA2 = { text: 'UR:BYTES/2-3/AAA2', centerX: 0.25, centerY: 0.5 };
-    const urB2 = { text: 'UR:CRYPTO-PSBT/2-2/BBB2', centerX: 0.75, centerY: 0.5 };
+    // Subsequent frame still lists competing UR A first and selected UR B second;
+    // only UR B (matching type/seqLen) is forwarded.
+    const urA2 = { text: 'UR:BYTES/2-3/LPAEAO', centerX: 0.25, centerY: 0.5 };
+    const urB2 = { text: 'UR:CRYPTO-PSBT/2-2/LPAEAO', centerX: 0.75, centerY: 0.5 };
     coordinator.receiveFrame([urA2, urB2]);
-    expect(onCommitText).toHaveBeenCalledWith(urA2.text, 'ur');
+    expect(onCommitText).not.toHaveBeenCalledWith(urA2.text, 'ur');
     expect(onCommitText).toHaveBeenCalledWith(urB2.text, 'ur');
+  });
+
+  test('selecting an invalid or single-part UR does not forward another UR in the same frame', () => {
+    const { coordinator, onCommitText } = setup(140);
+    const badUr = { text: 'UR:BYTES/invalid-payload', centerX: 0.25, centerY: 0.5 };
+    const otherUr = { text: 'UR:CRYPTO-PSBT/1-2/LPADAO', centerX: 0.75, centerY: 0.5 };
+
+    coordinator.receiveFrame([badUr, otherUr]);
+    expect(coordinator.phase).toBe('selecting');
+
+    coordinator.selectSymbol(badUr);
+    expect(coordinator.phase).toBe('resolved');
+    expect(onCommitText).toHaveBeenCalledTimes(1);
+    expect(onCommitText).toHaveBeenCalledWith(badUr.text, 'ur');
+
+    // Later frames containing another valid UR must not be forwarded
+    coordinator.receiveFrame([badUr, otherUr]);
+    expect(onCommitText).toHaveBeenCalledTimes(1);
   });
 });

@@ -339,8 +339,27 @@ fn unpad_symbol(
     }
 }
 
-/// Runs the 4-pass image decoding pipeline returning all QR symbols (up to 8)
-/// with normalized top-left coordinates in EXIF-oriented image space.
+const MAX_IMAGE_SYMBOLS: usize = 8;
+
+fn merge_unique_symbols(
+    merged: &mut Vec<DecodedSymbol>,
+    seen: &mut std::collections::HashSet<String>,
+    batch: Vec<DecodedSymbol>,
+) {
+    for sym in batch {
+        if merged.len() >= MAX_IMAGE_SYMBOLS {
+            break;
+        }
+        if sym.text.is_empty() || !seen.insert(sym.text.clone()) {
+            continue;
+        }
+        merged.push(sym);
+    }
+}
+
+/// Runs the 4-pass image decoding pipeline accumulating unique QR symbols
+/// (up to 8) across original, padded, grayscale, and inverted passes with
+/// normalized top-left coordinates in EXIF-oriented image space.
 pub fn decode_image_file_symbols(
     path: &str,
     max_pixels: u64,
@@ -348,60 +367,78 @@ pub fn decode_image_file_symbols(
     let (rgba, width, height) = load_oriented_rgba(path, max_pixels)?;
     let w = width as usize;
     let h = height as usize;
+    let mut merged: Vec<DecodedSymbol> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Pass 1: original
-    let symbols = decode_qr_symbols(&rgba, width as i32, height as i32, true, false, 8);
-    if !symbols.is_empty() {
-        return Ok(ImageSymbolsResult {
-            width,
-            height,
-            symbols,
-        });
-    }
+    let pass1 = decode_qr_symbols(
+        &rgba,
+        width as i32,
+        height as i32,
+        true,
+        false,
+        MAX_IMAGE_SYMBOLS as i32,
+    );
+    merge_unique_symbols(&mut merged, &mut seen, pass1);
 
-    // Pass 2: padded white quiet zone
-    if let Some((margin, pw, ph, bytes)) = padded_layout(w, h, max_pixels) {
-        let mut padded = reserve_image_buffer(bytes)?;
-        padded.resize(bytes, 255);
-        for (y, row) in rgba.chunks_exact(w * 4).enumerate() {
-            let start = ((y + margin) * pw + margin) * 4;
-            padded[start..start + row.len()].copy_from_slice(row);
-        }
-        let symbols = decode_qr_symbols(&padded, pw as i32, ph as i32, true, false, 8);
-        if !symbols.is_empty() {
-            let mapped = symbols
+    // Pass 2: padded white quiet zone (map back to original image coordinates before merging)
+    if merged.len() < MAX_IMAGE_SYMBOLS {
+        if let Some((margin, pw, ph, bytes)) = padded_layout(w, h, max_pixels) {
+            let mut padded = reserve_image_buffer(bytes)?;
+            padded.resize(bytes, 255);
+            for (y, row) in rgba.chunks_exact(w * 4).enumerate() {
+                let start = ((y + margin) * pw + margin) * 4;
+                padded[start..start + row.len()].copy_from_slice(row);
+            }
+            let pass2 = decode_qr_symbols(
+                &padded,
+                pw as i32,
+                ph as i32,
+                true,
+                false,
+                MAX_IMAGE_SYMBOLS as i32,
+            );
+            let mapped = pass2
                 .into_iter()
                 .map(|s| unpad_symbol(s, w, h, margin, pw, ph))
                 .collect();
-            return Ok(ImageSymbolsResult {
-                width,
-                height,
-                symbols: mapped,
-            });
+            merge_unique_symbols(&mut merged, &mut seen, mapped);
         }
     }
 
     // Pass 3: grayscale
-    let mut gray = rgba_to_luma(&rgba)?;
-    drop(rgba);
-    let symbols = decode_qr_luma_symbols(&gray, width as i32, height as i32, false, 8);
-    if !symbols.is_empty() {
-        return Ok(ImageSymbolsResult {
-            width,
-            height,
-            symbols,
-        });
+    if merged.len() < MAX_IMAGE_SYMBOLS {
+        let mut gray = rgba_to_luma(&rgba)?;
+        drop(rgba);
+        let pass3 = decode_qr_luma_symbols(
+            &gray,
+            width as i32,
+            height as i32,
+            false,
+            MAX_IMAGE_SYMBOLS as i32,
+        );
+        merge_unique_symbols(&mut merged, &mut seen, pass3);
+
+        // Pass 4: inverted grayscale (recovers light-on-dark QR codes alongside normal ones)
+        if merged.len() < MAX_IMAGE_SYMBOLS {
+            for pixel in &mut gray {
+                *pixel = 255 - *pixel;
+            }
+            let pass4 = decode_qr_luma_symbols(
+                &gray,
+                width as i32,
+                height as i32,
+                false,
+                MAX_IMAGE_SYMBOLS as i32,
+            );
+            merge_unique_symbols(&mut merged, &mut seen, pass4);
+        }
     }
 
-    // Pass 4: inverted grayscale
-    for pixel in &mut gray {
-        *pixel = 255 - *pixel;
-    }
-    let symbols = decode_qr_luma_symbols(&gray, width as i32, height as i32, false, 8);
     Ok(ImageSymbolsResult {
         width,
         height,
-        symbols,
+        symbols: merged,
     })
 }
 

@@ -144,9 +144,12 @@ function unpadSymbol(
   };
 }
 
+const MAX_IMAGE_SYMBOLS = 8;
+
 /**
- * The same pass order as `decodePixels`, returning all symbols from the first
- * pass that detects at least one QR code, mapped back to original image space.
+ * The same pass order as `decodePixels`, accumulating unique QR symbols across
+ * passes and engines (up to 8) so mixed normal/inverted or multi-engine codes
+ * all reach the selection UI, mapped back to original image space.
  */
 export async function decodePixelsSymbols(
   image: RgbaImage,
@@ -161,9 +164,16 @@ export async function decodePixelsSymbols(
   ];
   let attempted = false;
   let decoded = false;
+  const merged: QrDetectedSymbol[] = [];
+  const seen = new Set<string>();
+  let firstEngine: string | undefined;
+  let firstPass: DecodePass | undefined;
+
   for (const [pass, make] of passes) {
+    if (merged.length >= MAX_IMAGE_SYMBOLS) break;
     const variant = make();
     for (const engine of engines) {
+      if (merged.length >= MAX_IMAGE_SYMBOLS) break;
       attempted = true;
       try {
         const symbols = engine.decodeSymbols
@@ -177,12 +187,24 @@ export async function decodePixelsSymbols(
             pass === 'padded'
               ? symbols.map((sym) => unpadSymbol(sym, image, variant))
               : symbols;
-          return { symbols: normalized, engine: engine.name, pass };
+          for (const sym of normalized) {
+            if (!sym.text || seen.has(sym.text)) continue;
+            seen.add(sym.text);
+            merged.push(sym);
+            if (!firstEngine) {
+              firstEngine = engine.name;
+              firstPass = pass;
+            }
+            if (merged.length >= MAX_IMAGE_SYMBOLS) break;
+          }
         }
       } catch {
         // A failed pass leaves the remaining engines and passes available.
       }
     }
+  }
+  if (merged.length > 0 && firstEngine && firstPass) {
+    return { symbols: merged, engine: firstEngine, pass: firstPass };
   }
   if (attempted && !decoded) throw new QrScannerError('decoder-unavailable', 'A QR decoder failed');
   return null;

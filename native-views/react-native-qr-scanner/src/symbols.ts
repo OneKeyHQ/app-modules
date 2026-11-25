@@ -170,6 +170,20 @@ export interface MultiSymbolCoordinator {
   dispose(): void;
 }
 
+const MULTIPART_UR_PATTERN = /^ur:([a-z0-9-]+)\/(\d+)-(\d+)\/([a-z]+)$/i;
+
+function extractMultipartUrKey(text: string): string | null {
+  const match = MULTIPART_UR_PATTERN.exec(text.trim());
+  if (!match) return null;
+  const [, type, seqNumStr, seqLenStr] = match;
+  const seqNum = Number(seqNumStr);
+  const seqLen = Number(seqLenStr);
+  if (!type || !Number.isInteger(seqNum) || !Number.isInteger(seqLen) || seqNum < 1 || seqLen < 1) {
+    return null;
+  }
+  return `${type.toLowerCase()}/${seqLen}`;
+}
+
 /**
  * Cross-platform state machine balancing multi-QR selection with animated
  * BC-UR streaming (SPEC section 3.4).
@@ -182,6 +196,7 @@ export function createMultiSymbolCoordinator(
 
   let phase: MultiSymbolPhase = 'normal';
   let pendingSymbol: QrDetectedSymbol | undefined;
+  let selectedUrKey: string | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   function clearTimer() {
@@ -194,6 +209,7 @@ export function createMultiSymbolCoordinator(
   function enterSelecting(symbols: QrDetectedSymbol[]) {
     clearTimer();
     pendingSymbol = undefined;
+    selectedUrKey = null;
     phase = 'selecting';
     options.onFrozenChange(true);
     options.onSelectingChange(symbols);
@@ -202,6 +218,7 @@ export function createMultiSymbolCoordinator(
   function enterUrStreaming(firstPart: string, keepMultiSymbol: boolean) {
     clearTimer();
     pendingSymbol = undefined;
+    selectedUrKey = extractMultipartUrKey(firstPart);
     phase = 'ur-streaming';
     options.onSelectingChange([]);
     options.onFrozenChange(false);
@@ -212,9 +229,19 @@ export function createMultiSymbolCoordinator(
   function commitStatic(text: string) {
     clearTimer();
     pendingSymbol = undefined;
+    selectedUrKey = null;
     phase = 'resolved';
     options.onSelectingChange([]);
     options.onCommitText(text, 'static');
+  }
+
+  function commitSingleOrInvalidUr(text: string) {
+    clearTimer();
+    pendingSymbol = undefined;
+    selectedUrKey = null;
+    phase = 'resolved';
+    options.onSelectingChange([]);
+    options.onCommitText(text, 'ur');
   }
 
   function isVisible(symbol: QrDetectedSymbol): boolean {
@@ -237,10 +264,14 @@ export function createMultiSymbolCoordinator(
       if (visible.length === 0) return;
 
       if (phase === 'ur-streaming') {
-        const urSymbols = visible.filter((item) => isUrFrameText(item.text));
+        const urSymbols = visible.filter((item) => {
+          if (!isUrFrameText(item.text)) return false;
+          if (selectedUrKey === null) return true;
+          return extractMultipartUrKey(item.text) === selectedUrKey;
+        });
         if (urSymbols.length > 0) {
-          // Forward every visible UR candidate so the bound UrAssembler/ScanSession
-          // can pick fragments belonging to the selected message even when another
+          // Forward matching UR candidates so the bound UrAssembler/ScanSession
+          // receives fragments belonging to the selected message even when another
           // UR appears earlier in the frame's symbol array.
           for (const ur of urSymbols) {
             options.onCommitText(ur.text, 'ur');
@@ -298,6 +329,12 @@ export function createMultiSymbolCoordinator(
     selectSymbol(symbol: QrDetectedSymbol) {
       if (phase !== 'selecting') return;
       if (isUrFrameText(symbol.text)) {
+        if (extractMultipartUrKey(symbol.text) === null) {
+          // Single-part or malformed UR: commit once and do not stream other
+          // unselected URs from subsequent frames.
+          commitSingleOrInvalidUr(symbol.text);
+          return;
+        }
         // Competing static symbols are already in view; keep multiSymbol on so
         // an easier static QR cannot starve the denser animated UR frames.
         enterUrStreaming(symbol.text, true);
@@ -309,6 +346,7 @@ export function createMultiSymbolCoordinator(
       if (phase !== 'selecting') return;
       clearTimer();
       pendingSymbol = undefined;
+      selectedUrKey = null;
       phase = 'normal';
       options.onSelectingChange([]);
       options.onFrozenChange(false);
@@ -316,6 +354,7 @@ export function createMultiSymbolCoordinator(
     reset() {
       clearTimer();
       pendingSymbol = undefined;
+      selectedUrKey = null;
       phase = 'normal';
       options.onSelectingChange([]);
       options.onFrozenChange(false);
@@ -324,6 +363,7 @@ export function createMultiSymbolCoordinator(
     dispose() {
       clearTimer();
       pendingSymbol = undefined;
+      selectedUrKey = null;
     },
   };
 }

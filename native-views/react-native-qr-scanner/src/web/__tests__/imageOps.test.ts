@@ -1,4 +1,10 @@
-import { decodePixels, fitToPixelBudget, grayscale, padded } from '../imageOps';
+import {
+  decodePixels,
+  decodePixelsSymbols,
+  fitToPixelBudget,
+  grayscale,
+  padded,
+} from '../imageOps';
 
 import type { QrImageEngine, RgbaImage } from '../imageOps';
 
@@ -94,5 +100,35 @@ describe('decodePixels', () => {
   it('returns null when nothing is found', async () => {
     const none: QrImageEngine = { name: 'x', decode: async () => null };
     expect(await decodePixels(solid(4, 4, [255, 255, 255]), [none])).toBeNull();
+  });
+
+  it('accumulates unique symbols across passes in decodePixelsSymbols', async () => {
+    const engine: QrImageEngine = {
+      name: 'zxing',
+      decode: async () => null,
+      decodeSymbols: async (image) => {
+        if (image.width > 100) {
+          // Padded pass discovers an edge-to-edge QR
+          return [{ text: 'edge-qr', centerX: 0.5, centerY: 0.5 }];
+        }
+        // Original pass has pixel 0, inverted pass has pixel 255
+        if (image.data[0] === 0) {
+          return [{ text: 'normal-qr', centerX: 0.25, centerY: 0.5 }];
+        }
+        if (image.data[0] === 255) {
+          return [
+            { text: 'normal-qr', centerX: 0.25, centerY: 0.5 },
+            { text: 'inverted-qr', centerX: 0.75, centerY: 0.5 },
+          ];
+        }
+        return [];
+      },
+    };
+    const hit = await decodePixelsSymbols(solid(100, 100, [0, 0, 0]), [engine]);
+    expect(hit?.symbols.map((s) => s.text)).toEqual([
+      'normal-qr',
+      'edge-qr',
+      'inverted-qr',
+    ]);
   });
 });

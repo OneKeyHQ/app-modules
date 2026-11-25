@@ -14,6 +14,15 @@ export type WebScanSource =
   /** A video element the caller already plays (a file, a stream it owns). */
   | { kind: 'element' };
 
+export type WebQrFrameSymbolsEvent = Omit<QrFrameSymbolsEvent, 'generation'> & {
+  /**
+   * Exact RGBA frame pixels that produced `symbols`. Consumers should render
+   * this frame when freezing for multi-QR selection so markers stay locked to
+   * the decoded frame even if the video advanced during async decoding.
+   */
+  frame?: RgbaImage;
+};
+
 export interface WebQrScannerOptions {
   video: HTMLVideoElement;
   source?: WebScanSource;
@@ -38,7 +47,7 @@ export interface WebQrScannerOptions {
    */
   multiSymbol?: boolean;
   /** Whole-frame symbols in normalized `frame` coordinates (top-left origin). */
-  onFrameSymbols?: (event: Omit<QrFrameSymbolsEvent, 'generation'>) => void;
+  onFrameSymbols?: (event: WebQrFrameSymbolsEvent) => void;
   onProgress?: (progress: number) => void;
   onResult?: (result: ScanResult) => void;
   onError?: (error: QrScannerError | ScanError) => void;
@@ -198,6 +207,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
             coordinateSpace: 'frame',
             frameWidth: image.width,
             frameHeight: image.height,
+            frame: image,
           });
         } catch {
           // A consumer observer cannot interrupt the built-in session.

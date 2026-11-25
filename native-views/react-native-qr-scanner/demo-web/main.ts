@@ -12,6 +12,7 @@ import {
 import type {
   MultiSymbolCoordinator,
   QrDetectedSymbol,
+  RgbaImage,
   WebQrScanner,
 } from '../src/web/index';
 
@@ -19,6 +20,7 @@ type DemoCase = 'a' | 'b' | 'c' | 'd' | 'camera';
 
 const viewportEl = document.getElementById('viewport') as HTMLDivElement;
 const videoEl = document.getElementById('video') as HTMLVideoElement;
+const frozenCanvasEl = document.getElementById('frozenCanvas') as HTMLCanvasElement;
 const imageEl = document.getElementById('stillImage') as HTMLImageElement;
 const scanLineEl = document.getElementById('scanLine') as HTMLDivElement;
 const overlayEl = document.getElementById('selectionOverlay') as HTMLDivElement;
@@ -39,6 +41,26 @@ let scanner: WebQrScanner | null = null;
 let coordinator: MultiSymbolCoordinator | null = null;
 let urSession = createScanSession({ mode: 'auto' });
 let isStillImageMode = false;
+let latestDecodedFrame: RgbaImage | null = null;
+
+function showFrozenFrame(frame: RgbaImage | null) {
+  if (!frame || isStillImageMode) {
+    frozenCanvasEl.classList.add('hidden');
+    return;
+  }
+  frozenCanvasEl.width = frame.width;
+  frozenCanvasEl.height = frame.height;
+  const ctx = frozenCanvasEl.getContext('2d');
+  if (!ctx) return;
+  const copy = new Uint8ClampedArray(frame.data.length);
+  copy.set(frame.data);
+  ctx.putImageData(new ImageData(copy, frame.width, frame.height), 0, 0);
+  frozenCanvasEl.classList.remove('hidden');
+}
+
+function hideFrozenFrame() {
+  frozenCanvasEl.classList.add('hidden');
+}
 
 function log(message: string) {
   const time = new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -164,7 +186,7 @@ function renderAnchors(symbols: QrDetectedSymbol[]) {
     btn.style.width = '44px';
     btn.style.height = '44px';
     btn.style.animationDelay = `${idx * 45}ms`;
-    btn.title = `${classifyLabel(sym.text)}: ${sym.text}`;
+    btn.title = classifyLabel(sym.text);
     btn.innerHTML = `
       <span class="pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded-md bg-black/85 text-white text-[11px] border border-white/15 shadow-lg">
         ${classifyLabel(sym.text)}
@@ -181,7 +203,7 @@ function renderAnchors(symbols: QrDetectedSymbol[]) {
     `;
     btn.addEventListener('click', (event) => {
       event.stopPropagation();
-      log(`点击圆点: [${classifyLabel(sym.text)}] ${sym.text.slice(0, 48)}`);
+      log(`点击圆点 #${idx + 1}: [${classifyLabel(sym.text)}]`);
       coordinator?.selectSymbol(sym);
     });
     anchorsEl.appendChild(btn);
@@ -198,6 +220,8 @@ function teardown() {
   videoEl.srcObject = null;
   videoEl.load();
   videoEl.classList.add('hidden');
+  latestDecodedFrame = null;
+  hideFrozenFrame();
   imageEl.classList.add('hidden');
   imageEl.removeAttribute('src');
   overlayEl.classList.add('hidden');
@@ -214,9 +238,13 @@ function createCoordinator() {
     onFrozenChange(frozen) {
       scanner?.setFrozen(frozen);
       if (frozen) {
+        showFrozenFrame(latestDecodedFrame);
         scanLineEl.classList.add('hidden');
-      } else if (!isStillImageMode) {
-        scanLineEl.classList.remove('hidden');
+      } else {
+        hideFrozenFrame();
+        if (!isStillImageMode) {
+          scanLineEl.classList.remove('hidden');
+        }
       }
       log(`setFrozen(${frozen})`);
     },
@@ -242,7 +270,7 @@ function createCoordinator() {
           null,
           2
         );
-        log(`提交静态码: ${text.slice(0, 56)}`);
+        log(`提交静态码: [${classifyLabel(text)}] (${text.length} chars)`);
         return;
       }
 
@@ -349,6 +377,7 @@ async function runVideoCase(fixturePath: string | null, title: string) {
       log(`scanner ready (${title})`);
     },
     onFrameSymbols: (event) => {
+      latestDecodedFrame = event.frame ?? null;
       const rect = viewportEl.getBoundingClientRect();
       const viewSize = { width: rect.width || 360, height: rect.height || 360 };
       const frameSize = {
