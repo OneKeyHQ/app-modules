@@ -26,6 +26,7 @@ public class JCoreManager {
 
     public static void init(Context context, Bundle bundle) {
         Context app = JConstants.getAppContext(context);
+        JCoreStorage.migrateLegacyRegistrationIfNeeded(app);
         JCoreTcpEngine.getInstance().start(app);
     }
 

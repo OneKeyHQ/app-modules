@@ -101,6 +101,12 @@ FOUNDATION_EXPORT NSString *const JCOREPolicyDidChangeNotification;
                    registrationID:(nullable NSString *)registrationID
                          deviceID:(nullable NSString *)deviceID;
 - (void)resetRegistration;
+- (BOOL)commitRegistrationWithUid:(uint64_t)uid
+                         password:(NSString *)password
+                   registrationID:(NSString *)registrationID
+                         deviceID:(nullable NSString *)deviceID
+                 policyGeneration:(NSUInteger)generation;
+- (BOOL)resetRegistrationForPolicyGeneration:(NSUInteger)generation;
 
 - (void)updateWithSisDictionary:(NSDictionary *)sisDict;
 - (BOOL)commitSisDictionary:(NSDictionary *)sisDict

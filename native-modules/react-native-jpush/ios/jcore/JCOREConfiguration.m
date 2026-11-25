@@ -1,6 +1,7 @@
 #import "JCOREConfiguration.h"
 #import "JCORECrypto.h"
 #import <objc/message.h>
+#include <errno.h>
 #if __has_include(<UIKit/UIKit.h>)
 #import <UIKit/UIKit.h>
 #endif
@@ -11,6 +12,9 @@ static NSString *const kJCoreKeyUid = @"com.onekey.jcore.uid";
 static NSString *const kJCoreKeyPassword = @"com.onekey.jcore.password";
 static NSString *const kJCoreKeyRegistrationId = @"com.onekey.jcore.registration_id";
 static NSString *const kJCoreKeyDeviceId = @"com.onekey.jcore.device_id";
+static NSString *const kJCoreKeyRegistrations = @"com.onekey.jcore.registrations_by_app_key";
+static NSString *const kJCoreKeyLastConfiguredAppKey = @"com.onekey.jcore.last_configured_app_key";
+static NSString *const kJCoreLegacyRegistrationRetired = @"legacyRegistrationRetired";
 static NSString *const kJCoreKeyFakeImei = @"com.onekey.jcore.fake_imei";
 static NSString *const kJCoreKeyDeviceToken = @"com.onekey.jcore.device_token";
 static NSString *const kJCoreKeyVoipToken = @"com.onekey.jcore.voip_token";
@@ -36,6 +40,94 @@ static NSString *const kJCoreKeySisCertVer = @"com.onekey.jcore.sis.cert_ver";
 static NSString *const kJCoreKeySisDataReport = @"com.onekey.jcore.sis.data_report";
 static NSString *const kJCoreKeySisLastSuccess = @"com.onekey.jcore.sis.last_success_ips";
 static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips";
+
+static NSString *JCoreNonEmptyString(id value) {
+    return [value isKindOfClass:NSString.class] && [value length] > 0 ? value : nil;
+}
+
+static NSDictionary *JCoreStoredRegistration(NSDictionary *registrations, NSString *appKey) {
+    id registration = appKey.length > 0 ? registrations[appKey] : nil;
+    return [registration isKindOfClass:NSDictionary.class] ? registration : nil;
+}
+
+static NSString *JCorePreSetupRegistrationID(NSUserDefaults *defaults) {
+    NSDictionary *registrations = [defaults dictionaryForKey:kJCoreKeyRegistrations];
+    NSString *lastAppKey = [defaults stringForKey:kJCoreKeyLastConfiguredAppKey];
+    return JCoreNonEmptyString(JCoreStoredRegistration(registrations, lastAppKey)[@"registrationID"]);
+}
+
+static NSDictionary *JCoreTokenRecord(id storedToken) {
+    if ([storedToken isKindOfClass:NSDictionary.class]) {
+        return storedToken;
+    }
+    NSString *token = JCoreNonEmptyString(storedToken);
+    return token != nil ? @{@"hex": token} : nil;
+}
+
+static NSDictionary *JCorePersistToken(NSString *key, NSString *token, NSNumber *production) {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if (token.length == 0) {
+        [defaults removeObjectForKey:key];
+        return nil;
+    }
+    NSDictionary *record = production != nil ? @{@"hex": token, @"production": production} : @{@"hex": token};
+    [defaults setObject:record forKey:key];
+    return record;
+}
+
+static uint64_t JCoreRegistrationUID(id value) {
+    if ([value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID()) {
+        value = [value stringValue];
+    }
+    NSString *digits = JCoreNonEmptyString(value);
+    if (digits.length == 0 || digits.length > 20 ||
+        [digits rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789"] invertedSet]].location != NSNotFound) {
+        return 0;
+    }
+    errno = 0;
+    uint64_t uid = strtoull(digits.UTF8String, NULL, 10);
+    return errno == ERANGE ? 0 : uid;
+}
+
+static NSDictionary *JCoreRegistration(uint64_t uid, NSString *password, NSString *registrationID, NSString *deviceID) {
+    if (uid == 0 || password.length == 0 || registrationID.length == 0) {
+        return nil;
+    }
+    return @{@"uid": @(uid), @"password": password, @"registrationID": registrationID, @"deviceID": deviceID ?: @""};
+}
+
+static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
+    // JCore 5.2.1 uses a lowercase AppKey directory. Restrict this read to the expected hex path.
+    if (appKey.length != 24 ||
+        [appKey rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"] invertedSet]].location != NSNotFound) {
+        return nil;
+    }
+    NSURL *libraryURL = [[NSFileManager defaultManager] URLsForDirectory:NSLibraryDirectory inDomains:NSUserDomainMask].firstObject;
+    NSURL *fileURL = [[libraryURL URLByAppendingPathComponent:appKey isDirectory:YES]
+        URLByAppendingPathComponent:@"io.jiguang.plist" isDirectory:NO];
+    NSFileHandle *file = [NSFileHandle fileHandleForReadingFromURL:fileURL error:nil];
+    if (file == nil) {
+        return nil;
+    }
+    const NSUInteger maxBytes = 1024 * 1024;
+    NSData *ciphertext = [file readDataUpToLength:maxBytes + 1 error:nil];
+    [file closeFile];
+    if (ciphertext.length == 0 || ciphertext.length > maxBytes) {
+        return nil;
+    }
+    // The legacy format is JSON encrypted with AES-128 ECB and PKCS#7 padding.
+    // This vendor format constant is used only for decoding the old app-local cache.
+    NSData *json = [JCORECrypto aesEcbDecrypt:ciphertext key:@"JPUSH_SECURITY_AES_KEY_ONE_TEMP_" keySize:16];
+    if (json.length == 0) {
+        return nil;
+    }
+    id decoded = [NSJSONSerialization JSONObjectWithData:json options:0 error:nil];
+    if (![decoded isKindOfClass:NSDictionary.class]) {
+        return nil;
+    }
+    return JCoreRegistration(JCoreRegistrationUID(decoded[@"kUIDKey"]), JCoreNonEmptyString(decoded[@"kPasswordKey"]),
+                             JCoreNonEmptyString(decoded[@"kRegistrationId"]), nil);
+}
 
 @implementation JGInforCollectionAuthItems
 @end
@@ -74,6 +166,10 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     dispatch_queue_t _stateQueue;
     uint16_t _requestCounter;
     NSUInteger _policyGeneration;
+    NSString *_preSetupRegistrationID;
+    BOOL _hasAPNsEnvironment;
+    NSDictionary *_deviceTokenRecord;
+    NSDictionary *_voipTokenRecord;
     NSArray<NSString *> *_ips;
     NSArray<NSString *> *_sslIps;
     BOOL _cachedSslIpsRequireTls;
@@ -112,8 +208,8 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         _requestCounter = (uint16_t)(arc4random_uniform(30000) + 100);
         _channel = @"App Store";
         _isProduction = YES;
-        _buildType = 1;
-        _apsType = 1;
+        _buildType = 2;
+        _apsType = 2;
         _encryptionAlgorithm = 1;
         _heartbeatInterval = 290.0;
         _reconnectBaseInterval = 3.0;
@@ -131,16 +227,13 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
         _forceLocalLogWhenLogOff = NO;
 
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        _preSetupRegistrationID = [JCorePreSetupRegistrationID(defaults) copy];
         NSNumber *savedAuth = [defaults objectForKey:kJCoreKeyAuth];
         _collectionAuthorized = savedAuth != nil ? savedAuth.boolValue : YES;
         _pushStopped = [defaults boolForKey:kJCoreKeyPushStopped];
-        _uid = (uint64_t)[defaults integerForKey:kJCoreKeyUid];
-        _password = [defaults stringForKey:kJCoreKeyPassword];
-        _registrationID = [defaults stringForKey:kJCoreKeyRegistrationId];
-        _deviceID = [defaults stringForKey:kJCoreKeyDeviceId];
-        _deviceTokenHex = [defaults stringForKey:kJCoreKeyDeviceToken];
-        _voipTokenHex = [defaults stringForKey:kJCoreKeyVoipToken];
-        _isNewDevice = (_uid == 0 || _registrationID.length == 0);
+        _deviceTokenRecord = JCoreTokenRecord([defaults objectForKey:kJCoreKeyDeviceToken]);
+        _voipTokenRecord = JCoreTokenRecord([defaults objectForKey:kJCoreKeyVoipToken]);
+        _isNewDevice = YES;
 
         NSInteger encType = [defaults integerForKey:@"kJIGUANGEncryptType"];
         if (encType == 1) {
@@ -170,16 +263,35 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
                     channel:(NSString *)channel
                isProduction:(BOOL)isProduction
       advertisingIdentifier:(NSString *)advertisingId {
+    __block NSUInteger invalidatedGeneration = 0;
     dispatch_sync(_stateQueue, ^{
-        self.appKey = appKey;
-        if (channel.length > 0) {
-            self->_channel = [channel copy];
+        @synchronized (self) {
+            if (self->_appKey.length > 0 &&
+                (![self->_appKey isEqualToString:appKey] || self->_isProduction != isProduction)) {
+                invalidatedGeneration = ++self->_policyGeneration;
+            }
+            [self setAppKeyLocked:appKey];
+            if (channel.length > 0) {
+                self->_channel = [channel copy];
+            }
+            self->_isProduction = isProduction;
+            self->_buildType = isProduction ? 2 : 1;
+            self->_apsType = isProduction ? 2 : 1;
+            self->_advertisingIdentifier = [advertisingId copy];
+            if (appKey.length > 0 && !self->_hasAPNsEnvironment) {
+                self->_hasAPNsEnvironment = YES;
+                if (self->_deviceTokenRecord != nil && self->_deviceTokenRecord[@"production"] == nil) {
+                    self->_deviceTokenRecord = JCorePersistToken(kJCoreKeyDeviceToken,
+                        JCoreNonEmptyString(self->_deviceTokenRecord[@"hex"]), @(isProduction));
+                }
+                if (self->_voipTokenRecord != nil && self->_voipTokenRecord[@"production"] == nil) {
+                    self->_voipTokenRecord = JCorePersistToken(kJCoreKeyVoipToken,
+                        JCoreNonEmptyString(self->_voipTokenRecord[@"hex"]), @(isProduction));
+                }
+            }
         }
-        self->_isProduction = isProduction;
-        self->_buildType = isProduction ? 1 : 0;
-        self->_apsType = isProduction ? 1 : 0;
-        self->_advertisingIdentifier = [advertisingId copy];
     });
+    [self notifyConfigurationInvalidated:invalidatedGeneration];
 }
 
 - (NSString *)appKey {
@@ -187,15 +299,80 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 }
 
 - (void)setAppKey:(NSString *)appKey {
-    @synchronized (self) {
-        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        id pending = [defaults objectForKey:kJCoreKeyPendingResumeAppKey];
-        if ([pending isKindOfClass:NSNumber.class]) {
-            if (appKey.length > 0) [defaults setObject:appKey forKey:kJCoreKeyPendingResumeAppKey];
-        } else if (pending != nil && ![pending isEqual:appKey]) {
-            [defaults removeObjectForKey:kJCoreKeyPendingResumeAppKey];
+    __block NSUInteger invalidatedGeneration = 0;
+    dispatch_sync(_stateQueue, ^{
+        @synchronized (self) {
+            if (self->_appKey.length > 0 && ![self->_appKey isEqualToString:appKey]) {
+                invalidatedGeneration = ++self->_policyGeneration;
+            }
+            [self setAppKeyLocked:appKey];
         }
-        _appKey = [appKey copy];
+    });
+    [self notifyConfigurationInvalidated:invalidatedGeneration];
+}
+
+- (void)notifyConfigurationInvalidated:(NSUInteger)generation {
+    if (generation != 0) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:JCOREPolicyDidChangeNotification object:self
+            userInfo:@{@"generation": @(generation)}];
+    }
+}
+
+- (void)setAppKeyLocked:(NSString *)appKey {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    id pending = [defaults objectForKey:kJCoreKeyPendingResumeAppKey];
+    if ([pending isKindOfClass:NSNumber.class]) {
+        if (appKey.length > 0) [defaults setObject:appKey forKey:kJCoreKeyPendingResumeAppKey];
+    } else if (pending != nil && ![pending isEqual:appKey]) {
+        [defaults removeObjectForKey:kJCoreKeyPendingResumeAppKey];
+    }
+    NSString *storageKey = appKey.lowercaseString;
+    BOOL changed = ![(_appKey.lowercaseString ?: @"") isEqualToString:(storageKey ?: @"")];
+    _appKey = [appKey copy];
+    _preSetupRegistrationID = nil;
+    if (!changed) {
+        return;
+    }
+
+    NSDictionary *registrations = [defaults dictionaryForKey:kJCoreKeyRegistrations];
+    NSDictionary *storedRegistration = JCoreStoredRegistration(registrations, storageKey);
+    NSDictionary *registration = storedRegistration;
+    if (storageKey.length > 0 && registrations == nil) {
+        // The original source SDK stored one tuple with no AppKey. Adopt it once.
+        registration = JCoreRegistration(JCoreRegistrationUID([defaults objectForKey:kJCoreKeyUid]),
+            [defaults stringForKey:kJCoreKeyPassword], [defaults stringForKey:kJCoreKeyRegistrationId],
+            [defaults stringForKey:kJCoreKeyDeviceId]);
+    }
+    BOOL legacyRetired = [storedRegistration[kJCoreLegacyRegistrationRetired] isEqual:@YES] ||
+        (storedRegistration != nil && storedRegistration.count == 0);
+    if (storageKey.length > 0 && !legacyRetired) {
+        NSMutableDictionary *legacy = [JCoreReadLegacyRegistration(storageKey) mutableCopy];
+        if (legacy != nil) {
+            legacy[kJCoreLegacyRegistrationRetired] = @YES;
+            registration = legacy;
+        }
+    }
+    _uid = JCoreRegistrationUID(registration[@"uid"]);
+    _password = JCoreNonEmptyString(registration[@"password"]);
+    _registrationID = JCoreNonEmptyString(registration[@"registrationID"]);
+    _deviceID = JCoreNonEmptyString(registration[@"deviceID"]);
+    _isNewDevice = (_uid == 0 || _password.length == 0 || _registrationID.length == 0);
+    if (_isNewDevice) {
+        _uid = 0;
+        _password = nil;
+        _registrationID = nil;
+    }
+    if (storageKey.length > 0 && registration != storedRegistration && registration != nil) {
+        [self persistRegistrationLocked:registration];
+    } else if (storageKey.length > 0 && registrations == nil) {
+        [defaults setObject:@{} forKey:kJCoreKeyRegistrations];
+    }
+    if (storageKey.length > 0) {
+        [defaults setObject:storageKey forKey:kJCoreKeyLastConfiguredAppKey];
+        [defaults removeObjectForKey:kJCoreKeyUid];
+        [defaults removeObjectForKey:kJCoreKeyPassword];
+        [defaults removeObjectForKey:kJCoreKeyRegistrationId];
+        [defaults removeObjectForKey:kJCoreKeyDeviceId];
     }
 }
 
@@ -298,21 +475,33 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 }
 
 - (void)setDeviceTokenHex:(NSString *)deviceTokenHex {
-    _deviceTokenHex = [deviceTokenHex copy];
-    if (deviceTokenHex.length > 0) {
-        [[NSUserDefaults standardUserDefaults] setObject:deviceTokenHex forKey:kJCoreKeyDeviceToken];
-    } else {
-        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kJCoreKeyDeviceToken];
+    @synchronized (self) {
+        _deviceTokenRecord = JCorePersistToken(kJCoreKeyDeviceToken, [deviceTokenHex copy],
+            _hasAPNsEnvironment ? @(_isProduction) : nil);
     }
 }
 
+- (NSString *)deviceTokenHex {
+    @synchronized (self) { return [self tokenForCurrentEnvironment:_deviceTokenRecord]; }
+}
+
 - (void)setVoipTokenHex:(NSString *)voipTokenHex {
-    _voipTokenHex = [voipTokenHex copy];
-    if (voipTokenHex.length > 0) {
-        [[NSUserDefaults standardUserDefaults] setObject:voipTokenHex forKey:kJCoreKeyVoipToken];
-    } else {
-        [[NSUserDefaults standardUserDefaults] removeObjectForKey:kJCoreKeyVoipToken];
+    @synchronized (self) {
+        _voipTokenRecord = JCorePersistToken(kJCoreKeyVoipToken, [voipTokenHex copy],
+            _hasAPNsEnvironment ? @(_isProduction) : nil);
     }
+}
+
+- (NSString *)voipTokenHex {
+    @synchronized (self) { return [self tokenForCurrentEnvironment:_voipTokenRecord]; }
+}
+
+- (NSString *)tokenForCurrentEnvironment:(NSDictionary *)record {
+    id production = record[@"production"];
+    if (_hasAPNsEnvironment && ![production isEqual:@(_isProduction)]) {
+        return nil;
+    }
+    return JCoreNonEmptyString(record[@"hex"]);
 }
 
 - (void)updateRegistrationWithUid:(uint64_t)uid
@@ -326,50 +515,87 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
                    registrationID:(NSString *)registrationID
                          deviceID:(NSString *)deviceID {
     dispatch_sync(_stateQueue, ^{
-        self->_uid = uid;
-        self->_password = password.length > 0 ? [password copy] : nil;
-        self->_registrationID = registrationID.length > 0 ? [registrationID copy] : nil;
-        if (deviceID.length > 0) {
-            self->_deviceID = [deviceID copy];
-        }
-        self->_isNewDevice = (uid == 0 || registrationID.length == 0);
+        [self updateRegistrationLockedWithUid:uid password:password registrationID:registrationID deviceID:deviceID];
+    });
+}
 
-        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        if (uid > 0) {
-            [defaults setInteger:(NSInteger)uid forKey:kJCoreKeyUid];
-        } else {
-            [defaults removeObjectForKey:kJCoreKeyUid];
-        }
-        if (password.length > 0) {
-            [defaults setObject:password forKey:kJCoreKeyPassword];
-        } else {
-            [defaults removeObjectForKey:kJCoreKeyPassword];
-        }
-        if (registrationID.length > 0) {
-            [defaults setObject:registrationID forKey:kJCoreKeyRegistrationId];
-        } else {
-            [defaults removeObjectForKey:kJCoreKeyRegistrationId];
-        }
-        if (deviceID.length > 0) {
-            [defaults setObject:deviceID forKey:kJCoreKeyDeviceId];
+- (BOOL)commitRegistrationWithUid:(uint64_t)uid
+                         password:(NSString *)password
+                   registrationID:(NSString *)registrationID
+                         deviceID:(NSString *)deviceID
+                 policyGeneration:(NSUInteger)generation {
+    __block BOOL committed = NO;
+    dispatch_sync(_stateQueue, ^{
+        @synchronized (self) {
+            if (![self allowsPolicyGeneration:generation]) return;
+            [self updateRegistrationLockedWithUid:uid password:password registrationID:registrationID deviceID:deviceID];
+            committed = YES;
         }
     });
+    return committed;
+}
+
+- (void)updateRegistrationLockedWithUid:(uint64_t)uid
+                               password:(NSString *)password
+                         registrationID:(NSString *)registrationID
+                               deviceID:(NSString *)deviceID {
+    if (deviceID.length > 0) {
+        _deviceID = [deviceID copy];
+    }
+    NSDictionary *registration = JCoreRegistration(uid, password, registrationID, _deviceID);
+    _uid = registration != nil ? uid : 0;
+    _password = [registration[@"password"] copy];
+    _registrationID = [registration[@"registrationID"] copy];
+    _isNewDevice = registration == nil;
+    NSMutableDictionary *updated = [registration mutableCopy] ?: [NSMutableDictionary dictionary];
+    updated[kJCoreLegacyRegistrationRetired] = @YES;
+    [self persistRegistrationLocked:updated];
+}
+
+- (void)persistRegistrationLocked:(NSDictionary *)registration {
+    if (_appKey.length == 0) {
+        return;
+    }
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSMutableDictionary *registrations = [[defaults dictionaryForKey:kJCoreKeyRegistrations] mutableCopy] ?: [NSMutableDictionary dictionary];
+    NSString *storageKey = _appKey.lowercaseString;
+    NSDictionary *previous = registrations[storageKey];
+    if ([previous isKindOfClass:NSDictionary.class] && [previous[kJCoreLegacyRegistrationRetired] isEqual:@YES]) {
+        NSMutableDictionary *updated = [registration mutableCopy];
+        updated[kJCoreLegacyRegistrationRetired] = @YES;
+        registration = updated;
+    }
+    registrations[storageKey] = registration;
+    [defaults setObject:registrations forKey:kJCoreKeyRegistrations];
+}
+
+- (BOOL)resetRegistrationForPolicyGeneration:(NSUInteger)generation {
+    __block BOOL reset = NO;
+    dispatch_sync(_stateQueue, ^{
+        @synchronized (self) {
+            if (![self allowsPolicyGeneration:generation]) return;
+            [self resetRegistrationLocked];
+            reset = YES;
+        }
+    });
+    return reset;
 }
 
 - (void)resetRegistration {
     dispatch_sync(_stateQueue, ^{
-        self->_uid = 0;
-        self->_password = nil;
-        self->_registrationID = nil;
-        self->_deviceID = nil;
-        self->_isNewDevice = YES;
-        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        [defaults removeObjectForKey:kJCoreKeyUid];
-        [defaults removeObjectForKey:kJCoreKeyPassword];
-        [defaults removeObjectForKey:kJCoreKeyRegistrationId];
-        [defaults removeObjectForKey:kJCoreKeyDeviceId];
-        [defaults removeObjectForKey:kJCoreKeyFakeImei];
+        [self resetRegistrationLocked];
     });
+}
+
+- (void)resetRegistrationLocked {
+    _uid = 0;
+    _password = nil;
+    _registrationID = nil;
+    _preSetupRegistrationID = nil;
+    _deviceID = nil;
+    _isNewDevice = YES;
+    [self persistRegistrationLocked:@{kJCoreLegacyRegistrationRetired: @YES}];
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:kJCoreKeyFakeImei];
 }
 
 - (void)updateWithSisDictionary:(NSDictionary *)sisDict {
@@ -626,8 +852,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
     __block NSString *devId = nil;
     __block BOOL existed = NO;
     dispatch_sync(_stateQueue, ^{
-        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        NSString *saved = self->_deviceID ?: [defaults stringForKey:kJCoreKeyDeviceId];
+        NSString *saved = self->_deviceID;
         if (saved.length > 0) {
             existed = YES;
             devId = saved;
@@ -636,7 +861,8 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
             NSString *seed = [self deviceSeedLocked];
             devId = [JCORECrypto md5Hex:[NSString stringWithFormat:@"dev:%@:%@", self->_appKey ?: @"jcore", seed]];
             self->_deviceID = [devId copy];
-            [defaults setObject:devId forKey:kJCoreKeyDeviceId];
+            NSDictionary *registration = JCoreRegistration(self->_uid, self->_password, self->_registrationID, devId);
+            [self persistRegistrationLocked:registration ?: @{@"deviceID": devId}];
         }
     });
     if (outHasExisting != NULL) {
@@ -677,7 +903,7 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 - (NSString *)fallbackRegistrationID {
     __block NSString *result = nil;
     dispatch_sync(_stateQueue, ^{
-        result = self->_registrationID;
+        result = self->_registrationID ?: self->_preSetupRegistrationID;
     });
     return result.length > 0 ? result : @"";
 }

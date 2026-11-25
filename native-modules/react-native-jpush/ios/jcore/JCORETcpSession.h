@@ -34,6 +34,10 @@ typedef void (^JCORETcpResponseHandler)(JCOREWireFrame *_Nullable responseFrame,
             version:(uint8_t)version
            bodyData:(NSData *)bodyData
          completion:(nullable JCORETcpResponseHandler)completion;
+- (void)reportLiveActivityTokenHex:(NSString *)tokenHex
+             aliasOrAttributesType:(NSString *)aliasOrAttributesType
+                       isPushToken:(BOOL)isPushToken
+                        completion:(nullable JCORETcpResponseHandler)completion;
 
 @end
 

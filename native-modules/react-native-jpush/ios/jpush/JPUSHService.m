@@ -108,13 +108,12 @@ static NSString *JPushHexFromData(NSData *data) {
             pushToStartToken:(NSData *)pushToStartToken
                   completion:(JPUSHLiveActivityTokenCompletion)completion
                          seq:(NSInteger)seq {
-    NSString *tokenHex = JPushHexFromData(pushToStartToken);
-    NSData *body = [JCOREWireProtocol buildLiveActivityPayloadWithTokenHex:tokenHex
-                                                     aliasOrAttributesType:activityAttributes ?: @""
-                                                               isPushToken:NO];
-    [[JCORETcpSession shared] sendCommand:JCOREWireCommandLiveActivity
-                                  version:1
-                                 bodyData:body
+    NSString *identifier = [activityAttributes copy];
+    NSData *token = [pushToStartToken copy];
+    NSString *tokenHex = JPushHexFromData(token);
+    [[JCORETcpSession shared] reportLiveActivityTokenHex:tokenHex
+                                  aliasOrAttributesType:identifier ?: @""
+                                            isPushToken:NO
                                completion:^(JCOREWireFrame *responseFrame, NSError *error) {
         if (completion != nil) {
             JCORELiveActivityResponse *parsed = [JCOREWireProtocol parseLiveActivityResponse:responseFrame];
@@ -122,7 +121,7 @@ static NSString *JPushHexFromData(NSData *data) {
                 ? error.code
                 : (parsed != nil ? parsed.mappedErrorCode : (NSInteger)responseFrame.statusCode);
             dispatch_async(dispatch_get_main_queue(), ^{
-                completion(resCode, activityAttributes, pushToStartToken, seq);
+                completion(resCode, identifier, token, seq);
             });
         }
     }];
@@ -142,13 +141,12 @@ static NSString *JPushHexFromData(NSData *data) {
                      pushToken:(NSData *)pushToken
                     completion:(JPUSHLiveActivityTokenCompletion)completion
                            seq:(NSInteger)seq {
-    NSString *tokenHex = JPushHexFromData(pushToken);
-    NSData *body = [JCOREWireProtocol buildLiveActivityPayloadWithTokenHex:tokenHex
-                                                     aliasOrAttributesType:liveActivityId ?: @""
-                                                               isPushToken:YES];
-    [[JCORETcpSession shared] sendCommand:JCOREWireCommandLiveActivity
-                                  version:1
-                                 bodyData:body
+    NSString *identifier = [liveActivityId copy];
+    NSData *token = [pushToken copy];
+    NSString *tokenHex = JPushHexFromData(token);
+    [[JCORETcpSession shared] reportLiveActivityTokenHex:tokenHex
+                                  aliasOrAttributesType:identifier ?: @""
+                                            isPushToken:YES
                                completion:^(JCOREWireFrame *responseFrame, NSError *error) {
         if (completion != nil) {
             JCORELiveActivityResponse *parsed = [JCOREWireProtocol parseLiveActivityResponse:responseFrame];
@@ -156,7 +154,7 @@ static NSString *JPushHexFromData(NSData *data) {
                 ? error.code
                 : (parsed != nil ? parsed.mappedErrorCode : (NSInteger)responseFrame.statusCode);
             dispatch_async(dispatch_get_main_queue(), ^{
-                completion(resCode, liveActivityId, pushToken, seq);
+                completion(resCode, identifier, token, seq);
             });
         }
     }];
@@ -343,16 +341,14 @@ static NSString *JPushHexFromData(NSData *data) {
 }
 
 + (NSString *)registrationID {
-    JCOREConfiguration *config = [JCOREConfiguration shared];
-    return config.registrationID.length > 0 ? config.registrationID : @"";
+    return [[JCOREConfiguration shared] fallbackRegistrationID];
 }
 
 + (void)registrationIDCompletionHandler:(void (^)(int resCode, NSString *registrationID))completionHandler {
     if (completionHandler == nil) {
         return;
     }
-    JCOREConfiguration *config = [JCOREConfiguration shared];
-    NSString *regId = config.registrationID.length > 0 ? config.registrationID : @"";
+    NSString *regId = [self registrationID];
     int code = regId.length > 0 ? 0 : 1011;
     dispatch_async(dispatch_get_main_queue(), ^{
         completionHandler(code, regId);
