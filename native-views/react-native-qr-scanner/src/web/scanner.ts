@@ -245,7 +245,10 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
 
   function schedule(runGeneration: number) {
     if (runGeneration !== generation || disposed || frozen) return;
+    if (frameHandle !== undefined || timer !== undefined) return;
     const tick = () => {
+      frameHandle = undefined;
+      timer = undefined;
       if (runGeneration !== generation || disposed) return;
       // One frame in analysis at a time; skip frames that arrive meanwhile.
       if (analysing || video.currentTime === lastTime) {
@@ -516,7 +519,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       if (active) {
         lastTime = -1;
         void video.play().catch(() => {});
-        schedule(generation);
+        if (!analysing) schedule(generation);
       }
     },
     stop() {

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.annotation.SuppressLint
 import android.graphics.Color
+import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -24,10 +25,14 @@ import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.camera.view.TransformExperimental
+import androidx.camera.view.transform.CoordinateTransform
+import androidx.camera.view.transform.ImageProxyTransformFactory
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -463,7 +468,11 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     analysis.setAnalyzer(analysisExecutor) { proxy -> analyze(proxy, generation) }
     lastDecodeFailureAt = null
     val bound = try {
-      provider.bindToLifecycle(this, selector, preview, analysis)
+      val groupBuilder = UseCaseGroup.Builder()
+        .addUseCase(preview)
+        .addUseCase(analysis)
+      previewView.viewPort?.let { groupBuilder.setViewPort(it) }
+      provider.bindToLifecycle(this, selector, groupBuilder.build())
     } catch (error: Exception) {
       analysis.clearAnalyzer()
       provider.unbind(preview, analysis)
@@ -544,10 +553,13 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   }
 
   /** Runs on the analysis executor; KEEP_ONLY_LATEST keeps one frame in flight. */
-  @OptIn(ExperimentalGetImage::class)
+  @OptIn(ExperimentalGetImage::class, TransformExperimental::class)
   private fun analyze(proxy: ImageProxy, generation: Int) {
-    val currentCallbacks = callbacks
-    if (currentCallbacks.frozen) {
+    // Capture callbacks before async ML Kit decode so session-identity guards
+    // on the original callback still discard stale frames if sessionKey/mode
+    // changed mid-decode (SPEC section 4).
+    val frameCallbacks = callbacks
+    if (frameCallbacks.frozen) {
       proxy.close()
       return
     }
@@ -559,6 +571,18 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     val rotation = proxy.imageInfo.rotationDegrees
     val rotatedWidth = if (rotation == 90 || rotation == 270) proxy.height else proxy.width
     val rotatedHeight = if (rotation == 90 || rotation == 270) proxy.width else proxy.height
+    val sourceTransform = if (frameCallbacks.multiSymbol && frameCallbacks.symbols != null) {
+      try {
+        ImageProxyTransformFactory().apply {
+          isUsingRotationDegrees = true
+          isUsingCropRect = false
+        }.getOutputTransform(proxy)
+      } catch (_: Exception) {
+        null
+      }
+    } else {
+      null
+    }
     val task = try {
       val input = InputImage.fromMediaImage(mediaImage, rotation)
       scanner.process(input)
@@ -569,10 +593,10 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     }
     task
       .addOnSuccessListener(analysisExecutor) { barcodes ->
-        val latest = callbacks
-        if (latest.frozen) return@addOnSuccessListener
+        if (callbacks.frozen) return@addOnSuccessListener
 
-        if (latest.multiSymbol && latest.symbols != null) {
+        val symbolsCallback = frameCallbacks.symbols
+        if (frameCallbacks.multiSymbol && symbolsCallback != null) {
           val nonEmpty = barcodes.filter { !it.rawValue.isNullOrEmpty() }
           if (nonEmpty.isEmpty()) return@addOnSuccessListener
           val isMirrored = boundLensFacing == CameraSelector.LENS_FACING_FRONT
@@ -581,36 +605,60 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
             val viewW = previewView.width.toDouble()
             val viewH = previewView.height.toDouble()
             if (viewW <= 0 || viewH <= 0 || rotatedWidth <= 0 || rotatedHeight <= 0) return@post
-            // PreviewView uses ScaleType.FILL_CENTER (cover).
+            val targetTransform = previewView.outputTransform
+            val coordinateTransform = if (sourceTransform != null && targetTransform != null) {
+              CoordinateTransform(sourceTransform, targetTransform)
+            } else {
+              null
+            }
             val imgW = rotatedWidth.toDouble()
             val imgH = rotatedHeight.toDouble()
             val symbols = nonEmpty.mapNotNull { barcode ->
               val text = barcode.rawValue?.takeIf(String::isNotEmpty) ?: return@mapNotNull null
               val box = barcode.boundingBox
               if (box != null) {
-                val (center, bounds) = mapFillCenterRect(
-                  left = box.left.toDouble(),
-                  top = box.top.toDouble(),
-                  right = box.right.toDouble(),
-                  bottom = box.bottom.toDouble(),
-                  imageWidth = imgW,
-                  imageHeight = imgH,
-                  viewWidth = viewW,
-                  viewHeight = viewH,
-                  mirrored = isMirrored,
-                )
-                QrDetectedSymbol(
-                  text = text,
-                  centerX = center.first,
-                  centerY = center.second,
-                  bounds = bounds,
-                )
+                if (coordinateTransform != null) {
+                  val mapped = RectF(box)
+                  coordinateTransform.mapRect(mapped)
+                  val cx = ((mapped.left + mapped.right) * 0.5) / viewW
+                  val cy = ((mapped.top + mapped.bottom) * 0.5) / viewH
+                  val bounds = QrSymbolBounds(
+                    x = mapped.left.toDouble() / viewW,
+                    y = mapped.top.toDouble() / viewH,
+                    width = mapped.width().toDouble().coerceAtLeast(0.0) / viewW,
+                    height = mapped.height().toDouble().coerceAtLeast(0.0) / viewH,
+                  )
+                  QrDetectedSymbol(
+                    text = text,
+                    centerX = cx,
+                    centerY = cy,
+                    bounds = bounds,
+                  )
+                } else {
+                  val (center, bounds) = mapFillCenterRect(
+                    left = box.left.toDouble(),
+                    top = box.top.toDouble(),
+                    right = box.right.toDouble(),
+                    bottom = box.bottom.toDouble(),
+                    imageWidth = imgW,
+                    imageHeight = imgH,
+                    viewWidth = viewW,
+                    viewHeight = viewH,
+                    mirrored = isMirrored,
+                  )
+                  QrDetectedSymbol(
+                    text = text,
+                    centerX = center.first,
+                    centerY = center.second,
+                    bounds = bounds,
+                  )
+                }
               } else {
                 QrDetectedSymbol(text = text, centerX = 0.5, centerY = 0.5, bounds = null)
               }
             }.toTypedArray()
             if (symbols.isNotEmpty()) {
-              latest.symbols.invoke(symbols, generation.toDouble())
+              symbolsCallback.invoke(symbols, generation.toDouble())
             }
           }
           return@addOnSuccessListener
@@ -621,7 +669,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
         val reports = gate.filter(texts, SystemClock.elapsedRealtime(), generation)
         if (reports.isNotEmpty()) main.post {
           if (gate.currentGeneration != generation || isFrozenMain) return@post
-          for (report in reports) latest.frame?.invoke(report.text, report.generation.toDouble())
+          for (report in reports) frameCallbacks.frame?.invoke(report.text, report.generation.toDouble())
         }
       }
       .addOnCompleteListener(analysisExecutor) { result ->
