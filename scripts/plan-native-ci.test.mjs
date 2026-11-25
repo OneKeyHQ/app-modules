@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { planNativeCI, readNativeDependents } from "./plan-native-ci.mjs";
 
+const root = fileURLToPath(new URL("..", import.meta.url));
 const graph = readNativeDependents();
 const planFor = (...paths) => planNativeCI(paths, graph);
 const scheduledJobs = (plan) => Object.keys(plan.jobs).filter((job) => plan.jobs[job]);
@@ -129,13 +134,129 @@ test("Docs skip native jobs, while shared, unknown, and unregistered inputs run 
   assert.equal(planNativeCI(["native-modules/react-native-jpush/ios/example.m"], incomplete).mode, "full");
 });
 
-test("full CI retains every existing XCTest, Gradle and host suite", () => {
-  const full = JSON.parse(execFileSync(process.execPath, ["scripts/plan-native-ci.mjs", "--full"], { encoding: "utf8" }));
+test("full CI retains the registered native suites and Android test reports", () => {
+  const full = JSON.parse(execFileSync(process.execPath, ["scripts/plan-native-ci.mjs", "--full"], {
+    cwd: root, encoding: "utf8",
+  }));
+  assert.equal(full.mode, "full");
+  assert.deepEqual(scheduledJobs(full), ["native-overlay-package", "ios-native", "device-utils-store", "android-unit"]);
   assert.equal(full.ios.ui.testSchemes.length + full.ios.services.testSchemes.length, 13);
   assert.deepEqual(full.ios.services.buildTargets, ["ReactNativeLiteCard", "NativeOverlay", "AutoSizeInput"]);
-  assert.equal(full.ios.host.length, 4);
-  assert.equal(full.ios.swiftPackages.length, 4);
-  assert.equal(full.android.gradleTasks.length, 20);
-  assert.equal(full.android.reportDirectories.length, 13);
-  assert.equal(full.android.host.length, 7);
+  assert.deepEqual(full.ios.host, [
+    "react-native-device-utils", "react-native-lite-card", "react-native-jpush", "react-native-sni-connect",
+  ]);
+  assert.deepEqual(full.ios.swiftPackages, [
+    "native-modules/react-native-sni-connect",
+    "native-modules/react-native-bundle-update",
+    "native-modules/react-native-range-downloader/tests/swiftpm",
+    "native-views/react-native-native-list/tests/swiftpm",
+  ]);
+  assert.deepEqual(full.android, {
+    gradleTasks: [
+      ":onekeyfe_react-native-app-update:testDebugUnitTest",
+      ":onekeyfe_react-native-bundle-crypto:testDebugUnitTest",
+      ":onekeyfe_react-native-jpush:testDebugUnitTest",
+      ":onekey-jpush-fcm:testDebugUnitTest",
+      ":onekeyfe_react-native-network-throttle:testDebugUnitTest",
+      ":onekeyfe_react-native-range-downloader:testDebugUnitTest",
+      ":onekeyfe_react-native-sni-connect:testDebugUnitTest",
+      ":onekeyfe_react-native-auto-size-input:testDebugUnitTest",
+      ":onekeyfe_react-native-image:testDebugUnitTest",
+      ":onekeyfe_react-native-native-list:testDebugUnitTest",
+      ":onekeyfe_react-native-native-overlay:testDebugUnitTest",
+      ":onekeyfe_react-native-text-input:testDebugUnitTest",
+      ":onekeyfe_react-native-qr-scanner:testDebugUnitTest",
+      ":onekeyfe_react-native-bundle-update:compileDebugKotlin",
+      ":onekeyfe_react-native-bottom-tabs:compileReleaseKotlin",
+      ":onekeyfe_react-native-pager-view:compileDebugKotlin",
+      ":onekeyfe_react-native-perp-depth-bar:compileDebugKotlin",
+      ":onekeyfe_react-native-capture-protection:assembleDebug",
+      ":onekeyfe_react-native-device-utils:assembleDebug",
+      ":onekeyfe_react-native-photo-library:assembleDebug",
+    ],
+    reportDirectories: [
+      "native-modules/react-native-app-update/android/build",
+      "native-modules/react-native-bundle-crypto/android/build",
+      "native-modules/react-native-jpush/android/build",
+      "native-modules/react-native-jpush/android/fcm/build",
+      "native-modules/react-native-network-throttle/android/build",
+      "native-modules/react-native-range-downloader/android/build",
+      "native-modules/react-native-sni-connect/android/build",
+      "native-views/react-native-auto-size-input/android/build",
+      "native-views/react-native-image/android/build",
+      "native-views/react-native-native-list/android/build",
+      "native-views/react-native-native-overlay/android/build",
+      "native-views/react-native-text-input/android/build",
+      "native-views/react-native-qr-scanner/android/build",
+    ],
+    host: [
+      "react-native-device-utils", "react-native-bundle-update", "react-native-pager-view",
+      "react-native-image-crop-picker", "react-native-lite-card", "react-native-jpush", "react-native-sni-connect",
+    ],
+  });
+});
+
+test("a depth-two PR merge checkout selects every PR commit and both sides of a cross-module rename", (t) => {
+  const source = mkdtempSync(join(tmpdir(), "native-ci-source-"));
+  const checkout = mkdtempSync(join(tmpdir(), "native-ci-checkout-"));
+  t.after(() => {
+    rmSync(source, { recursive: true, force: true });
+    rmSync(checkout, { recursive: true, force: true });
+  });
+  const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  const script = "scripts/plan-native-ci.mjs";
+  const metadata = git(root, "ls-files", "--", ":(glob)native-*/*/package.json",
+    ":(glob)native-*/*/*.podspec", ":(glob)native-*/*/android/build.gradle*").split("\n");
+  for (const path of [script, "scripts/ios-native-plan.mjs", ...metadata]) {
+    const destination = join(source, path);
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(join(root, path), destination);
+  }
+  const jpush = "native-modules/react-native-jpush/ci-fixture.txt";
+  const networkThrottle = "native-modules/react-native-network-throttle/ci-fixture.txt";
+  const sni = "native-modules/react-native-sni-connect/ci-fixture.txt";
+  const image = "native-views/react-native-image/ci-fixture.txt";
+  const write = (path, content) => writeFileSync(join(source, path), content);
+  const commit = (message) => {
+    git(source, "add", "--all");
+    git(source, "commit", "-qm", message);
+  };
+  git(source, "init", "-q", "--initial-branch=base");
+  git(source, "config", "user.name", "Native CI fixture");
+  git(source, "config", "user.email", "native-ci@example.invalid");
+  git(source, "config", "commit.gpgsign", "false");
+  write(jpush, "Renamed fixture content\n");
+  commit("Common ancestor");
+  git(source, "switch", "-qc", "pr");
+  write(sni, "Earlier PR commit\n");
+  commit("Modify SNI");
+  git(source, "mv", jpush, networkThrottle);
+  commit("Move fixture out of JPush");
+  const head = git(source, "rev-parse", "HEAD");
+  git(source, "switch", "-q", "base");
+  write(image, "Base-only change\n");
+  commit("Modify Image on base");
+  git(source, "merge", "-q", "--no-ff", "--no-edit", "pr");
+  const origin = pathToFileURL(source).href;
+  git(checkout, "clone", "-q", "--depth=2", origin, ".");
+  assert.equal(git(checkout, "rev-parse", "--is-shallow-repository"), "true");
+  const plan = (...args) => JSON.parse(execFileSync(process.execPath, [script, ...args], {
+    cwd: checkout, encoding: "utf8",
+  }));
+  const selected = plan("--pull-request", head);
+  assert.equal(selected.mode, "affected", selected.reason);
+  assert.deepEqual(selected.changedModules, [
+    "react-native-jpush", "react-native-network-throttle", "react-native-sni-connect",
+  ]);
+  assert.deepEqual(scheduledJobs(selected), ["device-utils-store", "android-unit"]);
+  assert.deepEqual(selected.ios.host, ["react-native-jpush", "react-native-sni-connect"]);
+  assert.deepEqual(selected.android.host, ["react-native-jpush", "react-native-sni-connect"]);
+  assert.deepEqual(selected.android.gradleTasks, [
+    ":onekeyfe_react-native-jpush:testDebugUnitTest", ":onekey-jpush-fcm:testDebugUnitTest",
+    ":onekeyfe_react-native-network-throttle:testDebugUnitTest", ":onekeyfe_react-native-sni-connect:testDebugUnitTest",
+  ]);
+
+  const full = plan("--full");
+  const unverified = plan("--pull-request", git(checkout, "rev-parse", "HEAD^1"));
+  assert.deepEqual(unverified, { ...full, reason: "unverified-merge-checkout" });
 });

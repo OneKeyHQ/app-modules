@@ -90,7 +90,7 @@ try {
     run('kotlinc', [...declarations, join(logger, 'android/src/main/java/com/margelo/nitro/nativelogger/OneKeyLog.kt'),
       ...(suite.kotlinSource ? [suite.kotlinSource] : []),
       join(suite.fixtures, 'Format.kt'), '-nowarn', '-include-runtime', '-d', jar]);
-    console.log(run('java', ['-jar', jar, jniMessages]));
+    console.log(run('java', ['-jar', jar, ...jniMessages]));
   }
 } finally {
   rmSync(output, { recursive: true, force: true });
