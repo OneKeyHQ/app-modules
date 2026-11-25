@@ -36,6 +36,16 @@ use crate::image_decode::decode_qr_luma;
 
 /// Duration without QR hits before a locked manual focus is released back to Auto.
 const FOCUS_UNLOCK_TIMEOUT: Duration = Duration::from_millis(1500);
+/// Settling window after a manual autofocus request before QR detections can re-lock focus.
+const FOCUS_REFOCUS_SETTLE: Duration = Duration::from_millis(1500);
+
+fn can_lock_focus_on_detect(refocus_until: &mut Option<Instant>, now: Instant) -> bool {
+    if refocus_until.is_some_and(|deadline| now < deadline) {
+        return false;
+    }
+    *refocus_until = None;
+    true
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreferredResolution {
@@ -489,6 +499,7 @@ struct FocusControlHandle {
     default_focus: i32,
     locked: bool,
     last_detect_at: Option<Instant>,
+    refocus_until: Option<Instant>,
 }
 
 // Accessed exclusively behind a Mutex on COM MTA threads.
@@ -546,7 +557,7 @@ impl FocusControlHandle {
             caps.exposure_supported = true;
         }
 
-        let handle = if caps.auto_focus_supported && caps.manual_focus_supported {
+        let handle = if caps.auto_focus_supported {
             Some(Self {
                 control,
                 generation,
@@ -556,11 +567,32 @@ impl FocusControlHandle {
                 default_focus: caps.default_focus,
                 locked: false,
                 last_detect_at: None,
+                refocus_until: None,
             })
         } else {
             None
         };
         (caps, handle)
+    }
+
+    fn trigger_auto_focus(&mut self, now: Instant) -> bool {
+        if !self.auto_focus_supported {
+            return false;
+        }
+        let ok = unsafe {
+            self.control.Set(
+                CameraControl_Focus.0,
+                self.default_focus,
+                CameraControl_Flags_Auto.0,
+            )
+        }
+        .is_ok();
+        if ok {
+            self.locked = false;
+            self.last_detect_at = None;
+            self.refocus_until = Some(now + FOCUS_REFOCUS_SETTLE);
+        }
+        ok
     }
 
     /// Locks focus at the current lens position on QR hit to prevent AF hunting
@@ -571,6 +603,9 @@ impl FocusControlHandle {
             || !self.manual_focus_supported
             || !self.auto_focus_supported
         {
+            return;
+        }
+        if !can_lock_focus_on_detect(&mut self.refocus_until, now) {
             return;
         }
         self.last_detect_at = Some(now);
@@ -624,6 +659,7 @@ impl FocusControlHandle {
         }
         self.locked = false;
         self.last_detect_at = None;
+        self.refocus_until = None;
         Ok(())
     }
 }
@@ -891,6 +927,61 @@ impl DecodeMailbox {
 struct SendReader(IMFSourceReader);
 unsafe impl Send for SendReader {}
 
+#[derive(Default)]
+struct SessionSignalState {
+    stopped: bool,
+    accepting_focus: bool,
+    focus_requests: Vec<std::sync::mpsc::SyncSender<bool>>,
+}
+
+struct SessionSignal {
+    state: Mutex<SessionSignalState>,
+    cvar: Condvar,
+}
+
+impl SessionSignal {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(SessionSignalState::default()),
+            cvar: Condvar::new(),
+        }
+    }
+
+    fn stop(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.stopped = true;
+            state.accepting_focus = false;
+            for reply in state.focus_requests.drain(..) {
+                let _ = reply.send(false);
+            }
+            self.cvar.notify_all();
+        }
+    }
+
+    fn is_stopped(&self) -> bool {
+        self.state.lock().map(|s| s.stopped).unwrap_or(true)
+    }
+
+    fn request_focus(&self) -> Option<std::sync::mpsc::Receiver<bool>> {
+        let mut state = self.state.lock().ok()?;
+        if state.stopped || !state.accepting_focus {
+            return None;
+        }
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        state.focus_requests.push(tx);
+        self.cvar.notify_all();
+        Some(rx)
+    }
+}
+
+struct SessionStopGuard(Arc<SessionSignal>);
+
+impl Drop for SessionStopGuard {
+    fn drop(&mut self) {
+        self.0.stop();
+    }
+}
+
 struct AsyncCameraShared {
     device_id: Option<String>,
     generation: i64,
@@ -903,7 +994,7 @@ struct AsyncCameraShared {
     reader: Mutex<Option<SendReader>>,
     in_callback: Mutex<usize>,
     in_callback_cvar: Condvar,
-    stop_signal: Arc<(Mutex<bool>, Condvar)>,
+    stop_signal: Arc<SessionSignal>,
     preview: Option<Arc<PreviewPool>>,
     mailbox: Arc<DecodeMailbox>,
     emitter: Arc<Mutex<Option<EventEmitter>>>,
@@ -940,11 +1031,7 @@ impl AsyncCameraShared {
             message,
             generation: self.generation,
         });
-        let (lock, cvar) = &*self.stop_signal;
-        if let Ok(mut stopped) = lock.lock() {
-            *stopped = true;
-            cvar.notify_all();
-        }
+        self.stop_signal.stop();
     }
 }
 
@@ -1154,7 +1241,7 @@ impl IMFSourceReaderCallback_Impl for AsyncCameraCallback_Impl {
 struct SessionContext {
     generation: i64,
     running: Arc<AtomicBool>,
-    stop_signal: Arc<(Mutex<bool>, Condvar)>,
+    stop_signal: Arc<SessionSignal>,
     preview: Option<Arc<PreviewPool>>,
     mailbox: Arc<DecodeMailbox>,
     emitter: Arc<Mutex<Option<EventEmitter>>>,
@@ -1181,6 +1268,7 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
         stats,
         current_gen,
     } = ctx;
+    let _stop_guard = SessionStopGuard(Arc::clone(&stop_signal));
     let emit_err = |code: &'static str, message: String| {
         running.store(false, Ordering::Release);
         if current_gen.load(Ordering::Acquire) != generation {
@@ -1396,16 +1484,47 @@ fn run_camera_session(ctx: SessionContext, opts: CameraSessionOptions) {
         return;
     }
 
-    // Wait until stop(), dispose(), or a fatal stream/preview error.
-    let (lock, cvar) = &*stop_signal;
-    if let Ok(mut stopped) = lock.lock() {
-        while !*stopped && current_gen.load(Ordering::Acquire) == generation {
-            let Ok(next) = cvar.wait(stopped) else {
+    // Wait until stop(), dispose(), or a fatal stream/preview error, while
+    // servicing focus requests on this COM-initialized camera thread.
+    if let Ok(mut state) = stop_signal.state.lock() {
+        state.accepting_focus = true;
+        loop {
+            let requests: Vec<_> = state.focus_requests.drain(..).collect();
+            let should_stop = state.stopped || current_gen.load(Ordering::Acquire) != generation;
+            if !requests.is_empty() {
+                drop(state);
+                let focused = if !should_stop {
+                    focus_control
+                        .lock()
+                        .ok()
+                        .and_then(|mut guard| {
+                            guard
+                                .as_mut()
+                                .map(|handle| handle.trigger_auto_focus(Instant::now()))
+                        })
+                        .unwrap_or(false)
+                } else {
+                    false
+                };
+                for reply in requests {
+                    let _ = reply.send(focused);
+                }
+                let Ok(reacquired) = stop_signal.state.lock() else {
+                    break;
+                };
+                state = reacquired;
+                continue;
+            }
+            if should_stop {
+                break;
+            }
+            let Ok(next) = stop_signal.cvar.wait(state) else {
                 break;
             };
-            stopped = next;
+            state = next;
         }
     }
+    stop_signal.stop();
 
     // Teardown: halt new sample requests, flush, wait for in-flight callback,
     // restore Auto focus, drop reader, and shut down the media source to
@@ -1463,11 +1582,12 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
         }
     };
 
+    let _stop_guard = SessionStopGuard(Arc::clone(&stop_signal));
     let is_stopped = || -> bool {
         if current_gen.load(Ordering::Acquire) != generation {
             return true;
         }
-        stop_signal.0.lock().map(|g| *g).unwrap_or(true)
+        stop_signal.is_stopped()
     };
 
     if path.is_empty() || !Path::new(&path).exists() {
@@ -1609,12 +1729,11 @@ fn run_file_session(ctx: SessionContext, path: String, loop_file: bool) {
             let due = started_at + Duration::from_nanos(delta_100ns.saturating_mul(100));
             let wait = due.saturating_duration_since(Instant::now());
             if !wait.is_zero() {
-                let (lock, cvar) = &*stop_signal;
-                if let Ok(guard) = lock.lock() {
-                    if *guard || current_gen.load(Ordering::Acquire) != generation {
+                if let Ok(guard) = stop_signal.state.lock() {
+                    if guard.stopped || current_gen.load(Ordering::Acquire) != generation {
                         return;
                     }
-                    let _ = cvar.wait_timeout(guard, wait);
+                    let _ = stop_signal.cvar.wait_timeout(guard, wait);
                 }
                 if is_stopped() {
                     return;
@@ -1731,7 +1850,7 @@ fn split_coded_error(msg: &str) -> (&'static str, String) {
 
 struct ActiveSession {
     running: Arc<AtomicBool>,
-    stop_signal: Arc<(Mutex<bool>, Condvar)>,
+    stop_signal: Arc<SessionSignal>,
     thread: JoinHandle<()>,
 }
 
@@ -1849,7 +1968,7 @@ impl CaptureController {
             .map_err(|_| "decoder-unavailable: source lock poisoned".to_owned())?
             .clone();
 
-        let stop_signal = Arc::new((Mutex::new(false), Condvar::new()));
+        let stop_signal = Arc::new(SessionSignal::new());
         let running = Arc::new(AtomicBool::new(true));
         let ctx = SessionContext {
             generation: next_gen,
@@ -1910,11 +2029,7 @@ impl CaptureController {
         self.generation.fetch_add(1, Ordering::AcqRel);
         let active = self.session.lock().ok().and_then(|mut g| g.take());
         if let Some(session) = active {
-            let (lock, cvar) = &*session.stop_signal;
-            if let Ok(mut stopped) = lock.lock() {
-                *stopped = true;
-                cvar.notify_all();
-            }
+            session.stop_signal.stop();
             let _ = session.thread.join();
         }
         self.mailbox.clear();
@@ -1967,6 +2082,29 @@ impl CaptureController {
 
     pub fn lent_frames(&self) -> usize {
         self.preview.as_ref().map_or(0, |p| p.lent_count())
+    }
+
+    pub fn focus(&self) -> bool {
+        if self.disposed.load(Ordering::Acquire) {
+            return false;
+        }
+        let is_camera = self
+            .source
+            .lock()
+            .map(|src| matches!(*src, SourceConfig::Camera { .. }))
+            .unwrap_or(false);
+        if !is_camera {
+            return false;
+        }
+        let rx = self.session.lock().ok().and_then(|guard| {
+            let session = guard.as_ref()?;
+            if !session.running.load(Ordering::Acquire) || session.thread.is_finished() {
+                return None;
+            }
+            session.stop_signal.request_focus()
+        });
+        rx.and_then(|receiver| receiver.recv_timeout(Duration::from_secs(2)).ok())
+            .unwrap_or(false)
     }
 
     pub fn stats(&self) -> CaptureStatsSnapshot {
@@ -2080,5 +2218,29 @@ mod tests {
         assert!(nv12_720_30 > mjpg_720_30);
         assert!(nv12_720_30_when_1080 > nv12_1080_10);
         assert!(nv12_1080_30_when_1080 > nv12_720_30_when_1080);
+    }
+
+    #[test]
+    fn skips_detection_focus_lock_until_manual_refocus_settles() {
+        let start = Instant::now();
+        let in_flight_frame_at = start;
+        let focus_requested_at = start + Duration::from_millis(25);
+        let mut refocus_until = Some(focus_requested_at + FOCUS_REFOCUS_SETTLE);
+
+        assert!(!can_lock_focus_on_detect(
+            &mut refocus_until,
+            in_flight_frame_at
+        ));
+        assert!(!can_lock_focus_on_detect(
+            &mut refocus_until,
+            focus_requested_at + Duration::from_millis(500)
+        ));
+        assert!(refocus_until.is_some());
+
+        assert!(can_lock_focus_on_detect(
+            &mut refocus_until,
+            focus_requested_at + FOCUS_REFOCUS_SETTLE
+        ));
+        assert!(refocus_until.is_none());
     }
 }

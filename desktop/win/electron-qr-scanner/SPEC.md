@@ -70,6 +70,7 @@ createCapture(options?: {
   start(): void;
   stop(): void;
   setDevice(deviceId?: string | null): void;
+  focus(): boolean;
   lentFrames(): number;
   stats(): CaptureStats;
   dispose(): void;
@@ -97,7 +98,12 @@ createCapture(options?: {
   focus/exposure capabilities (reported in `onReady(generation, info)`), resets
   supported cameras to Auto focus, and optionally locks focus during active QR
   detection (`lockFocusOnDetect`, auto-unlocking after 1.5 s without hits and
-  restoring Auto on teardown).
+  restoring Auto on teardown). `capture.focus()` dispatches a whole-camera
+  autofocus request (`CameraControl_Flags_Auto`) to the active COM MTA camera
+  session thread when `IAMCameraControl` reports autofocus support, returning
+  `true` when applied (or `false` when stopped, on file sources, or on
+  fixed-focus cameras) and holding off `lockFocusOnDetect` re-locking for 1.5 s
+  while the autofocus sweep settles.
 - Readiness supplies the bound camera ID to the application callback. File sources have no ID. Diagnostics still omit the camera ID.
 - **Web fallback contract**: `shouldFallbackToWeb(error)` returns `true` for
   `preview-unavailable`, `decoder-unavailable` (including native `.node` load

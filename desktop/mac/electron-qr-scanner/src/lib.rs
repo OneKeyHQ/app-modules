@@ -39,6 +39,7 @@ extern "C" {
     fn oqs_capture_lent_frames(handle: *mut c_void) -> i32;
     fn oqs_capture_start(handle: *mut c_void) -> i64;
     fn oqs_capture_stop(handle: *mut c_void);
+    fn oqs_capture_focus(handle: *mut c_void, x: f64, y: f64) -> bool;
     fn oqs_capture_destroy(handle: *mut c_void);
 }
 
@@ -389,6 +390,15 @@ impl NativeCapture {
         self.live()?;
         unsafe { oqs_capture_stop(self.handle) };
         Ok(())
+    }
+
+    #[napi]
+    pub fn focus(&self, x: Option<f64>, y: Option<f64>) -> bool {
+        if self.handle.is_null() {
+            false
+        } else {
+            unsafe { oqs_capture_focus(self.handle, x.unwrap_or(0.5), y.unwrap_or(0.5)) }
+        }
     }
 
     /// Returns a preview frame's slot. Unknown or repeated tokens are ignored.
