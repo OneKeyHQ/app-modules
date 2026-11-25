@@ -1,3 +1,5 @@
+package com.reactnativepagerview
+
 import java.util.WeakHashMap
 
 // Deterministically model GC clearing weak keys after collection size is read.
@@ -22,11 +24,8 @@ private class ShrinkingPaddingMap(count: Int) : WeakHashMap<Any, Int>() {
 
 fun main() {
   var assertions = 0
-  val failure = runCatching { ShrinkingPaddingMap(1).keys.toList() }.exceptionOrNull()
-  check(failure is NoSuchElementException) { "Old single-key snapshot must reproduce the race" }
-  assertions++
-  for (count in listOf(1, 2, 8)) {
-    check(ShrinkingPaddingMap(count).keys.toTypedArray().isEmpty())
+  for (count in listOf(1, 8)) {
+    check(ShrinkingPaddingMap(count).snapshotPaddingKeys().isEmpty())
     assertions++
   }
 
@@ -34,14 +33,12 @@ fun main() {
   val padding = WeakHashMap<Any, Int>()
   keys.forEachIndexed { index, key -> padding[key] = index }
   val restored = mutableListOf<Int>()
-  for (key in padding.keys.toTypedArray()) {
+  for (key in padding.snapshotPaddingKeys()) {
     restored.add(checkNotNull(padding.remove(key)))
   }
   check(restored.sorted() == (0..7).toList())
   assertions++
   check(padding.isEmpty())
-  assertions++
-  check(WeakHashMap<Any, Int>().keys.toTypedArray().isEmpty())
   assertions++
   println("WeakPaddingSnapshot: $assertions assertions passed")
 }

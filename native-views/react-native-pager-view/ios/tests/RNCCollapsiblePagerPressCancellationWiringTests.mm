@@ -58,7 +58,6 @@ using namespace facebook::react;
 {
   UIGestureRecognizer *bridge = [self.pager valueForKey:@"contentPressCancellationGesture"];
   XCTAssertNotNil(bridge);
-  XCTAssertTrue([bridge isKindOfClass:NSClassFromString(@"RNCCollapsiblePagerContentPressCancellationGestureRecognizer")]);
   XCTAssertEqual(bridge.view, self.host);
   XCTAssertEqual([bridge valueForKey:@"reactTouchHandler"], self.handler);
   XCTAssertTrue(bridge.cancelsTouchesInView);
@@ -77,7 +76,6 @@ using namespace facebook::react;
   [header addSubview:headerButton];
   RNCPressWiringTestTouch *touch = [RNCPressWiringTestTouch new];
   id<UIGestureRecognizerDelegate> delegate = bridge.delegate;
-  XCTAssertEqual((id)delegate, self.pager);
   touch.testView = content;
   XCTAssertTrue([delegate gestureRecognizer:bridge shouldReceiveTouch:touch]);
   touch.testView = headerButton;

@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { getIosNativePlan } from "./ios-native-plan.mjs";
+import { planNativeCI, readNativeDependents } from "./plan-native-ci.mjs";
 import { checkIosNativeResults, requiredIosJobs } from "./check-ios-native-results.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -24,35 +25,39 @@ const expectedSchemes = [
   "react-native-bottom-tabs-Unit-Tests",
 ];
 
-test("two independent macOS jobs run every iOS suite and both pod builds", () => {
+test("two independent macOS jobs run every iOS suite and registered pod build", () => {
   assert.deepEqual(Object.entries(workflow.jobs).filter(([, job]) => job["runs-on"] === "macos-26").map(([name]) => name).sort(), ["device-utils-store", "ios-native"]);
   const plans = Object.entries(groups).map(([jobId, group]) => {
     const job = workflow.jobs[jobId];
     assert.equal(job.strategy, undefined);
-    assert.equal(job.needs, undefined);
+    assert.equal(job.needs, "plan");
     assert.equal(job["timeout-minutes"], 50);
-    assert.equal(job.env.IOS_NATIVE_GROUP, group);
+    assert.equal(job.env.IOS_NATIVE_PLAN, `\${{ toJSON(fromJSON(needs.plan.outputs.native).ios.${group}) }}`);
     const build = job.steps.find((step) => step.name === "Build assigned pods and run assigned XCTest suites");
     assert.equal(build["timeout-minutes"], 30);
     assert.match(build.run, /No executed tests for \{name\}/);
-    assert.match(build.run, /_GPChannelSDKCoreVersionString/);
-    assert.match(build.run, /identity_phase.*show_env_vars_in_log/);
+    if (group === "services") {
+      assert.match(build.run, /_GPChannelSDKCoreVersionString/);
+      assert.match(build.run, /identity_phase.*show_env_vars_in_log/);
+    }
     return getIosNativePlan(group);
   });
   const schemes = plans.flatMap((plan) => plan.testSchemes);
   assert.deepEqual([...schemes].sort(), [...expectedSchemes].sort());
   assert.equal(new Set(schemes).size, schemes.length);
-  assert.deepEqual(plans.flatMap((plan) => plan.buildTargets), ["ReactNativeLiteCard", "NativeOverlay"]);
+  assert.deepEqual(plans.flatMap((plan) => plan.buildTargets), [
+    "ReactNativeLiteCard", "NativeOverlay", "AutoSizeInput", "ReactNativeNetworkThrottle",
+  ]);
   assert.deepEqual(getIosNativePlan("ui").testSchemes, [
     "react-native-pager-view-Unit-Tests", "react-native-native-list-Unit-Tests", "OneKeyImage-Unit-Tests",
     "react-native-bottom-tabs-Unit-Tests",
   ]);
 });
 
-test("workflow-selected plan CLI produces each group's plan and rejects unexpected arguments", () => {
+test("iOS plan CLI produces each group's full plan and rejects unexpected arguments", () => {
   for (const [jobId, group] of Object.entries(groups)) {
     const build = workflow.jobs[jobId].steps.find((step) => step.name === "Build assigned pods and run assigned XCTest suites");
-    assert.match(build.run, /node scripts\/ios-native-plan.mjs "\$IOS_NATIVE_GROUP"/);
+    assert.match(build.run, /"\$IOS_NATIVE_PLAN" > "\$RUNNER_TEMP\/ios-native-plan.json"/);
     const actual = spawnSync(process.execPath, ["scripts/ios-native-plan.mjs", group], { cwd: root, encoding: "utf8" });
     assert.equal(actual.status, 0, actual.stderr);
     assert.deepEqual(JSON.parse(actual.stdout), getIosNativePlan(group));
@@ -66,19 +71,24 @@ test("workflow-selected plan CLI produces each group's plan and rejects unexpect
 });
 
 test("existing required gate waits for both iOS groups", () => {
-  assert.deepEqual(gate.needs, requiredIosJobs);
+  assert.deepEqual(gate.needs, ["plan", ...requiredIosJobs]);
+  assert.equal(gateStep.env.NATIVE_PLAN_RESULT, "${{ needs.plan.result }}");
+  assert.equal(gateStep.env.NATIVE_CI_PLAN, "${{ needs.plan.outputs.native }}");
   assert.deepEqual([...requiredIosJobs].sort(), Object.keys(groups).sort());
   assert.equal(gate.if, "${{ always() }}");
   assert.equal(gateStep.env.IOS_NATIVE_RESULT, "${{ needs.ios-native.result }}");
   assert.equal(gateStep.env.DEVICE_UTILS_STORE_RESULT, "${{ needs.device-utils-store.result }}");
 });
 
+const fullSelection = JSON.stringify({ jobs: { "ios-native": true, "device-utils-store": true } });
+const gateEnv = { ...process.env, NATIVE_PLAN_RESULT: "success", NATIVE_CI_PLAN: fullSelection };
+
 const results = ["success", "failure", "cancelled", "skipped", "unknown", "", "PRIVATE-STATE\n/path/user@host"];
 for (const ui of results) {
   test(`actual workflow gate requires both groups to succeed (${results.indexOf(ui)})`, () => {
     for (const services of results) {
       const actual = spawnSync("bash", ["-e", "-o", "pipefail", "-c", gateStep.run], {
-        cwd: root, encoding: "utf8", env: { ...process.env, IOS_NATIVE_RESULT: ui, DEVICE_UTILS_STORE_RESULT: services },
+        cwd: root, encoding: "utf8", env: { ...gateEnv, IOS_NATIVE_RESULT: ui, DEVICE_UTILS_STORE_RESULT: services },
       });
       assert.equal(actual.status, ui === "success" && services === "success" ? 0 : 1);
       const output = (actual.stdout + actual.stderr).trim();
@@ -105,10 +115,33 @@ test("gate rejects missing dependencies, malformed objects and unexpected result
     }
   }
   for (const missing of ["IOS_NATIVE_RESULT", "DEVICE_UTILS_STORE_RESULT"]) {
-    const env = { ...process.env, IOS_NATIVE_RESULT: "success", DEVICE_UTILS_STORE_RESULT: "success" };
+    const env = { ...gateEnv, IOS_NATIVE_RESULT: "success", DEVICE_UTILS_STORE_RESULT: "success" };
     delete env[missing];
     const actual = spawnSync("bash", ["-e", "-o", "pipefail", "-c", gateStep.run], { cwd: root, encoding: "utf8", env });
     assert.equal(actual.status, 1);
     assert.equal(actual.stderr.trim(), "invalid_ios_dependencies");
+  }
+});
+
+test("workflow gate only accepts skips declared by the successful plan", () => {
+  const plan = planNativeCI(["native-modules/react-native-jpush/ios/JPUSHService.m"], readNativeDependents());
+  const env = { ...gateEnv, NATIVE_CI_PLAN: JSON.stringify(plan),
+    IOS_NATIVE_RESULT: "skipped", DEVICE_UTILS_STORE_RESULT: "success",
+  };
+  const run = (overrides) => spawnSync(process.execPath, ["scripts/check-ios-native-results.mjs"], {
+    cwd: root, encoding: "utf8", env: { ...env, ...overrides },
+  });
+  assert.equal(run({}).stdout.trim(), "ios-native:skipped,device-utils-store:success");
+  for (const [overrides, error] of [
+    [{ IOS_NATIVE_RESULT: "failure" }, "ios-native:failure"],
+    [{ DEVICE_UTILS_STORE_RESULT: "skipped" }, "device-utils-store:skipped"],
+    [{ NATIVE_PLAN_RESULT: "failure" }, "native_plan_failed"],
+    [{ NATIVE_CI_PLAN: "{}" }, "invalid_ios_plan"],
+    [{ NATIVE_CI_PLAN: "{" }, "invalid_ios_plan"],
+    [{ NATIVE_CI_PLAN: JSON.stringify({ jobs: { "ios-native": false } }) }, "invalid_ios_plan"],
+  ]) {
+    const result = run(overrides);
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr.trim(), error);
   }
 });

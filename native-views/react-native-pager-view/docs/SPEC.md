@@ -1036,10 +1036,11 @@ introduced. This change makes no frame-rate claim.
 
 - Source: android/src/main/java/com/reactnativepagerview/CollapsiblePagerHost.kt,
   removeAllReactChildren and onDetachedFromWindow.
-- Focused JVM regression: tests/kotlin/WeakPaddingSnapshotTest.kt checks a
-  shrinking weak-key collection and restoration that removes snapshot entries.
-- The same regression passed seven assertions on Android 36 ART using Kotlin
-  2.1.20. Compile it without additional dependencies, then run its main function.
+- Focused JVM regression: tests/kotlin/WeakPaddingSnapshotTest.kt compiles
+  the production snapshot helper used by both cleanup paths. It covers shrinking
+  weak-key collections and restoration that removes snapshot entries.
+- The earlier standalone collection reproduction passed on Android 36 ART
+  using Kotlin 2.1.20. Device acceptance of the current host remains open.
 - Android acceptance: build the native host, repeatedly navigate from a populated
   Market pager into stock/token details and back, and exercise modal dismissal.
   Check native fatal logs and pager scroll/header state after returning.

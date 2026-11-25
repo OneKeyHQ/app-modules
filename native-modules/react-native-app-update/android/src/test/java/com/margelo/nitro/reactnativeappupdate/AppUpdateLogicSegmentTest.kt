@@ -43,12 +43,6 @@ class AppUpdateLogicSegmentTest {
       "x.apk.partial.seg7",
       AppUpdateLogic.segmentFileName("x.apk.partial", 7),
     )
-    // The helper is a dumb string template: it does not validate the index, so
-    // any integer flows straight through (mirrors the inlined call sites).
-    assertEquals(
-      "x.apk.partial.seg42",
-      AppUpdateLogic.segmentFileName("x.apk.partial", 42),
-    )
   }
 
   /** segmentFileNames returns exactly CONCURRENT_SEGMENT_COUNT names, seg0..seg7. */

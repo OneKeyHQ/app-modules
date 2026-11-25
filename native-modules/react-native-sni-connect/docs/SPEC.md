@@ -339,6 +339,11 @@ retain the generic logger's sensitive-data filtering.
 - After building the package, `node --test tests/node-entrypoints.test.mjs`
   verifies that the later-loaded Node entry sees a shared queue overflow as a
   `SniRequestError`. A packed-package smoke test checks NodeNext declarations.
+- Native diagnostic host tests run the production request formatter through
+  OneKeyLog on both platforms. They check reversible request IDs and retention
+  of diagnostic IPs without exposing sensitive values on the same log line.
+  Run `node scripts/native-log-tests/run.cjs sni --swift` or
+  `node scripts/native-log-tests/run.cjs sni --kotlin` from the repository root.
 - Swift validation tests exercise bounded reads after validated files grow or
   become empty, and exact-limit binary contents.
 - Android tests exercise actual RequestBody writes for exact-limit data, growth
