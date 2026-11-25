@@ -534,9 +534,13 @@ public final class JCoreStorage {
             editor.putString(KEY_REG_ID, id);
             editor.putBoolean(KEY_SERVER_REGISTERED, registration != null);
             editor.putString(KEY_FCM_BOUND_IDENTITY, "");
-            if (!isEmpty(deviceId)) editor.putString(KEY_DEVICE_ID, deviceId);
+            if (nextAppKey != null) {
+                editor.remove(KEY_DEVICE_ID);
+                editor.putString(KEY_APP_KEY, nextAppKey);
+            } else if (!isEmpty(deviceId)) {
+                editor.putString(KEY_DEVICE_ID, deviceId);
+            }
             if (retiredKey != null) editor.putBoolean(retiredKey, true);
-            if (nextAppKey != null) editor.putString(KEY_APP_KEY, nextAppKey);
             editor.apply();
         }
         MEMORY_FALLBACK.put(KEY_UID, uid);
@@ -544,9 +548,13 @@ public final class JCoreStorage {
         MEMORY_FALLBACK.put(KEY_REG_ID, id);
         MEMORY_FALLBACK.put(KEY_SERVER_REGISTERED, registration != null);
         MEMORY_FALLBACK.put(KEY_FCM_BOUND_IDENTITY, "");
-        if (!isEmpty(deviceId)) MEMORY_FALLBACK.put(KEY_DEVICE_ID, deviceId);
+        if (nextAppKey != null) {
+            MEMORY_FALLBACK.remove(KEY_DEVICE_ID);
+            MEMORY_FALLBACK.put(KEY_APP_KEY, nextAppKey);
+        } else if (!isEmpty(deviceId)) {
+            MEMORY_FALLBACK.put(KEY_DEVICE_ID, deviceId);
+        }
         if (retiredKey != null) MEMORY_FALLBACK.put(retiredKey, true);
-        if (nextAppKey != null) MEMORY_FALLBACK.put(KEY_APP_KEY, nextAppKey);
     }
 
     public static synchronized boolean isServerRegistered(Context context) {
@@ -569,7 +577,7 @@ public final class JCoreStorage {
         return getStringPref(context, KEY_REG_ID, "");
     }
 
-    public static String getDeviceId(Context context) {
+    public static synchronized String getDeviceId(Context context) {
         ensureRegistration(context);
         return getStringPref(context, KEY_DEVICE_ID, "");
     }

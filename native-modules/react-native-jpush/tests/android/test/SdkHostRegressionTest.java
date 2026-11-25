@@ -2168,6 +2168,9 @@ public final class SdkHostRegressionTest {
         engine.stop(context); engine.setAutoReconnectEnabled(false); engine.setDefaultRequestTimeoutMs(200L);
         JCoreStorage.setAppKey(context, "configuration-A-fixture");
         JCoreStorage.setCollectionAuth(context, true); JCoreStorage.setPushStopped(context, false); JCoreStorage.clearRegistration(context);
+        String oldDeviceId = "configuration-A-device";
+        JCoreStorage.updateRegistration(context, 0L, null, null, oldDeviceId);
+        AtomicReference<String> replacementDeviceId = new AtomicReference<>();
         CountDownLatch oldRead = new CountDownLatch(1), releaseOldFailure = new CountDownLatch(1), finish = new CountDownLatch(1);
         AtomicReference<Throwable> serverError = new AtomicReference<Throwable>();
         try (ServerSocket listener = new ServerSocket(0, 5, InetAddress.getByName("127.0.0.1"))) {
@@ -2178,6 +2181,8 @@ public final class SdkHostRegressionTest {
                         oldSocket.setSoTimeout(2000);
                         JCoreWireCodec.DecodedFrame oldRegister = JCoreWireCodec.readClientFrameFromStream(oldSocket.getInputStream(), 0L);
                         check(oldRegister != null && oldRegister.command == JCoreWireCodec.CMD_REGISTER, "Configuration A must really begin Register");
+                        check(oldDeviceId.equals(JCoreWireCodec.parseRegisterRequest(oldRegister.body).deviceId),
+                            "Configuration A must send its saved device ID");
                         oldRead.countDown(); check(releaseOldFailure.await(2000L, TimeUnit.MILLISECONDS), "Configuration change release missing");
                         writeLoopbackAck(oldSocket, oldRegister, 0L, oldRegister.sessionId, 1005, new byte[0]);
                     }
@@ -2185,10 +2190,15 @@ public final class SdkHostRegressionTest {
                         currentSocket.setSoTimeout(2000);
                         JCoreWireCodec.DecodedFrame register = JCoreWireCodec.readClientFrameFromStream(currentSocket.getInputStream(), 0L);
                         check(register != null && register.command == JCoreWireCodec.CMD_REGISTER, "Configuration B must be allowed to register");
+                        String deviceId = JCoreWireCodec.parseRegisterRequest(register.body).deviceId;
+                        check(deviceId.length() == 24 && !oldDeviceId.equals(deviceId), "Configuration B must send a newly derived device ID");
+                        replacementDeviceId.set(deviceId);
                         writeLoopbackAck(currentSocket, register, 795001L, register.sessionId, 0,
-                            JCoreWireCodec.buildRegisterResponsePayload(795001L, "configuration-B-password", "configuration-B-rid", "configuration-B-device"));
+                            JCoreWireCodec.buildRegisterResponsePayload(795001L, "configuration-B-password", "configuration-B-rid"));
                         JCoreWireCodec.DecodedFrame login = JCoreWireCodec.readClientFrameFromStream(currentSocket.getInputStream(), 795001L);
                         check(login != null && login.command == JCoreWireCodec.CMD_LOGIN, "Configuration B must complete login");
+                        check(deviceId.equals(JCoreWireCodec.parseLoginRequest(login.body).deviceId),
+                            "Login must keep the new device ID if Register does not return one");
                         writeLoopbackAck(currentSocket, login, 795001L, 7951, 0, JCoreWireCodec.buildLoginResponsePayload(7951, 520, "", 1700000000));
                         JCoreWireCodec.DecodedFrame heartbeat = JCoreWireCodec.readClientFrameFromStream(currentSocket.getInputStream(), 795001L);
                         check(heartbeat != null && heartbeat.command == JCoreWireCodec.CMD_HEARTBEAT, "Configuration B must send its own heartbeat");
@@ -2207,6 +2217,8 @@ public final class SdkHostRegressionTest {
                 engine.start(context);
                 check(engine.awaitHandshake(2000L) && engine.isLoggedIn() && JCoreStorage.getUid(context) == 795001L,
                     "A terminal reply for configuration A must not mark B terminal or reserve its start");
+                check(JCoreStorage.getDeviceId(context).equals(replacementDeviceId.get()),
+                    "Configuration B must retain its derived device ID in source storage");
             } finally {
                 releaseOldFailure.countDown(); finish.countDown(); engine.stop(context); server.join(3000L);
                 engine.setAutoReconnectEnabled(true); engine.setDefaultRequestTimeoutMs(5000L);
@@ -3266,8 +3278,10 @@ public final class SdkHostRegressionTest {
     @SuppressWarnings("unchecked")
     public void testColdAppKeyReadCannotOverwriteAnExplicitKey() throws Exception {
         String appKeyPref = "app_key";
+        String deviceIdPref = "device_id";
         String explicitKey = "new-explicit-key";
         AtomicReference<String> persistedKey = new AtomicReference<>("old-persisted-key");
+        AtomicReference<String> persistedDeviceId = new AtomicReference<>("old-device-id");
         CountDownLatch oldRead = new CountDownLatch(1);
         CountDownLatch releaseOldRead = new CountDownLatch(1);
         ClassLoader loader = getClass().getClassLoader();
@@ -3275,6 +3289,10 @@ public final class SdkHostRegressionTest {
             new Class<?>[] {SharedPreferences.Editor.class}, (self, method, args) -> {
                 if ("putString".equals(method.getName())) {
                     if (appKeyPref.equals(args[0])) persistedKey.set((String) args[1]);
+                    return self;
+                }
+                if ("remove".equals(method.getName()) && deviceIdPref.equals(args[0])) {
+                    persistedDeviceId.set(null);
                     return self;
                 }
                 return null;
@@ -3298,6 +3316,7 @@ public final class SdkHostRegressionTest {
         Map<String, Object> cache = (Map<String, Object>) cacheField.get(null);
         Object originalContext = appContextField.get(null);
         Object originalAppKey = cache.remove(appKeyPref);
+        Object originalDeviceId = cache.put(deviceIdPref, persistedDeviceId.get());
         Object originalPendingKey = cache.remove(PENDING_RESUME_APP_KEY);
         appContextField.set(null, context);
         Thread getter = new Thread(() -> JCoreStorage.getAppKey(context), "test-cold-app-key-reader");
@@ -3316,12 +3335,15 @@ public final class SdkHostRegressionTest {
             check(!getter.isAlive() && !setter.isAlive(), "Concurrent AppKey operations must finish");
             check(explicitKey.equals(persistedKey.get()), "Explicit AppKey must be persisted");
             check(explicitKey.equals(JCoreStorage.getAppKey(context)), "An old cold read must not replace the explicit AppKey in memory");
+            check(persistedDeviceId.get() == null && !cache.containsKey(deviceIdPref),
+                "Changing AppKey must clear the device ID in preferences and memory");
         } finally {
             releaseOldRead.countDown();
             getter.join(3000L);
             setter.join(3000L);
             appContextField.set(null, originalContext);
             if (originalAppKey == null) cache.remove(appKeyPref); else cache.put(appKeyPref, originalAppKey);
+            if (originalDeviceId == null) cache.remove(deviceIdPref); else cache.put(deviceIdPref, originalDeviceId);
             if (originalPendingKey == null) cache.remove(PENDING_RESUME_APP_KEY); else cache.put(PENDING_RESUME_APP_KEY, originalPendingKey);
         }
     }

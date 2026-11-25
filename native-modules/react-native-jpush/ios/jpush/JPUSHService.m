@@ -337,16 +337,14 @@ static NSString *JPushHexFromData(NSData *data) {
 }
 
 + (NSString *)registrationID {
-    JCOREConfiguration *config = [JCOREConfiguration shared];
-    return config.registrationID.length > 0 ? config.registrationID : @"";
+    return [[JCOREConfiguration shared] fallbackRegistrationID];
 }
 
 + (void)registrationIDCompletionHandler:(void (^)(int resCode, NSString *registrationID))completionHandler {
     if (completionHandler == nil) {
         return;
     }
-    JCOREConfiguration *config = [JCOREConfiguration shared];
-    NSString *regId = config.registrationID.length > 0 ? config.registrationID : @"";
+    NSString *regId = [self registrationID];
     int code = regId.length > 0 ? 0 : 1011;
     dispatch_async(dispatch_get_main_queue(), ^{
         completionHandler(code, regId);

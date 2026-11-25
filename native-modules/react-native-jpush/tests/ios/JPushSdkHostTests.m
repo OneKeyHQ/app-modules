@@ -2166,7 +2166,8 @@ static void testSisSetupAndAppKeyReplacement(void) {
 static void testIosUpgradeSessionAndTokenReports(void) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSString *registrationsKey = @"com.onekey.jcore.registrations_by_app_key";
-    NSArray<NSString *> *keys = @[registrationsKey, @"com.onekey.jcore.uid", @"com.onekey.jcore.password",
+    NSString *lastConfiguredAppKey = @"com.onekey.jcore.last_configured_app_key";
+    NSArray<NSString *> *keys = @[registrationsKey, lastConfiguredAppKey, @"com.onekey.jcore.uid", @"com.onekey.jcore.password",
         @"com.onekey.jcore.registration_id", @"com.onekey.jcore.device_id"];
     NSMutableDictionary *saved = [NSMutableDictionary dictionary];
     for (NSString *key in keys) {
@@ -2198,9 +2199,14 @@ static void testIosUpgradeSessionAndTokenReports(void) {
         uint64_t expectedUID = expectLegacy ? 900123456 : 900123457;
         if (scenario > 0) {
             [defaults removeObjectForKey:registrationsKey];
+            [defaults removeObjectForKey:lastConfiguredAppKey];
             [defaults setObject:@900123457 forKey:@"com.onekey.jcore.uid"];
             [defaults setObject:@"synthetic-source-password" forKey:@"com.onekey.jcore.password"];
             [defaults setObject:@"synthetic-source-rid" forKey:@"com.onekey.jcore.registration_id"];
+            JCOREConfiguration *unscopedStart = [JCOREConfiguration new];
+            ASSERT_TRUE([unscopedStart.fallbackRegistrationID isEqualToString:@"synthetic-source-rid"] &&
+                        unscopedStart.uid == 0 && unscopedStart.password.length == 0 && unscopedStart.registrationID.length == 0,
+                        "Pre-setup lookup must expose the unscoped ID without loading active credentials");
         }
         if (scenario == 2) {
             ASSERT_TRUE([[NSData dataWithContentsOfURL:legacyFile] isEqualToData:legacyCache], "Legacy cache must remain read-only");
@@ -2267,6 +2273,9 @@ static void testIosUpgradeSessionAndTokenReports(void) {
         runUntil(^BOOL{ return activityAcknowledged; }, 4, @"Upgrade Live Activity report not acknowledged");
         runUntil(^BOOL{ return dispatch_semaphore_wait(reports, DISPATCH_TIME_NOW) == 0; }, 2, @"Upgrade reports were not observed");
         JCOREConfiguration *coldStart = [JCOREConfiguration new];
+        ASSERT_TRUE([coldStart.fallbackRegistrationID isEqualToString:expectedRID] &&
+                    coldStart.uid == 0 && coldStart.password.length == 0 && coldStart.registrationID.length == 0,
+                    "Pre-setup lookup must expose the last configured ID without loading active credentials");
         [coldStart configureWithAppKey:appKey channel:@"test" isProduction:YES advertisingIdentifier:nil];
         ASSERT_TRUE(coldStart.uid == expectedUID && [coldStart.registrationID isEqualToString:expectedRID] &&
                     [coldStart.password isEqualToString:expectLegacy ? @"synthetic-legacy-password" : @"synthetic-source-password"],
@@ -2279,10 +2288,12 @@ static void testIosUpgradeSessionAndTokenReports(void) {
     [reset configureWithAppKey:appKey channel:@"test" isProduction:YES advertisingIdentifier:nil];
     [reset resetRegistration];
     JCOREConfiguration *afterReset = [JCOREConfiguration new];
+    ASSERT_TRUE(afterReset.fallbackRegistrationID.length == 0, "Cold lookup must not return a reset registration ID");
     [afterReset configureWithAppKey:appKey channel:@"test" isProduction:NO advertisingIdentifier:nil];
     ASSERT_TRUE(afterReset.uid == 0 && afterReset.registrationID.length == 0, "Reset must not resurrect a legacy session");
     [afterReset configureWithAppKey:@"f00000000000000000000002" channel:@"test" isProduction:NO advertisingIdentifier:nil];
     ASSERT_TRUE(afterReset.uid == 0, "An unscoped source tuple must not be adopted by another AppKey");
+    ASSERT_TRUE(afterReset.fallbackRegistrationID.length == 0, "Configured lookup must not return another AppKey's ID");
     [config configureWithAppKey:@"" channel:@"test" isProduction:NO advertisingIdentifier:nil];
     NSData *sandboxPayload = [JCOREWireProtocol buildDeviceTokenPayloadWithTokenHex:@"01"];
     assertEnvironment(sandboxPayload, skipWireStrings(sandboxPayload, 1), 1);

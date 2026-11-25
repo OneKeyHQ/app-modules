@@ -13,6 +13,7 @@ static NSString *const kJCoreKeyPassword = @"com.onekey.jcore.password";
 static NSString *const kJCoreKeyRegistrationId = @"com.onekey.jcore.registration_id";
 static NSString *const kJCoreKeyDeviceId = @"com.onekey.jcore.device_id";
 static NSString *const kJCoreKeyRegistrations = @"com.onekey.jcore.registrations_by_app_key";
+static NSString *const kJCoreKeyLastConfiguredAppKey = @"com.onekey.jcore.last_configured_app_key";
 static NSString *const kJCoreLegacyRegistrationRetired = @"legacyRegistrationRetired";
 static NSString *const kJCoreKeyFakeImei = @"com.onekey.jcore.fake_imei";
 static NSString *const kJCoreKeyDeviceToken = @"com.onekey.jcore.device_token";
@@ -42,6 +43,20 @@ static NSString *const kJCoreKeySisFailedIps = @"com.onekey.jcore.sis.failed_ips
 
 static NSString *JCoreNonEmptyString(id value) {
     return [value isKindOfClass:NSString.class] && [value length] > 0 ? value : nil;
+}
+
+static NSDictionary *JCoreStoredRegistration(NSDictionary *registrations, NSString *appKey) {
+    id registration = appKey.length > 0 ? registrations[appKey] : nil;
+    return [registration isKindOfClass:NSDictionary.class] ? registration : nil;
+}
+
+static NSString *JCorePreSetupRegistrationID(NSUserDefaults *defaults) {
+    NSDictionary *registrations = [defaults dictionaryForKey:kJCoreKeyRegistrations];
+    NSString *lastAppKey = [defaults stringForKey:kJCoreKeyLastConfiguredAppKey];
+    if (lastAppKey.length > 0) {
+        return JCoreNonEmptyString(JCoreStoredRegistration(registrations, lastAppKey)[@"registrationID"]);
+    }
+    return registrations == nil ? [defaults stringForKey:kJCoreKeyRegistrationId] : nil;
 }
 
 static uint64_t JCoreRegistrationUID(id value) {
@@ -135,6 +150,7 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
     dispatch_queue_t _stateQueue;
     uint16_t _requestCounter;
     NSUInteger _policyGeneration;
+    NSString *_preSetupRegistrationID;
     NSArray<NSString *> *_ips;
     NSArray<NSString *> *_sslIps;
     BOOL _cachedSslIpsRequireTls;
@@ -192,6 +208,7 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
         _forceLocalLogWhenLogOff = NO;
 
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        _preSetupRegistrationID = [JCorePreSetupRegistrationID(defaults) copy];
         NSNumber *savedAuth = [defaults objectForKey:kJCoreKeyAuth];
         _collectionAuthorized = savedAuth != nil ? savedAuth.boolValue : YES;
         _pushStopped = [defaults boolForKey:kJCoreKeyPushStopped];
@@ -282,13 +299,13 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
     NSString *storageKey = appKey.lowercaseString;
     BOOL changed = ![(_appKey.lowercaseString ?: @"") isEqualToString:(storageKey ?: @"")];
     _appKey = [appKey copy];
+    _preSetupRegistrationID = nil;
     if (!changed) {
         return;
     }
 
     NSDictionary *registrations = [defaults dictionaryForKey:kJCoreKeyRegistrations];
-    id storedValue = storageKey.length > 0 ? registrations[storageKey] : nil;
-    NSDictionary *storedRegistration = [storedValue isKindOfClass:NSDictionary.class] ? storedValue : nil;
+    NSDictionary *storedRegistration = JCoreStoredRegistration(registrations, storageKey);
     NSDictionary *registration = storedRegistration;
     if (storageKey.length > 0 && registrations == nil) {
         // The original source SDK stored one tuple with no AppKey. Adopt it once.
@@ -319,6 +336,9 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
         [self persistRegistrationLocked:registration];
     } else if (storageKey.length > 0 && registrations == nil) {
         [defaults setObject:@{} forKey:kJCoreKeyRegistrations];
+    }
+    if (storageKey.length > 0) {
+        [defaults setObject:storageKey forKey:kJCoreKeyLastConfiguredAppKey];
     }
 }
 
@@ -525,6 +545,7 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
     _uid = 0;
     _password = nil;
     _registrationID = nil;
+    _preSetupRegistrationID = nil;
     _deviceID = nil;
     _isNewDevice = YES;
     [self persistRegistrationLocked:@{kJCoreLegacyRegistrationRetired: @YES}];
@@ -836,7 +857,7 @@ static NSDictionary *JCoreReadLegacyRegistration(NSString *appKey) {
 - (NSString *)fallbackRegistrationID {
     __block NSString *result = nil;
     dispatch_sync(_stateQueue, ^{
-        result = self->_registrationID;
+        result = self->_registrationID ?: self->_preSetupRegistrationID;
     });
     return result.length > 0 ? result : @"";
 }
