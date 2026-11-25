@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
 
 internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: NativeListFonts) :
-  NativeListRendererRowView(context, fonts) {
+  NativeListMarketGestureRowView(context, fonts) {
   private class Cell(context: ThemedReactContext, fonts: NativeListFonts) : LinearLayout(context) {
     val visual = NativeListLeadingVisual(context, fonts)
     val labels = NativeListTableColumnView(context, fonts, wrapSecondary = true)
@@ -22,6 +22,7 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
 
   override fun bindContent(item: NativeListItem, theme: JSONObject?, layout: String,
     checkboxState: (NativeListItem, NativeSelectionTarget?, String) -> String) {
+    resetMarketGesture()
     val style = JSONObject(item.json.optJSONObject("style")?.toString() ?: "{}")
     if (item.type == "market") {
       style.put("columns", style.optJSONObject("price"))
@@ -49,7 +50,12 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
         else LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
       geometry.marginStart = if (index == 0) 0 else stylePx(style.optDouble("columnGap", 8.0))
       cell.layoutParams = geometry
-      cell.gravity = Gravity.CENTER_VERTICAL or when (column.optString("alignment")) {
+      val vertical = when (style.optJSONObject("container")?.optString("contentVerticalAlignment")) {
+        "top" -> Gravity.TOP
+        "bottom" -> Gravity.BOTTOM
+        else -> Gravity.CENTER_VERTICAL
+      }
+      cell.gravity = vertical or when (column.optString("alignment")) {
         "end" -> Gravity.END
         "center" -> Gravity.CENTER_HORIZONTAL
         else -> Gravity.START
@@ -99,6 +105,7 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
   }
 
   override fun recycleContent() {
+    resetMarketGesture()
     for (index in 0 until childCount) {
       val cell = getChildAt(index) as Cell
       cell.visual.recycle()
@@ -109,6 +116,7 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
   }
 
   override fun disposeContent() {
+    resetMarketGesture()
     for (index in 0 until childCount) (getChildAt(index) as Cell).visual.dispose()
     removeAllViews()
   }

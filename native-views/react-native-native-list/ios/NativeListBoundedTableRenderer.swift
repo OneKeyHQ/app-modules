@@ -9,6 +9,7 @@ private final class TableCellContent: UIView {
   var visualSize = CGSize.zero
   var gap: CGFloat = 0
   var alignment = "start"
+  var verticalAlignment = "center"
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -24,13 +25,18 @@ private final class TableCellContent: UIView {
     let inset = image.isHidden ? 0 : visualSize.width + gap
     let textSize = labels.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
     let width = min(max(0, bounds.width - inset), textSize.width)
+    let height = labels.systemLayoutSizeFitting(CGSize(width: width, height: 0),
+      withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
+    let groupHeight = max(height, image.isHidden ? 0 : visualSize.height)
+    let groupY = verticalAlignment == "top" ? 0 : verticalAlignment == "bottom"
+      ? bounds.height - groupHeight : (bounds.height - groupHeight) / 2
     let free = max(0, bounds.width - inset - width)
     let rtl = effectiveUserInterfaceLayoutDirection == .rightToLeft
     let start = alignment == "center" ? free / 2 : alignment == "end" ? free : 0
     image.frame = CGRect(x: rtl ? bounds.width - start - visualSize.width : start,
-      y: (bounds.height - visualSize.height) / 2, width: visualSize.width, height: visualSize.height)
+      y: groupY + (groupHeight - visualSize.height) / 2, width: visualSize.width, height: visualSize.height)
     labels.frame = CGRect(x: rtl ? bounds.width - start - inset - width : start + inset,
-      y: (bounds.height - textSize.height) / 2, width: width, height: textSize.height)
+      y: groupY + (groupHeight - height) / 2, width: width, height: height)
     button.frame = bounds
   }
 }
@@ -94,6 +100,7 @@ final class NativeListBoundedTableCell: NativeListRendererCell {
       }
       let cell = strip.cells[index]
       cell.columnWidth = (column["width"] as? NSNumber).map { CGFloat($0.doubleValue) }
+      cell.verticalAlignment = style.dictionary("container")?.string("contentVerticalAlignment") ?? "center"
       cell.alignment = column.string("alignment", default: "start")
       cell.labels.bind(column: column, badges: [], theme: theme, fonts: fonts)
       cell.labels.applyStyle(style) { label, textStyle in

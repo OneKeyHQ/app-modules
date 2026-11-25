@@ -2823,7 +2823,8 @@ content on Web, iOS and Android. The ordinary template fields remain required.
 A detail row accepts 2–6 cells and a market row accepts 2–7. Keys are unique
 within a row. Width is in logical layout units and includes the cell's visual
 and text. Adjacent cells are separated by style.columnGap (default 8 logical units, range 0–64). Unspecified widths share the remaining space equally after gaps. The caller
-computes widths from its container and owns horizontal scrolling. A cell
+computes widths from its container and owns horizontal scrolling. Each formatted line accepts up to 64 segments totaling at most 4096 characters.
+Only the active presentation supplies table-specific interactions. A cell
 supports formatted primary and secondary text, alignment, tones and an optional
 leading visual. An actionable cell supplies actionKey and accessibilityLabel
 together. Activating it delivers the existing row action event with its slot.

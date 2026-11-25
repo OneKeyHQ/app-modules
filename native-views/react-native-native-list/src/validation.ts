@@ -1080,11 +1080,28 @@ function assertTableColumns(
         ].includes(String(leading.kind))
       )
         fail(field + '.leading.kind', 'unsupported visual kind');
+      if (leading.kind === 'icon')
+        protocolKey(leading.name, field + '.leading.name');
       assertLeadingVisual(column.leading, field + '.leading');
     }
     assertText(column.text, field + '.text');
     assertText(column.secondaryText, field + '.secondaryText');
     assertMetricColumn(column, field);
+    for (const key of ['textSegments', 'secondaryTextSegments'] as const) {
+      const segments: readonly ValueTextSegment[] | undefined = column[key];
+      if (
+        segments &&
+        (segments.length > 64 ||
+          segments.reduce(
+            (length, segment) => length + segment.text.length,
+            0
+          ) > MAX_TEXT_LENGTH)
+      )
+        fail(
+          field + '.' + key,
+          'supports up to 64 segments totaling at most 4096 characters'
+        );
+    }
   }
 }
 
@@ -4917,17 +4934,12 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
         fail(`${path}.changes.${field}`, 'unsupported patch field');
       continue;
     }
-    if (
-      (patch.type === 'dataRow' || patch.type === 'market') &&
-      field === 'tableColumns'
-    ) {
-      assertTableColumns(
-        value as readonly NativeListTableColumn[],
-        patch.type,
-        path + '.tableColumns'
-      );
-    }
     if (value === null) {
+      if (field === 'tableColumns')
+        fail(
+          path + '.changes.tableColumns',
+          'use a snapshot to change table geometry'
+        );
       if (patch.type === 'market' && field === 'metrics')
         fail(
           `${path}.changes.metrics`,
@@ -4968,6 +4980,16 @@ function normalizePatch(patch: RowPatch, index: number): RowPatch | undefined {
       : patch.type === 'market' && field === 'metrics'
       ? sanitizeMarketMetrics(normalized)
       : sanitizeDecoration(normalized, field);
+    if (
+      (patch.type === 'dataRow' || patch.type === 'market') &&
+      field === 'tableColumns'
+    ) {
+      assertTableColumns(
+        canonical as readonly NativeListTableColumn[],
+        patch.type,
+        path + '.tableColumns'
+      );
+    }
     if (canonical !== undefined) changes[field] = canonical;
     // A rejected title decoration clears the old one instead of leaving it drawn.
     else if (
@@ -5196,8 +5218,7 @@ export function planNativeListPatches(
           priceSegments: row.priceSegments,
           change: row.change,
         };
-        if (row.webTable || !sameJsonValue({ ...oldRow, ...changes }, row))
-          return undefined;
+        if (!sameJsonValue({ ...oldRow, ...changes }, row)) return undefined;
         patches.push({ type: row.type, key: row.key, changes });
       }
     } else if (oldRow.type === 'identity' && row.type === 'identity') {
@@ -5286,6 +5307,7 @@ function mergeAndValidateSingleRow(
     )
       changes.priceSegments = null;
     if (
+      !previous.tableColumns &&
       (previous.webTable !== undefined || 'webTable' in changes) &&
       ['price', 'priceSegments', 'change'].some((field) => field in changes) &&
       changes.webTable === undefined

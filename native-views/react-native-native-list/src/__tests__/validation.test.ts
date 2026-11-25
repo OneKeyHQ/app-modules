@@ -4280,6 +4280,91 @@ describe.each([true, false])(
     afterEach(() => {
       environment.__DEV__ = original;
     });
+    it('updates visible quotes while retaining the inactive Web presentation', () => {
+      const selector = {
+        ...marketRow(),
+        tableColumns: columns,
+        webTable: {
+          columns: [{ key: 'price', width: 80 }],
+          cells: [
+            { key: 'price', kind: 'text' as const, primary: [{ text: '$1' }] },
+          ],
+        },
+      };
+      const next = {
+        ...selector,
+        price: '$2',
+        tableColumns: [{ ...columns[0], text: '$2' }, ...columns.slice(1)],
+      };
+      const before = validateSnapshot(snapshot([selector]));
+      const after = validateSnapshot(snapshot([next]));
+      const patches = planNativeListPatches(before, after);
+      expect(patches).toHaveLength(1);
+      expect(applyRowPatches(before, patches!).rows).toEqual(after.rows);
+    });
+
+    it('normalizes unavailable cell images identically in snapshots and patches', () => {
+      const before = validateSnapshot(
+        snapshot([{ ...compact, tableColumns: columns.slice(0, 2) }])
+      );
+      for (const uri of development
+        ? ['']
+        : ['', 'ftp://example.org/coin.png']) {
+        const tableColumns = [
+          {
+            ...columns[0],
+            text: 'updated',
+            leading: {
+              kind: 'token' as const,
+              image: { uri, width: 24, height: 24 },
+            },
+          },
+          columns[1],
+        ];
+        const expected = validateSnapshot(
+          snapshot([{ ...compact, tableColumns }])
+        );
+        expect(
+          applyRowPatches(before, [
+            { key: compact.key, type: 'dataRow', changes: { tableColumns } },
+          ]).rows
+        ).toEqual(expected.rows);
+      }
+    });
+
+    it('rejects nameless icons and bounds both formatted lines', () => {
+      const invalidIcon = {
+        ...compact,
+        tableColumns: [
+          { ...columns[0], leading: { kind: 'icon' as const, name: '  ' } },
+          columns[1],
+        ],
+      };
+      if (development)
+        expect(() => validateSnapshot(snapshot([invalidIcon]))).toThrow();
+      else
+        expect(validateSnapshot(snapshot([invalidIcon])).rows[0]).toMatchObject(
+          {
+            tableColumns: [{ leading: { kind: 'token' } }, columns[1]],
+          }
+        );
+      for (const extra of [
+        { textSegments: Array.from({ length: 65 }, () => ({ text: 'x' })) },
+        { secondaryTextSegments: [{ text: 'x'.repeat(4096) }, { text: 'y' }] },
+      ]) {
+        expect(() =>
+          validateSnapshot(
+            snapshot([
+              {
+                ...compact,
+                tableColumns: [{ ...columns[0], ...extra }, columns[1]],
+              },
+            ])
+          )
+        ).toThrow();
+      }
+    });
+
     it('bounds detail and selector columns separately and rejects ambiguous actions', () => {
       const detail = { ...compact, tableColumns: columns.slice(0, 6) };
       const selector = { ...marketRow(), tableColumns: columns };

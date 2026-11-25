@@ -5983,6 +5983,70 @@ describe('Web migration layout and table regressions', () => {
     }
   );
 
+  it.each([undefined, { width: 32 }])(
+    'fits bounded bitmaps and ignores hidden Web table interactions (%j)',
+    (imageStyle) => {
+      const { window } = new JSDOM('<!doctype html><body></body>');
+      const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');
+      Object.defineProperty(globalThis, 'Element', {
+        configurable: true,
+        value: window.document.defaultView!.Element,
+      });
+      const market = {
+        type: 'market',
+        key: 'quote',
+        variant: 'token',
+        leading: { kind: 'token' },
+        title: 'ETH',
+        price: '$1',
+        change: { text: '+1%', tone: 'positive' },
+        style: { image: imageStyle },
+        tableColumns: [
+          { key: 'asset', text: 'ETH', leading: { kind: 'token', image } },
+          { key: 'price', text: '$1' },
+        ],
+        webTable: {
+          draggable: true,
+          contextMenuActionKey: 'menu',
+          columns: [{ key: 'price', width: 80 }],
+          cells: [{ key: 'price', kind: 'text', primary: [{ text: '$1' }] }],
+        },
+      } as const;
+      const state = {
+        ...snapshot({ kind: 'linear' }, [market]),
+        capabilities: { reorderable: true },
+      };
+      const onRowAction = jest.fn();
+      const engine = new NativeListWebEngine(
+        window.document.body,
+        state,
+        { onRowAction },
+        false
+      );
+      try {
+        const bitmap = window.document.querySelector<HTMLImageElement>(
+          'img.ok-native-list-visual-main'
+        )!;
+        expect(bitmap.parentElement?.style.width).toBe(
+          (imageStyle?.width ?? 24) + 'px'
+        );
+        expect(bitmap.style.width).toBe('100%');
+        expect(bitmap.style.height).toBe('100%');
+        expect(isWebRowReorderable(state, market)).toBe(false);
+        bitmap.dispatchEvent(
+          new window.document.defaultView!.MouseEvent('contextmenu', {
+            bubbles: true,
+          })
+        );
+        expect(onRowAction).not.toHaveBeenCalled();
+      } finally {
+        engine.destroy();
+        if (original) Object.defineProperty(globalThis, 'Element', original);
+        else Reflect.deleteProperty(globalThis, 'Element');
+      }
+    }
+  );
+
   it('keeps an inline table action independent of the row and updates the recycled cell', () => {
     const { document } = new JSDOM('<!doctype html><body></body>').window;
     const original = Object.getOwnPropertyDescriptor(globalThis, 'Element');

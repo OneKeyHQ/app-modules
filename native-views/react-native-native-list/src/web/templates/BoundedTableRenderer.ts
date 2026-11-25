@@ -117,10 +117,11 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
       cell.visual = primitives.visual(column.leading);
       if (cell.visual) {
         element.prepend(cell.visual);
+        const { width = 24, height = 24 } = row.style?.image ?? {};
         new RowVisualStyle(cell.visual).apply(
-          row.style?.image,
-          row.style?.image?.width ?? 24,
-          row.style?.image?.height ?? 24,
+          { ...row.style?.image, width, height },
+          width,
+          height,
           0
         );
         cell.visual.style.marginInlineEnd = (row.style?.leadingGap ?? 4) + 'px';

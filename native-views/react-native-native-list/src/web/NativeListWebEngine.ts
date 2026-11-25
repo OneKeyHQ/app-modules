@@ -338,7 +338,12 @@ export function isWebRowReorderable(
   if (row.type === 'rail' && row.draggable) return true;
   if (row.type === 'identity' && row.draggable) return true;
   if (row.type === 'walletGroup' && row.draggable) return true;
-  if (row.type === 'market' && row.webTable?.draggable) return true;
+  if (
+    row.type === 'market' &&
+    rowRendererKey(row) === 'marketTable' &&
+    row.webTable?.draggable
+  )
+    return true;
   return (
     (row.type === 'identity' || row.type === 'action') &&
     Boolean(row.trailing?.some((accessory) => accessory.kind === 'drag'))
@@ -4762,6 +4767,7 @@ export class NativeListWebEngine {
     const row = this.rowAtElement(element);
     if (
       row?.type !== 'market' ||
+      rowRendererKey(row) !== 'marketTable' ||
       !row.webTable?.contextMenuActionKey ||
       !element ||
       !isRowPressEnabled(row)
@@ -4833,7 +4839,7 @@ export class NativeListWebEngine {
     this.marketPointer = {
       pointerId: event.pointerId,
       pointerType: event.pointerType,
-      compact: row.type === 'identity' || !row.webTable,
+      compact: rowRendererKey(row) !== 'marketTable',
       rowKey: row.key,
       startX: event.clientX,
       startY: event.clientY,
@@ -4847,7 +4853,9 @@ export class NativeListWebEngine {
     if (state.compact && state.pointerType === 'touch') return;
     const row = this.rows.find((item) => item.key === state.rowKey);
     const threshold =
-      row?.type === 'market' && !row.webTable ? 3 : MARKET_MOVE_CANCEL_PX;
+      row?.type === 'market' && rowRendererKey(row) !== 'marketTable'
+        ? 3
+        : MARKET_MOVE_CANCEL_PX;
     if (
       Math.abs(event.clientX - state.startX) > threshold ||
       Math.abs(event.clientY - state.startY) > threshold

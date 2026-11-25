@@ -65,6 +65,26 @@ final class NativeListMarketMetricsTests: XCTestCase {
     XCTAssertEqual(actions, ["favorite"])
   }
 
+  func testBoundedTextWrapsAtColumnWidthAndHonorsVerticalAlignment() throws {
+    var data = try item().data
+    data["tableColumns"] = [
+      ["key": "price", "width": 70, "text": "One two three four five six seven"],
+      ["key": "change", "text": "+2%"],
+    ]
+    let cell = NativeListBoundedTableCell(frame: CGRect(x: 0, y: 0, width: 320, height: 100))
+    for alignment in ["top", "bottom"] {
+      data["style"] = ["price": ["lines": 2], "container": ["contentVerticalAlignment": alignment]]
+      cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      cell.layoutIfNeeded()
+      let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
+      let labels = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListTableColumnView }.first)
+      XCTAssertGreaterThan(labels.bounds.height, 26)
+      if alignment == "top" { XCTAssertEqual(labels.frame.minY, 0, accuracy: 1) }
+      else { XCTAssertEqual(labels.frame.maxY, column.bounds.height, accuracy: 1) }
+    }
+  }
+
   func testMetricCountAndCompactReuseClearInactiveViews() throws {
     let cell = NativeListMarketCell(frame: CGRect(x: 0, y: 0, width: 800, height: 72))
     let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 800, height: 200))
