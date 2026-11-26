@@ -424,4 +424,42 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
             return token
         }
     }
+
+    func markSkanMilestones(bits: Double, coarseRule: SkanCoarseRule) throws -> Promise<SkanUpdateResult?> {
+        guard #available(iOS 16.1, *) else {
+            return .resolved(withResult: nil)
+        }
+        return Self.markSkanMilestones(using: .shared, bits: bits, coarseRule: coarseRule)
+    }
+
+    static func markSkanMilestones(
+        using store: SkanConversionStore,
+        bits: Double,
+        coarseRule: SkanCoarseRule
+    ) -> Promise<SkanUpdateResult?> {
+        let promise = Promise<SkanUpdateResult?>()
+        store.mark(
+            bits: bits,
+            highMask: coarseRule.highMask,
+            mediumMask: coarseRule.mediumMask
+        ) { result in
+            switch result {
+            case .success(let outcome):
+                let coarseValue: SkanCoarseValue
+                switch outcome.coarse {
+                case .low: coarseValue = .low
+                case .medium: coarseValue = .medium
+                case .high: coarseValue = .high
+                }
+                promise.resolve(withResult: SkanUpdateResult(
+                    fineValue: Double(outcome.fineValue),
+                    coarseValue: coarseValue,
+                    updated: outcome.updated
+                ))
+            case .failure(let error):
+                promise.reject(withError: error)
+            }
+        }
+        return promise
+    }
 }

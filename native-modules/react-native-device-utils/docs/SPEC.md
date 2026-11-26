@@ -610,3 +610,61 @@ non-empty string, an empty string, and a thrown error. Android native CI builds
 the Kotlin implementation and generated JNI bindings. The consumer's Android
 native harness verifies the result is JavaScript `undefined`. Real AdServices
 token issuance requires an on-device check.
+
+# DeviceUtils: SKAdNetwork conversion value
+
+## Scope and platform contract
+
+`markSkanMilestones(bits, coarseRule): Promise<SkanUpdateResult | undefined>`
+ORs `bits` (an integer from 0 to 63) into the stored SKAdNetwork fine
+conversion value. On iOS 16.1 and later it then calls
+`SKAdNetwork.updatePostbackConversionValue(_:coarseValue:lockWindow:completionHandler:)`
+with `lockWindow: false`. Android and older iOS resolve to `undefined`.
+
+The coarse value is `high` when the merged value shares a bit with
+`coarseRule.highMask`. Otherwise it is `medium` when it shares a bit with
+`coarseRule.mediumMask`, and `low` in every other case. Both masks are integers
+from 0 to 63. The OneKey app owns the milestone bit schema and the masks, and
+must keep them in line with the conversion value schema configured for the ad
+network. DeviceUtils assigns no meaning to individual bits.
+
+The result carries the merged `fineValue`, its `coarseValue`, and `updated`.
+`updated` is `false` when neither the fine value nor the coarse value changed
+since the last accepted report, in which case SKAdNetwork is not called. The
+first call always reports, even with `bits` set to 0.
+
+## Lifecycle and concurrency
+
+The main and background React runtimes each create their own HybridObject.
+Every call goes through one process-wide store with a serial queue, so the
+read, merge, report and persist steps run as one unit. Calls from either
+runtime are applied in arrival order, and a smaller value is never reported
+after a larger one. The queue waits for the SKAdNetwork completion handler for
+up to 30 seconds before the next call runs.
+
+## Data and retention
+
+The last accepted fine value and coarse value live in `UserDefaults.standard`
+under `so.onekey.deviceutils.skan.fineValue` and
+`so.onekey.deviceutils.skan.coarseValue`. They are written only after
+SKAdNetwork accepts the update. Deleting the app clears them, which matches a
+new install's fresh attribution. The values are not logged and hold no user
+or wallet identifiers.
+
+## Failure
+
+The Promise rejects when an input is not an integer from 0 to 63, when
+SKAdNetwork returns an error (for example after the last conversion window
+has closed), or when SKAdNetwork does not answer within 30 seconds. A rejected
+call leaves the stored value unchanged, so the next call reports again.
+
+## Conformance and acceptance
+
+The contract is defined in `src/ReactNativeDeviceUtils.nitro.ts` and implemented
+in `ios/SkanConversionStore.swift`, `ios/ReactNativeDeviceUtils.swift` and
+`ReactNativeDeviceUtils.kt`. The iOS pod's XCTest suite injects a reporter and
+an isolated `UserDefaults` suite. It covers bit merging, coarse mapping, skipped
+unchanged values, a coarse rule change, a rejected report that is retried,
+input validation, a timeout, and concurrent callers that only ever report
+increasing values. Android native CI builds the Kotlin stub. A real SKAdNetwork
+postback needs an on-device check with SKAdNetwork developer mode enabled.
