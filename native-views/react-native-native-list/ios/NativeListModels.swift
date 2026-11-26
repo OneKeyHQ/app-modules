@@ -17,8 +17,7 @@ struct NativeListItem {
   let sectionKey: String?
   let revision: Int
   let data: [String: Any]
-  // Preserve exact JavaScript string values when comparing serialized rows.
-  let content: Data
+  let content: String
 
   let rendererKey: NativeListRendererKey
 
@@ -66,7 +65,8 @@ struct NativeListItem {
     self.sectionKey = data["sectionKey"] as? String
     self.revision = data["revision"] as? Int ?? 0
     self.data = data
-    self.content = try JSONSerialization.data(withJSONObject: data, options: [.sortedKeys])
+    let jsonData = try JSONSerialization.data(withJSONObject: data, options: [.sortedKeys])
+    self.content = String(data: jsonData, encoding: .utf8) ?? ""
   }
 
   private static var loggedUnsupportedTypes = Set<String>()

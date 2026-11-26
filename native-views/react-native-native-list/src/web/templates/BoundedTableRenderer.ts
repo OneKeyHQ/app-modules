@@ -4,7 +4,11 @@ import type {
   NativeListTableColumn,
   NativeListTextStyle,
 } from '../../models';
-import { markActionAnchorSource } from './RowElements';
+import {
+  hasExplicitRowHeight,
+  markActionAnchorSource,
+  rowSizeModifier,
+} from './RowElements';
 import { applyValueSegments, fontWeight } from './RowText';
 import { type RowPrimitives, RowVisualStyle } from './RowVisual';
 
@@ -67,6 +71,15 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
   body.style.paddingInline = (row.style?.horizontalPadding ?? 0) + 'px';
   body.style.paddingBlock = (row.style?.verticalPadding ?? 0) + 'px';
   const columns = row.tableColumns!;
+  const fitContent =
+    !hasExplicitRowHeight(row) &&
+    columns.some(
+      (column) => column.actionPlacement === 'below' && column.actions?.length
+    );
+  body.style.height = fitContent ? 'auto' : '';
+  body.style.minHeight = fitContent
+    ? 56 + rowSizeModifier(row.size) + 'px'
+    : '';
   while (state.cells.length > columns.length) {
     const old = state.cells.pop()!;
     if (old.visual) primitives.dispose(old.visual);
@@ -192,12 +205,12 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
       }
       cell.actionsKey = actionsKey;
     }
+    const below = cell.actions && column.actionPlacement === 'below';
+    cell.labelGroup.style.flexDirection = below ? 'column' : 'row';
+    cell.labelGroup.style.alignItems = below ? 'flex-start' : 'center';
     if (cell.actions) {
-      const below = column.actionPlacement === 'below';
       cell.actions.style.marginInlineStart = below ? '0' : '6px';
       cell.actions.style.marginTop = below ? '6px' : '0';
-      cell.labelGroup.style.flexDirection = below ? 'column' : 'row';
-      cell.labelGroup.style.alignItems = below ? 'flex-start' : 'center';
       if (cell.actions.parentElement !== cell.labelGroup)
         cell.labelGroup.appendChild(cell.actions);
     }
@@ -218,7 +231,8 @@ export const boundedTableRenderer = {
   },
   bind,
   measure: () => 56,
-  measureRendered: () => undefined,
+  measureRendered: (body: HTMLElement) =>
+    body.style.height === 'auto' ? body.offsetHeight || undefined : undefined,
   recycle(body: HTMLElement) {
     const state = states.get(body);
     state?.cells.forEach((cell) => {

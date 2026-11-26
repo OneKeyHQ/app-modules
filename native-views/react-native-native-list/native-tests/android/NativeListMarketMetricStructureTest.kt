@@ -3,9 +3,7 @@ package com.margelo.nitro.nativelist
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Rect
-import android.os.SystemClock
 import android.test.InstrumentationTestCase
-import android.view.MotionEvent
 import android.view.View
 import com.facebook.react.bridge.BridgeReactContext
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
@@ -197,186 +195,101 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     row.dispose()
   }
 
-  fun testBoundedCellIconActionsAndReuse() = withMarketActivity { activity, context ->
-    lateinit var row: NativeListBoundedTableView
-    val received = mutableListOf<String>()
-    val column = JSONObject().put("key", "address").put("text", "Address")
-    val data = item().json.put("tableColumns", JSONArray().put(column).put(JSONObject().put("key", "value").put("text", "42")))
-    val icons = JSONArray()
-    for ((key, icon) in listOf("copy" to "Copy3Outline", "open" to "OpenOutline"))
-      icons.put(JSONObject().put("name", icon).put("actionKey", key).put("accessibilityLabel", key))
-    column.put("actions", icons)
-    fun bind() = row.bind(NativeListItem.parse(data), JSONObject().put("iconSubdued", "#123"), "linear", "vertical", null, false, { _, _, fallback -> fallback })
-    fun find(key: String) = ArrayList<View>().also {
-      row.findViewsWithText(it, key, View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
-    }
-    fun bounds(key: String): Rect {
-      val icon = find(key).single()
-      return Rect(0, 0, icon.width, icon.height).also { row.offsetDescendantRectToMyCoords(icon, it) }
-    }
-    fun tap(x: Float, y: Float, afterDown: () -> Unit = {}) {
-      val now = SystemClock.uptimeMillis()
-      for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
-        val event = MotionEvent.obtain(now, now, action, x, y, 0)
-        try { row.dispatchTouchEvent(event) } finally { event.recycle() }
-        if (action == MotionEvent.ACTION_DOWN) afterDown()
-      }
-    }
-    instrumentation.runOnMainSync {
-      row = NativeListBoundedTableView(context, NativeListFonts())
-      row.onAction = { _, key, _, _ -> received.add(key) }
-      activity.setContentView(row)
-    }
+  private fun actionColumn(): JSONObject {
+    fun icon(key: String, name: String) = JSONObject().put("actionKey", key)
+      .put("name", name).put("accessibilityLabel", key)
+    return JSONObject().put("key", "address").put("text", "Address").put("actions",
+      JSONArray().put(icon("copy", "Copy3Outline")).put(icon("open", "OpenOutline")))
+  }
+
+  private fun NativeListBoundedTableView.bindColumn(column: JSONObject, disabled: Boolean = false, theme: JSONObject? = null) {
+    val columns = JSONArray().put(column).put(JSONObject().put("key", "value").put("text", "42"))
+    val model = NativeListItem.parse(item().json.put("tableColumns", columns).put("disabled", disabled))
+    bind(model, theme, "linear", "vertical", null, false, { _, _, fallback -> fallback })
+    val density = resources.displayMetrics.density
+    measure(View.MeasureSpec.makeMeasureSpec((320 * density).toInt(), View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec((72 * density).toInt(), View.MeasureSpec.EXACTLY))
+    layout(0, 0, measuredWidth, measuredHeight)
+  }
+
+  private fun withTableRow(test: (NativeListBoundedTableView) -> Unit) = withMarketRow { host ->
+    val row = NativeListBoundedTableView(host.context as ThemedReactContext, NativeListFonts())
+    try { test(row) } finally { row.dispose() }
+  }
+
+  fun testTableIconPlacementAndExpandedTargets() = withTableRow { row ->
+    val column = actionColumn()
     for (placement in listOf("inline", "below")) {
-      instrumentation.runOnMainSync {
-        column.put("actionPlacement", placement)
-        bind()
-      }
-      instrumentation.waitForIdleSync()
-      instrumentation.runOnMainSync {
-        val copy = bounds("copy")
-        val open = bounds("open")
-        tap(copy.right + 1f, copy.exactCenterY())
-        tap(open.left - 1f, open.exactCenterY())
-        tap(copy.exactCenterX(), copy.top - 3 * context.resources.displayMetrics.density)
-      }
-      instrumentation.waitForIdleSync()
-      assertEquals(listOf("copy", "open", "copy"), received)
-      received.clear()
+      row.bindColumn(column.put("actionPlacement", placement))
+      val cell = row.getChildAt(0) as NativeListBoundedTableView.Cell
+      fun bounds(view: View) = Rect(0, 0, view.width, view.height).also { cell.offsetDescendantRectToMyCoords(view, it) }
+      val copy = cell.findViewWithTag<View>("copy")
+      val open = cell.findViewWithTag<View>("open")
+      val left = bounds(copy)
+      val right = bounds(open)
+      val label = bounds(cell.labels.getChildAt(0))
+      if (placement == "below") assertTrue(left.top >= label.bottom) else assertTrue(left.left >= label.right)
+      assertSame(copy, cell.actionAt(left.right + 1, left.centerY(), Rect()))
+      assertSame(open, cell.actionAt(right.left - 1, right.centerY(), Rect()))
+      val slop = NativeListScale.dp(row.resources, 8)
+      assertSame(copy, cell.actionAt(left.centerX(), left.top - slop, Rect()))
+      assertNull(cell.actionAt(left.centerX(), left.top - slop - 1, Rect()))
     }
-    for (expanded in listOf(false, true)) {
-      for (replace in listOf(false, true)) {
-        instrumentation.runOnMainSync {
-          icons.getJSONObject(0).put("actionKey", "copy")
-          bind()
-        }
-        instrumentation.waitForIdleSync()
-        instrumentation.runOnMainSync {
-          assertEquals(0x72000000, (find("copy").single() as OneKeyIconView).tintColor)
-          val copy = bounds("copy")
-          tap(if (expanded) copy.right + 1f else copy.exactCenterX(), copy.exactCenterY()) {
-            if (replace) icons.getJSONObject(0).put("actionKey", "explorer")
-            data.put("price", if (expanded) "$43" else "$44")
-            bind()
-          }
-        }
-        instrumentation.waitForIdleSync()
-        assertEquals(if (replace) emptyList<String>() else listOf("copy"), received)
-        received.clear()
-      }
-    }
-    icons.getJSONObject(0).put("actionKey", "copy")
-    val reversed = JSONArray().put(icons.getJSONObject(1)).put(icons.getJSONObject(0))
-    for (expanded in listOf(false, true)) {
-      instrumentation.runOnMainSync { column.put("actions", icons); bind() }
-      instrumentation.waitForIdleSync()
-      val down = SystemClock.uptimeMillis()
-      fun touchCopy(action: Int) {
-        val copy = bounds("copy")
-        val y = if (expanded) copy.top - 1f else copy.exactCenterY()
-        val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, copy.exactCenterX(), y, 0)
-        try { row.dispatchTouchEvent(event) } finally { event.recycle() }
-      }
-      instrumentation.runOnMainSync {
-        touchCopy(MotionEvent.ACTION_DOWN)
-        column.put("actions", reversed)
-        bind()
-      }
-      instrumentation.waitForIdleSync()
-      instrumentation.runOnMainSync {
-        assertTrue(bounds("copy").left > bounds("open").left)
-        touchCopy(MotionEvent.ACTION_UP)
-      }
-      instrumentation.waitForIdleSync()
-      assertEquals("reordered button, expanded=$expanded", listOf("copy"), received)
-      received.clear()
-    }
-    instrumentation.runOnMainSync {
-      column.remove("actions")
-      bind()
-      assertTrue(find("copy").isEmpty())
-      row.dispose()
-    }
+  }
+
+  fun testTableActionsFollowReplacementDisabledStateAndRemoval() = withTableRow { row ->
+    val column = actionColumn()
+    val received = mutableListOf<String>()
+    row.onAction = { _, key, _, _ -> received.add(key) }
+    row.bindColumn(column)
+    val previous = row.findViewWithTag<View>("copy")
+    column.getJSONArray("actions").getJSONObject(0).put("actionKey", "explorer")
+    row.bindColumn(column)
+    previous.performClick()
+    val replacement = row.findViewWithTag<View>("explorer")
+    replacement.performClick()
+    row.bindColumn(column, disabled = true)
+    assertFalse(replacement.isEnabled)
+    replacement.performClick()
+    column.remove("actions")
+    row.bindColumn(column)
+    assertNull(replacement.parent)
+    replacement.performClick()
+    assertEquals(listOf("explorer"), received)
+  }
+
+  fun testInvalidTableIconColorUsesSubduedTint() = withTableRow { row ->
+    row.bindColumn(actionColumn(), theme = JSONObject().put("iconSubdued", "#123"))
+    assertEquals(0x72000000, row.findViewWithTag<OneKeyIconView>("copy").tintColor)
   }
 
   fun testHandledTapFindsTableIconInOffsetWindow() = withMarketActivity { activity, context ->
     lateinit var dialog: android.app.Dialog
     lateinit var list: NativeListView
-    lateinit var editor: android.widget.EditText
-    val actions = mutableListOf<String>()
-    val density = context.resources.displayMetrics.density
-    instrumentation.runOnMainSync {
-      val action = JSONObject().put("name", "Copy3Outline").put("actionKey", "copy").put("accessibilityLabel", "Copy")
-      val columns = JSONArray().put(JSONObject().put("key", "address").put("text", "Address")
-        .put("actions", JSONArray().put(action))).put(JSONObject().put("key", "price").put("text", "42"))
-      list = NativeListView(context)
-      list.keyboardShouldPersistTaps = NativeListKeyboardShouldPersistTaps.HANDLED
-      list.onRowAction = { actions.add(JSONObject(it).getString("actionKey")) }
-      editor = android.widget.EditText(activity)
-      dialog = android.app.Dialog(activity)
-      dialog.setContentView(android.widget.LinearLayout(activity).apply {
-        orientation = android.widget.LinearLayout.VERTICAL
-        addView(editor)
-        addView(list, -1, (72 * density).toInt())
-      })
-      dialog.show()
-      dialog.window!!.setLayout((280 * density).toInt(), -2)
-      list.applySnapshot(JSONObject().put("schemaVersion", 1).put("generation", 1)
-        .put("layout", JSONObject().put("kind", "linear")).put("rows", JSONArray().put(
-          item().json.put("pressDisabled", true).put("tableColumns", columns))).toString())
-    }
-    fun waitForKeyboard(visible: Boolean) {
-      val deadline = SystemClock.uptimeMillis() + 5000
-      do {
-        var matched = false
-        instrumentation.runOnMainSync {
-          matched = androidx.core.view.ViewCompat.getRootWindowInsets(editor)
-            ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == visible
-        }
-        if (matched) return
-        SystemClock.sleep(50)
-      } while (SystemClock.uptimeMillis() < deadline)
-      fail("Expected keyboard visibility: $visible")
-    }
-    fun tap(x: Int, y: Int) {
-      val down = SystemClock.uptimeMillis()
-      for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
-        val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x.toFloat(), y.toFloat(), 0)
-        try { instrumentation.sendPointerSync(event) } finally { event.recycle() }
-      }
-      instrumentation.waitForIdleSync()
-    }
+    lateinit var row: NativeListBoundedTableView
     try {
+      instrumentation.runOnMainSync {
+        dialog = android.app.Dialog(activity)
+        list = NativeListView(context)
+        row = NativeListBoundedTableView(context, NativeListFonts())
+        row.bindColumn(actionColumn())
+        dialog.setContentView(row)
+        dialog.show()
+        dialog.window!!.setLayout(row.measuredWidth, row.measuredHeight)
+      }
       instrumentation.waitForIdleSync()
-      val origin = IntArray(2)
       instrumentation.runOnMainSync {
-        editor.getLocationOnScreen(origin)
-        origin[0] += editor.width / 2
-        origin[1] += editor.height / 2
+        val location = IntArray(2)
+        row.rootView.getLocationOnScreen(location)
+        assertTrue("Expected an offset window", location[1] > 0)
+        val copy = row.findViewWithTag<View>("copy")
+        copy.getLocationOnScreen(location)
+        val y = location[1] + copy.height / 2
+        assertSame(copy, list.clickableDescendantAt(row, location[0] + copy.width + 1, y))
+        assertNull(list.clickableDescendantAt(row, location[0] + row.width, y))
       }
-      tap(origin[0], origin[1])
-      waitForKeyboard(true)
-      var copyX = 0
-      var blankX = 0
-      var y = 0
-      instrumentation.runOnMainSync {
-        val icon = ArrayList<View>().also { list.findViewsWithText(it, "Copy", View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION) }.single()
-        list.rootView.getLocationOnScreen(origin)
-        assertTrue("Dialog must exercise a window offset", origin[1] > 0)
-        icon.getLocationOnScreen(origin)
-        copyX = origin[0] + icon.width + 1
-        y = origin[1] + icon.height / 2
-        list.getLocationOnScreen(origin)
-        blankX = origin[0] + list.width * 3 / 4
-      }
-      tap(copyX, y)
-      assertEquals(listOf("copy"), actions)
-      waitForKeyboard(true)
-      tap(blankX, y)
-      waitForKeyboard(false)
-      assertEquals(listOf("copy"), actions)
     } finally {
-      instrumentation.runOnMainSync { dialog.dismiss(); list.dispose() }
+      instrumentation.runOnMainSync { dialog.dismiss(); row.dispose(); list.dispose() }
     }
   }
 

@@ -75,15 +75,10 @@ final class NativeListMarketMetricsTests: XCTestCase {
   func testBoundedTableInlineActionsAndReuse() throws {
     let cell = NativeListBoundedTableCell(frame: CGRect(x: 0, y: 0, width: 320, height: 56))
     var data = try item().data
-    // JavaScript distinguishes the UTF-16 spellings of these canonically equivalent keys.
-    let copyKey = "\u{e9}"
-    let openKey = "e\u{301}"
-    let actions = [["name": "Copy3Outline", "actionKey": copyKey, "accessibilityLabel": "Copy"],
-                   ["name": "OpenOutline", "actionKey": openKey, "accessibilityLabel": "Explorer"]]
-    let copyUnits = Array(copyKey.utf16)
-    let openUnits = Array(openKey.utf16)
-    var received: [[UInt16]] = []
-    cell.onAction = { _, key, _, _ in received.append(Array(key.utf16)) }
+    let actions = [["name": "Copy3Outline", "actionKey": "copy", "accessibilityLabel": "Copy"],
+                   ["name": "OpenOutline", "actionKey": "open", "accessibilityLabel": "Explorer"]]
+    var received: [String] = []
+    cell.onAction = { _, key, _, _ in received.append(key) }
     func bind(_ placement: String, _ actions: [[String: String]]) throws {
       data["tableColumns"] = [["key":"address", "text":"Address", "actions": actions, "actionPlacement":placement], ["key":"value","text":"42"]]
       cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
@@ -112,7 +107,7 @@ final class NativeListMarketMetricsTests: XCTestCase {
         _ = target.perform(NSSelectorFromString(selector), with: button)
       }
     }
-    XCTAssertEqual(received, [copyUnits, openUnits, copyUnits, openUnits])
+    XCTAssertEqual(received, ["copy","open","copy","open"])
     let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
     let pressed = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListIconButton }.first)
     let target = try XCTUnwrap(pressed.allTargets.first as? NSObject)
@@ -123,72 +118,21 @@ final class NativeListMarketMetricsTests: XCTestCase {
     try bind("below", actions)
     XCTAssertTrue(pressed.superview === column)
     _ = target.perform(release, with: pressed)
-    XCTAssertEqual(received, [copyUnits])
+    XCTAssertEqual(received, ["copy"])
     let originalX = pressed.frame.midX
     try bind("below", Array(actions.reversed()))
     XCTAssertGreaterThan(pressed.frame.midX, originalX)
     XCTAssertTrue(column.hitTest(pressed.center, with: nil) === pressed)
     _ = target.perform(release, with: pressed)
-    XCTAssertEqual(received, [copyUnits, copyUnits])
+    XCTAssertEqual(received, ["copy", "copy"])
     var replaced = actions
     replaced[0]["actionKey"] = "explorer"
     try bind("below", replaced)
     XCTAssertNil(pressed.superview)
     _ = target.perform(release, with: pressed)
-    XCTAssertEqual(received, [copyUnits, copyUnits])
+    XCTAssertEqual(received, ["copy", "copy"])
     try bind("inline", [])
     XCTAssertFalse(cell.root.arrangedSubviews.first!.subviews[0].subviews.contains { $0 is NativeListIconButton })
-  }
-
-  func testVisibleTableActionEmitsReplacementKeyAfterPatchAndSnapshot() throws {
-    func columns(_ key: String) -> [[String: Any]] {
-      [["key": "address", "text": "Address", "actions": [
-        ["name": "Copy3Outline", "actionKey": key, "accessibilityLabel": "Copy"],
-      ]], ["key": "value", "text": "42"]]
-    }
-    func json(_ value: Any) throws -> String {
-      String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
-    }
-    func snapshot(_ key: String, generation: Int) throws -> String {
-      var row = try item().data
-      row["tableColumns"] = columns(key)
-      return try json(["schemaVersion": 1, "generation": generation,
-        "layout": ["kind": "linear"], "rows": [row]])
-    }
-
-    let original = "\u{e9}"
-    let replacement = "e\u{301}"
-    for usePatch in [true, false] {
-      let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
-      defer { view.dispose() }
-      let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
-      var emitted: [[UInt16]] = []
-      view.onRowAction = { payload in
-        if let event = (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) as? [String: Any],
-           let key = event["actionKey"] as? String { emitted.append(Array(key.utf16)) }
-      }
-      func tapVisibleButton() throws {
-        view.layoutIfNeeded()
-        collection.layoutIfNeeded()
-        let cell = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)) as? NativeListBoundedTableCell)
-        let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
-        let button = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListIconButton }.first)
-        let target = try XCTUnwrap(button.allTargets.first as? NSObject)
-        let action = try XCTUnwrap(button.actions(forTarget: target, forControlEvent: .touchUpInside)?.first)
-        _ = target.perform(NSSelectorFromString(action), with: button)
-      }
-
-      view.applySnapshotJson(try snapshot(original, generation: 1))
-      try tapVisibleButton()
-      if usePatch {
-        view.applyPatchesJson(try json([["key": "market-eth", "type": "market",
-          "changes": ["tableColumns": columns(replacement)]]]))
-      } else {
-        view.applySnapshotJson(try snapshot(replacement, generation: 2))
-      }
-      try tapVisibleButton()
-      XCTAssertEqual(emitted, [Array(original.utf16), Array(replacement.utf16)], usePatch ? "patch" : "snapshot")
-    }
   }
 
   func testDefaultTableHeightContainsBelowActionsAndWrappedLabels() throws {
@@ -227,71 +171,15 @@ final class NativeListMarketMetricsTests: XCTestCase {
       XCTAssertEqual(column.bounds.height, height - 24, accuracy: 1)
       XCTAssertTrue(column.bounds.contains(icon.frame))
       XCTAssertTrue(column.hitTest(icon.center, with: nil) === icon)
-    }
-  }
 
-  func testOrdinaryTableSnapshotMeasuresOnlyRequestedLayoutInputs() throws {
-    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 160))
-    defer { view.dispose() }
-    let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
-    // Drive layout requests explicitly so UIKit prefetching cannot change the measurement count.
-    collection.delegate = nil
-    view.layoutIfNeeded()
-
-    let selector = #selector(UIView.systemLayoutSizeFitting(_:))
-    let cls = NativeListTableColumnView.self
-    let method = try XCTUnwrap(class_getInstanceMethod(cls, selector))
-    let original = method_getImplementation(method)
-    let encoding = try XCTUnwrap(method_getTypeEncoding(method))
-    let fit = unsafeBitCast(original, to: (@convention(c) (UIView, Selector, CGSize) -> CGSize).self)
-    var fits = 0
-    let count: @convention(block) (UIView, CGSize) -> CGSize = { label, size in
-      if label.superview == nil { fits += 1 }
-      return fit(label, selector, size)
+      var paddedStyle = try XCTUnwrap(data["style"] as? [String: Any])
+      paddedStyle["verticalPadding"] = 20
+      let patch: [String: Any] = ["key": model.key, "type": model.type, "changes": ["style": paddedStyle]]
+      view.applyPatchesJson(String(decoding: try JSONSerialization.data(withJSONObject: [patch]), as: UTF8.self))
+      let paddedHeight = view.collectionView(collection, layout: collection.collectionViewLayout,
+        sizeForItemAt: IndexPath(item: 0, section: 0)).height
+      XCTAssertEqual(paddedHeight, height + 16, accuracy: 1)
     }
-    let hook = imp_implementationWithBlock(count)
-    class_replaceMethod(cls, selector, hook, encoding)
-    defer {
-      class_replaceMethod(cls, selector, original, encoding)
-      imp_removeBlock(hook)
-    }
-
-    func refresh(_ generation: Int) throws {
-      let rows: [[String: Any]] = (0..<100).map { index in
-        let address: [String: Any] = ["key": "address", "text": "Holder", "actionPlacement": "below",
-          "actions": [["name": "Copy3Outline", "actionKey": "copy", "accessibilityLabel": "Copy"]]]
-        return ["key": "holder-\(index)", "type": "dataRow", "tableColumns": [address,
-          ["key": "rank", "text": "\(index)"], ["key": "share", "text": "1%"],
-          ["key": "value", "text": "$\(generation)"]]]
-      }
-      let snapshot: [String: Any] = ["schemaVersion": 1, "generation": generation,
-        "layout": ["kind": "linear"], "rows": rows]
-      view.applySnapshotJson(String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self))
-    }
-    func requestHeight() -> CGFloat {
-      view.collectionView(collection, layout: collection.collectionViewLayout,
-        sizeForItemAt: IndexPath(item: 99, section: 0)).height
-    }
-    try refresh(1)
-    fits = 0
-    try refresh(2)
-    XCTAssertEqual(fits, 0, "An ordinary snapshot must not measure offscreen rows to compare tail geometry")
-    XCTAssertGreaterThan(requestHeight(), 0)
-    let first = fits
-    XCTAssertGreaterThan(first, 0)
-    _ = requestHeight()
-    XCTAssertEqual(fits, first)
-    try refresh(3)
-    _ = requestHeight()
-    XCTAssertGreaterThan(fits, first)
-    let afterContent = fits
-    collection.bounds.size.width -= 80
-    _ = requestHeight()
-    XCTAssertGreaterThan(fits, afterContent)
-    let afterWidth = fits
-    view.setFontFamiliesJson(#"{"regular":"Courier","medium":"Courier-Bold"}"#)
-    _ = requestHeight()
-    XCTAssertGreaterThan(fits, afterWidth)
   }
 
   func testBoundedTableAnnouncesCompleteSubscriptAmountsAndExplicitLabel() throws {

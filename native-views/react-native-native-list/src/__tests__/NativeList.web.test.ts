@@ -6171,6 +6171,8 @@ describe('Web migration layout and table regressions', () => {
       const open = document.querySelector<HTMLButtonElement>(
         'button[aria-label="Explorer"]'
       )!;
+      const group = copy.parentElement!.parentElement!;
+      expect(group.style.flexDirection).toBe('column');
       copy.click();
       open.focus();
       open.click();
@@ -6208,6 +6210,8 @@ describe('Web migration layout and table regressions', () => {
       expect(
         document.querySelector('button[aria-label="Explorer"]')
       ).toBeNull();
+      expect(group.style.flexDirection).toBe('row');
+      expect(group.style.alignItems).toBe('center');
     } finally {
       engine.destroy();
       if (original) Object.defineProperty(globalThis, 'Element', original);

@@ -22,11 +22,11 @@ private final class NativeListReorderLongPress: UILongPressGestureRecognizer {
 
 final class NativeListView: UIView {
   private final class MeasuredTableHeight {
-    let content: Data
+    let content: String
     let width: CGFloat
     let height: CGFloat
 
-    init(content: Data, width: CGFloat, height: CGFloat) {
+    init(content: String, width: CGFloat, height: CGFloat) {
       self.content = content
       self.width = width
       self.height = height
