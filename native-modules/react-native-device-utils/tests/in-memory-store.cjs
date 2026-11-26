@@ -20,6 +20,7 @@ if (mode !== '--kotlin') {
   run('swiftc', [
     join(root, 'nitrogen/generated/ios/swift/InMemoryValue.swift'),
     join(root, 'ios/InMemoryStore.swift'),
+    join(root, 'ios/DeviceUtilsFirstLaunch.swift'),
     join(__dirname, 'main.swift'),
     '-module-cache-path',
     join(output, 'swift-module-cache'),
@@ -42,6 +43,7 @@ if (mode !== '--swift') {
     annotation,
     join(root, 'nitrogen/generated/android/kotlin/com/margelo/nitro/reactnativedeviceutils/InMemoryValue.kt'),
     join(root, 'android/src/main/java/com/margelo/nitro/reactnativedeviceutils/InMemoryStore.kt'),
+    join(root, 'android/src/main/java/com/margelo/nitro/reactnativedeviceutils/FirstLaunchHistory.kt'),
     join(__dirname, 'InMemoryStoreTest.kt'),
     '-include-runtime',
     '-d',

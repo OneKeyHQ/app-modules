@@ -171,6 +171,16 @@ export interface ReactNativeDeviceUtils
   saveDeviceToken(token: string): Promise<void>;
   registerDeviceToken(): Promise<boolean>;
   getStartupTime(): Promise<number>;
+  /** Whether the current native process is the first launch of this local installation. */
+  isFirstLaunch(): boolean;
+  /** First launch of a native release version higher than any previously launched version. */
+  isFirstLaunchForCurrentAppVersion(): boolean;
+  /** Records the executing bundle version at JS startup / OTA reload as the active bundle identity. */
+  initFirstLaunchForBundle(bundleVersion: string): void;
+  /** First launch of a bundle version higher than any previously launched bundle. */
+  isFirstLaunchForCurrentBundle(bundleVersion?: string): boolean;
+  /** Clears persisted first-launch files and in-memory state (e.g. on Reset App). Returns false if deletion fails. */
+  resetFirstLaunch(): boolean;
   // Process-owned primitive Map, shared by all runtimes and never persisted.
   getInMemoryValue(key: string): InMemoryValue | undefined;
   setInMemoryValue(key: string, value: InMemoryValue): void;

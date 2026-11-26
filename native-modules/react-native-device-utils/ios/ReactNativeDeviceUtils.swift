@@ -83,6 +83,26 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         injectedInterfaceOrientationObserver ?? InterfaceOrientationObserver.shared
     }
 
+    func isFirstLaunch() throws -> Bool {
+        DeviceUtilsFirstLaunch.value
+    }
+
+    func isFirstLaunchForCurrentAppVersion() throws -> Bool {
+        DeviceUtilsFirstLaunch.forCurrentAppVersion
+    }
+
+    func initFirstLaunchForBundle(bundleVersion: String) throws {
+        DeviceUtilsFirstLaunch.initForBundle(bundleVersion)
+    }
+
+    func isFirstLaunchForCurrentBundle(bundleVersion: String?) throws -> Bool {
+        DeviceUtilsFirstLaunch.forBundle(bundleVersion)
+    }
+
+    func resetFirstLaunch() throws -> Bool {
+        DeviceUtilsFirstLaunch.reset()
+    }
+
     override init() {
         injectedInterfaceOrientationObserver = nil
         super.init()
