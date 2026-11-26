@@ -43,6 +43,6 @@
   },
   "devDependencies": {
     "@ngraveio/bc-ur": "1.1.13",
-    "electron": "44.5.1"
+    "electron": "44.9.3"
   }
 }
