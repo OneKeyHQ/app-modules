@@ -19,7 +19,10 @@ Pod::Spec.new do |s|
     "cpp/**/*.{hpp,cpp}",
   ]
   s.exclude_files = "ios/tests/**/*"
-  s.frameworks   = "AdServices", "StoreKit"
+  s.frameworks   = ["AdServices", "StoreKit"]
+  s.resource_bundles = {
+    "ReactNativeDeviceUtilsPrivacyInfo" => ["ios/PrivacyInfo.xcprivacy"],
+  }
 
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'

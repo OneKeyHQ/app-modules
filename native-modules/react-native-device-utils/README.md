@@ -147,12 +147,19 @@ UI page; an MV3 service worker returns `false`.
 | `setMainMenuConfig(config)` + command listeners | `void` / listener ID | iOS (iPadOS) | Rebuilds the iPadOS app menu; Android ignores it. |
 | `setNavigationBarAppearance(r, g, b, a, useDarkIcons)` | `void` | Android | Applies the navigation-bar color and icon style; no-op on iOS. |
 | `getCurrentWebViewPackageInfo()` / `isGooglePlayServicesAvailable()` | `Promise<WebViewPackageInfo>` / `Promise<GooglePlayServicesStatus>` | Android | WebView package and Play Services status. |
-| `getAndroidChannel()` / `getInstallerPackageName()` | `AndroidChannel` / `InstallerPackageName` | Android | Distribution channel and installer source. |
+| `getAndroidChannel()` / `getInstallerPackageName()` | `AndroidChannel` / `InstallerPackageName` | Android / iOS | Distribution channel and synchronous installer source (`getInstallerPackageName` is deprecated on iOS). |
+| `getInstallerPackageNameAsync()` | `Promise<InstallerPackageName>` | iOS 16.4+ / Android | Asynchronous installer source (StoreKit 2 `AppTransaction.shared` on iOS, `PackageManager` on Android). |
+| `getInstallationTime()` | `Promise<number>` | iOS / Android | App installation timestamp in Unix epoch milliseconds. |
+| `getAppleAdsAttributionToken()` | `Promise<string \| undefined>` | iOS 14.3+ / Android | Apple AdServices attribution token on iOS (`undefined` on Android). |
 | `markBootSuccess()` / `getConsecutiveBootFailCount()` / `incrementConsecutiveBootFailCount()` / `setConsecutiveBootFailCount(count)` / `getAndClearRecoveryAction()` | varies | iOS, Android | Boot-failure counter and one-shot recovery action. |
 | `exitApp()` | `void` | iOS, Android | Terminates the app process. |
 
 See [`src/ReactNativeDeviceUtils.nitro.ts`](src/ReactNativeDeviceUtils.nitro.ts)
 for full signatures, result types and enum values.
+
+On iOS, `AppTransaction.shared` may require network connectivity. A genuine
+App Store or TestFlight install can temporarily return `unknown` when the
+transaction is unavailable or the user is signed out.
 
 ## Platform support
 
