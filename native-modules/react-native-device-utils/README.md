@@ -87,6 +87,7 @@ values are native copies, not retained JS objects.
 | `isDualScreenDevice()` / `isSpanning()` | `boolean` | iOS, Android | Foldable detection and spanning state. |
 | `getWindowRects()` / `getHingeBounds()` | `Promise<DualScreenInfoRect[]>` / `Promise<DualScreenInfoRect>` | iOS, Android | Window and hinge geometry; iOS keeps empty/zero results. |
 | `getWindowControlsInsets()` + change listeners | `WindowControlsInsets` / listener ID | iOS 26+ | Room taken by system window controls; zero elsewhere. |
+| `getInterfaceOrientation()` + change listeners | `InterfaceOrientation` / listener ID | iOS 16+ | Orientation of the key window's scene, including rotations a presented screen forces; `unknown` elsewhere. |
 | `setMainMenuConfig(config)` + command listeners | `void` / listener ID | iOS (iPadOS) | Rebuilds the iPadOS app menu; Android ignores it. |
 | `setNavigationBarAppearance(r, g, b, a, useDarkIcons)` | `void` | Android | Applies the navigation-bar color and icon style; no-op on iOS. |
 | `getCurrentWebViewPackageInfo()` / `isGooglePlayServicesAvailable()` | `Promise<WebViewPackageInfo>` / `Promise<GooglePlayServicesStatus>` | Android | WebView package and Play Services status. |
@@ -105,6 +106,7 @@ for full signatures, result types and enum values.
 | In-memory primitive store | ✅ | ✅ | — |
 | Dual-screen detection and spanning listeners | ✅ foldable iPhone | ✅ | — |
 | Window controls insets | ✅ iOS 26+ | — | — |
+| Interface orientation | ✅ iOS 16+ | — | — |
 | iPadOS main menu | ✅ iPadOS | — | — |
 | Navigation-bar appearance | — | ✅ | — |
 | WebView / Play Services / installer inspection | — | ✅ | — |

@@ -152,6 +152,18 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         WindowControlsInsetsObserver.shared.removeListener(id)
     }
 
+    func getInterfaceOrientation() throws -> InterfaceOrientation {
+        return InterfaceOrientationObserver.shared.currentOrientation
+    }
+
+    func addInterfaceOrientationChangedListener(callback: @escaping (InterfaceOrientation) -> Void) throws -> Double {
+        return InterfaceOrientationObserver.shared.addListener(callback)
+    }
+
+    func removeInterfaceOrientationChangedListener(id: Double) throws -> Void {
+        InterfaceOrientationObserver.shared.removeListener(id)
+    }
+
     func setMainMenuConfig(config: MainMenuConfig) throws -> Void {
         MainMenuController.shared.setConfig(config)
     }
