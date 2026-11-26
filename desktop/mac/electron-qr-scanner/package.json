@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test test/*.test.cjs",
+    "test": "node --test test/*.test.cjs ../../scripts/qr-scanner-pause.test.mjs",
     "test:electron": "electron test/electron.cjs",
     "test:preview": "electron test/preview.cjs",
     "test:camera": "electron test/camera-live.cjs"
