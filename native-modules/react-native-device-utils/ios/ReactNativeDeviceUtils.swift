@@ -76,8 +76,22 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
     // Set from this object's JS thread; read once more when it is released.
     private var hasInterfaceOrientationListeners = false
+    private let injectedInterfaceOrientationObserver: InterfaceOrientationObserver?
+
+    // Resolved on first use, so creating DeviceUtils does not start observing.
+    private var interfaceOrientationObserver: InterfaceOrientationObserver {
+        injectedInterfaceOrientationObserver ?? InterfaceOrientationObserver.shared
+    }
 
     override init() {
+        injectedInterfaceOrientationObserver = nil
+        super.init()
+        restoreUserInterfaceStyle()
+    }
+
+    /// Tests pass an observer that does not watch a window scene.
+    init(interfaceOrientationObserver: InterfaceOrientationObserver) {
+        injectedInterfaceOrientationObserver = interfaceOrientationObserver
         super.init()
         restoreUserInterfaceStyle()
     }
@@ -86,7 +100,7 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         // A JS runtime torn down without removing its listeners releases this
         // object; its listeners must not outlive it in the process-wide table.
         if hasInterfaceOrientationListeners {
-            InterfaceOrientationObserver.shared.removeListeners(ownedBy: self)
+            interfaceOrientationObserver.removeListeners(ownedBy: self)
         }
     }
 
@@ -164,16 +178,16 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     }
 
     func getInterfaceOrientation() throws -> InterfaceOrientation {
-        return InterfaceOrientationObserver.shared.currentOrientation
+        return interfaceOrientationObserver.currentOrientation
     }
 
     func addInterfaceOrientationChangedListener(callback: @escaping (InterfaceOrientation) -> Void) throws -> Double {
         hasInterfaceOrientationListeners = true
-        return InterfaceOrientationObserver.shared.addListener(callback, owner: self)
+        return interfaceOrientationObserver.addListener(callback, owner: self)
     }
 
     func removeInterfaceOrientationChangedListener(id: Double) throws -> Void {
-        InterfaceOrientationObserver.shared.removeListener(id)
+        interfaceOrientationObserver.removeListener(id)
     }
 
     func setMainMenuConfig(config: MainMenuConfig) throws -> Void {

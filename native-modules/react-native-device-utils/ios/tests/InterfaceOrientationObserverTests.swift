@@ -69,4 +69,24 @@ final class InterfaceOrientationObserverTests: XCTestCase {
         XCTAssertEqual(releasedCalls, 0)
         XCTAssertEqual(remainingCalls, 1)
     }
+
+    func testReleasingDeviceUtilsReleasesTheListenersItAdded() throws {
+        let observer = InterfaceOrientationObserver(observesKeyWindowScene: false)
+        var deviceUtils: ReactNativeDeviceUtils? =
+            ReactNativeDeviceUtils(interfaceOrientationObserver: observer)
+        weak var weakSentinel: Owner?
+        try autoreleasepool {
+            let sentinel = Owner()
+            weakSentinel = sentinel
+            _ = try deviceUtils?.addInterfaceOrientationChangedListener { _ in
+                _ = sentinel
+            }
+        }
+        XCTAssertNotNil(weakSentinel, "The observer holds the listener while DeviceUtils lives")
+
+        // The JS runtime goes away without removing its listener.
+        deviceUtils = nil
+
+        XCTAssertNil(weakSentinel, "Releasing DeviceUtils must release its listener")
+    }
 }

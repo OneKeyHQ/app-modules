@@ -494,12 +494,14 @@ listener table.
   the value through `receive(_:)`: each landscape side notifies once, a
   repeated value does not notify, every UIKit orientation maps to its value,
   and removed listeners and the listeners of a released owner are not called.
-  It does not cover the scene observation, which needs a UIKit window scene.
+  It also releases a `ReactNativeDeviceUtils` that still has a listener and
+  checks that the listener's callback is released with it. It does not cover
+  the scene observation, which needs a UIKit window scene.
 - Runtime verified: the value after a presented controller forces landscape
   from a portrait-locked root, from either device side, and 180-degree
   rotations while in landscape. Remaining acceptance: the return to portrait on
   hardware, iOS 15 returning `unknown`, a scene disconnect with multiple
-  scenes, and a JS reload releasing its listeners.
+  scenes, and a JS reload releasing DeviceUtils on a device.
 
 # DeviceUtils: main menu
 
