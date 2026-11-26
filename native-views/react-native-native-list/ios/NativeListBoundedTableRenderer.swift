@@ -3,6 +3,11 @@ import UIKit
 private final class TableActionButton: NativeListIconButton {
   var actionKey = ""
   var hitInsets = UIEdgeInsets.zero
+  // Action keys use JavaScript string identity across rebinds.
+  func matchesActionKey(_ key: String) -> Bool {
+    actionKey.utf16.elementsEqual(key.utf16)
+  }
+
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
     isEnabled && bounds.inset(by: hitInsets).contains(point)
   }
@@ -19,14 +24,14 @@ private final class TableCellContent: UIView {
   func bindActions(_ actions: [[String: Any]], disabled: Bool, color: UIColor) {
     let descriptors = actions.prefix(2)
     for index in iconButtons.indices.reversed() where !descriptors.contains(where: {
-      $0.string("actionKey") == iconButtons[index].actionKey
+      iconButtons[index].matchesActionKey($0.string("actionKey"))
     }) {
       removeIcon(at: index)
     }
     iconButtons = descriptors.map { action in
       let key = action.string("actionKey")
       let icon: TableActionButton
-      if let existing = iconButtons.first(where: { $0.actionKey == key }) {
+      if let existing = iconButtons.first(where: { $0.matchesActionKey(key) }) {
         icon = existing
       } else {
         icon = TableActionButton(type: .custom)

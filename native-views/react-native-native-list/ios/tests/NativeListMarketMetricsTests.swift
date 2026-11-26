@@ -75,10 +75,15 @@ final class NativeListMarketMetricsTests: XCTestCase {
   func testBoundedTableInlineActionsAndReuse() throws {
     let cell = NativeListBoundedTableCell(frame: CGRect(x: 0, y: 0, width: 320, height: 56))
     var data = try item().data
-    let actions = [["name": "Copy3Outline", "actionKey": "copy", "accessibilityLabel": "Copy"],
-                   ["name": "OpenOutline", "actionKey": "open", "accessibilityLabel": "Explorer"]]
-    var received: [String] = []
-    cell.onAction = { _, key, _, _ in received.append(key) }
+    // JavaScript distinguishes the UTF-16 spellings of these canonically equivalent keys.
+    let copyKey = "\u{e9}"
+    let openKey = "e\u{301}"
+    let actions = [["name": "Copy3Outline", "actionKey": copyKey, "accessibilityLabel": "Copy"],
+                   ["name": "OpenOutline", "actionKey": openKey, "accessibilityLabel": "Explorer"]]
+    let copyUnits = Array(copyKey.utf16)
+    let openUnits = Array(openKey.utf16)
+    var received: [[UInt16]] = []
+    cell.onAction = { _, key, _, _ in received.append(Array(key.utf16)) }
     func bind(_ placement: String, _ actions: [[String: String]]) throws {
       data["tableColumns"] = [["key":"address", "text":"Address", "actions": actions, "actionPlacement":placement], ["key":"value","text":"42"]]
       cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
@@ -107,7 +112,7 @@ final class NativeListMarketMetricsTests: XCTestCase {
         _ = target.perform(NSSelectorFromString(selector), with: button)
       }
     }
-    XCTAssertEqual(received, ["copy","open","copy","open"])
+    XCTAssertEqual(received, [copyUnits, openUnits, copyUnits, openUnits])
     let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
     let pressed = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListIconButton }.first)
     let target = try XCTUnwrap(pressed.allTargets.first as? NSObject)
@@ -118,19 +123,19 @@ final class NativeListMarketMetricsTests: XCTestCase {
     try bind("below", actions)
     XCTAssertTrue(pressed.superview === column)
     _ = target.perform(release, with: pressed)
-    XCTAssertEqual(received, ["copy"])
+    XCTAssertEqual(received, [copyUnits])
     let originalX = pressed.frame.midX
     try bind("below", Array(actions.reversed()))
     XCTAssertGreaterThan(pressed.frame.midX, originalX)
     XCTAssertTrue(column.hitTest(pressed.center, with: nil) === pressed)
     _ = target.perform(release, with: pressed)
-    XCTAssertEqual(received, ["copy", "copy"])
+    XCTAssertEqual(received, [copyUnits, copyUnits])
     var replaced = actions
     replaced[0]["actionKey"] = "explorer"
     try bind("below", replaced)
     XCTAssertNil(pressed.superview)
     _ = target.perform(release, with: pressed)
-    XCTAssertEqual(received, ["copy", "copy"])
+    XCTAssertEqual(received, [copyUnits, copyUnits])
     try bind("inline", [])
     XCTAssertFalse(cell.root.arrangedSubviews.first!.subviews[0].subviews.contains { $0 is NativeListIconButton })
   }
