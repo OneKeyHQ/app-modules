@@ -479,6 +479,10 @@ interface QrImageSymbolsResult {
   - Both paths use the platform's existing preview-to-camera transform.
     Focus work and its indicator are scoped to the active camera, and queued
     decoding work already dispatched before a freeze is retired on unfreeze.
+    React wrappers must also retire old frame callbacks at delivery because
+    Nitro may already have queued them. On iOS, the capture clock cutoff on
+    resume excludes metadata captured earlier. Android decoder failures and
+    repeat tracking only accept the current freeze revision.
     Host verification for programmatic focus on physical iOS and Android
     cameras is pending.
 - **Web (`./web`)**:

@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - desktop/win/electron-qr-scanner/**
+      - desktop/mac/electron-qr-scanner/index.cjs
       - desktop/mac/electron-qr-scanner/test/fixtures/**
+      - native-views/react-native-qr-scanner/ios/tests/fixtures/**
       - desktop/scripts/qr-scanner-pause.test.mjs
       - .github/workflows/desktop-qr-scanner-check.yml
 

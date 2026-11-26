@@ -10,7 +10,7 @@ import policy from "./verify-desktop-modules.cjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageName = "@onekeyfe/electron-qr-scanner";
-const version = "44.0.2-alpha.2";
+const version = "44.0.2-alpha.3";
 const electron = "44.5.1";
 const repository = "OneKeyHQ/app-modules";
 const workflow = `${repository}/.github/workflows/desktop-qr-scanner-preview.yml`;

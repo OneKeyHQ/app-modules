@@ -391,6 +391,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     main.post {
       if (dropped) return@post
       val previous = callbacks
+      if (previous.frozen != nextFrozen) gate.resetRepeatFilter()
       callbacks = nextCallbacks.copy(
         freezeRevision = previous.freezeRevision + if (previous.frozen == nextFrozen) 0L else 1L,
       )
@@ -742,9 +743,12 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     if (useCases.isNotEmpty()) cameraProvider?.unbind(*useCases.toTypedArray())
   }
 
-  private fun reportDecodeFailure(generation: Int) {
+  private fun reportDecodeFailure(generation: Int, freezeRevision: Long) {
     main.post {
-      if (!running || gate.currentGeneration != generation) return@post
+      if (
+        !running || gate.currentGeneration != generation ||
+        callbacks.frozen || callbacks.freezeRevision != freezeRevision
+      ) return@post
       val now = SystemClock.elapsedRealtime()
       val last = lastDecodeFailureAt
       if (last != null && now - last < DECODE_ERROR_INTERVAL_MS) return@post
@@ -789,7 +793,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       scanner.process(input)
     } catch (_: RuntimeException) {
       proxy.close()
-      reportDecodeFailure(generation)
+      reportDecodeFailure(generation, frameCallbacks.freezeRevision)
       return
     }
     task
@@ -871,18 +875,18 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
         val texts = barcodes.mapNotNull { it.rawValue }
         if (texts.isEmpty()) return@addOnSuccessListener
-        val reports = gate.filter(texts, SystemClock.elapsedRealtime(), generation)
-        if (reports.isNotEmpty()) main.post {
+        main.post {
           if (
             gate.currentGeneration != generation || isFrozenMain ||
             callbacks.freezeRevision != frameCallbacks.freezeRevision
           ) return@post
+          val reports = gate.filter(texts, SystemClock.elapsedRealtime(), generation)
           for (report in reports) frameCallbacks.frame?.invoke(report.text, report.generation.toDouble())
         }
       }
       .addOnCompleteListener(analysisExecutor) { result ->
         proxy.close()
-        if (!result.isSuccessful && !result.isCanceled) reportDecodeFailure(generation)
+        if (!result.isSuccessful && !result.isCanceled) reportDecodeFailure(generation, frameCallbacks.freezeRevision)
       }
   }
 }

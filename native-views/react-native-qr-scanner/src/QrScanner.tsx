@@ -116,11 +116,14 @@ export function QrScanner({
 
   const captureIdentity = useMemo(() => ({}), [active, cameraId]);
   const sessionIdentity = useMemo(() => ({}), [captureIdentity, session]);
-  const committed = useRef<{ capture: object; session: object } | undefined>(undefined);
+  const frameIdentity = useMemo(() => ({}), [sessionIdentity, frozen]);
+  const committed = useRef<{ capture: object; session: object; frame?: object } | undefined>(undefined);
   useLayoutEffect(() => {
-    committed.current = active ? { capture: captureIdentity, session: sessionIdentity } : undefined;
+    committed.current = active
+      ? { capture: captureIdentity, session: sessionIdentity, frame: frozen ? undefined : frameIdentity }
+      : undefined;
     return () => { committed.current = undefined; };
-  }, [active, captureIdentity, sessionIdentity]);
+  }, [active, captureIdentity, frameIdentity, frozen, sessionIdentity]);
 
   const nativeOnReady = useMemo(
     () => callback((generation: number, boundCameraId: string) => {
@@ -133,9 +136,11 @@ export function QrScanner({
   const sessionCallbacks = useMemo(() => {
     const accept = (generation: number) =>
       committed.current?.session === sessionIdentity && acceptGeneration(generation);
+    const acceptFrame = (generation: number) =>
+      committed.current?.frame === frameIdentity && accept(generation);
     return {
       onFrameText: callback((text: string, generation: number) => {
-        if (!accept(generation)) return;
+        if (!acceptFrame(generation)) return;
         if (handlers.current.onFrameText) {
           try {
             handlers.current.onFrameText(text);
@@ -160,7 +165,7 @@ export function QrScanner({
       }),
       onFrameSymbols: hasOnFrameSymbols
         ? callback((symbols: QrDetectedSymbol[], generation: number) => {
-            if (!accept(generation)) return;
+            if (!acceptFrame(generation)) return;
             handlers.current.onFrameSymbols?.(symbols);
           })
         : undefined,
@@ -174,7 +179,7 @@ export function QrScanner({
         );
       }),
     };
-  }, [acceptGeneration, hasOnFrameSymbols, session, sessionIdentity]);
+  }, [acceptGeneration, frameIdentity, hasOnFrameSymbols, session, sessionIdentity]);
 
   return (
     <QrScannerView

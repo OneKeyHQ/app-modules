@@ -1990,14 +1990,14 @@ impl CaptureController {
                         continue;
                     }
 
-                    if let Some(text) =
-                        decode_qr_luma(&frame.luma, frame.width as i32, frame.height as i32, true)
+                    let text =
+                        decode_qr_luma(&frame.luma, frame.width as i32, frame.height as i32, true);
+                    if decode_gen.load(Ordering::Acquire) != frame.generation
+                        || decode_revision.load(Ordering::Acquire) != frame.analysis_revision
                     {
-                        if decode_gen.load(Ordering::Acquire) != frame.generation
-                            || decode_revision.load(Ordering::Acquire) != frame.analysis_revision
-                        {
-                            continue;
-                        }
+                        continue;
+                    }
+                    if let Some(text) = text {
                         if let Ok(mut fc) = decode_focus.lock() {
                             if let Some(handle) = fc.as_mut() {
                                 handle.on_qr_detected(frame.generation, now);

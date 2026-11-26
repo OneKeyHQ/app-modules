@@ -1010,22 +1010,29 @@ it('drops an in-flight frame across freeze and resume and delivers a new frame',
   });
   const onFrameSymbols = jest.fn();
   const scanner = createWebQrScanner({ video, source: { kind: 'element' }, mode: 'static', onFrameSymbols });
-  await scanner.start();
-  await jest.advanceTimersByTimeAsync(100);
-  expect(detect).toHaveBeenCalledTimes(1);
+  const originalImageData = Object.getOwnPropertyDescriptor(globalThis, 'ImageData');
+  Object.defineProperty(globalThis, 'ImageData', { configurable: true, value: class {} });
+  try {
+    await scanner.start();
+    await jest.advanceTimersByTimeAsync(100);
+    expect(detect).toHaveBeenCalledTimes(1);
 
-  scanner.setFrozen(true);
-  scanner.setFrozen(false);
-  oldFrame.resolve([{ rawValue: 'stale' }]);
-  await jest.advanceTimersByTimeAsync(100);
-  expect(onFrameSymbols).not.toHaveBeenCalled();
-  expect(detect).toHaveBeenCalledTimes(1);
+    scanner.setFrozen(true);
+    scanner.setFrozen(false);
+    oldFrame.resolve([{ rawValue: 'stale' }]);
+    await jest.advanceTimersByTimeAsync(100);
+    expect(onFrameSymbols).not.toHaveBeenCalled();
+    expect(detect).toHaveBeenCalledTimes(1);
 
-  video.currentTime = 2;
-  await jest.advanceTimersByTimeAsync(100);
-  expect(onFrameSymbols).toHaveBeenCalledTimes(1);
-  expect(onFrameSymbols).toHaveBeenCalledWith(
-    expect.objectContaining({ symbols: [expect.objectContaining({ text: 'fresh' })] })
-  );
-  scanner.dispose();
+    video.currentTime = 2;
+    await jest.advanceTimersByTimeAsync(100);
+    expect(onFrameSymbols).toHaveBeenCalledTimes(1);
+    expect(onFrameSymbols).toHaveBeenCalledWith(
+      expect.objectContaining({ symbols: [expect.objectContaining({ text: 'fresh' })] })
+    );
+  } finally {
+    scanner.dispose();
+    if (originalImageData) Object.defineProperty(globalThis, 'ImageData', originalImageData);
+    else Reflect.deleteProperty(globalThis, 'ImageData');
+  }
 });
