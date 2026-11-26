@@ -148,6 +148,11 @@ func testFirstLaunchHistory() throws {
     precondition(!fresh.isFirstLaunchForBundle(nil))
     precondition(fresh.isFirstLaunchForBundle("1000") && fresh.isFirstLaunchForBundle("1000"))
     precondition(fresh.isFirstLaunchForBundle(nil))
+    // Explicit lookup of another bundle must not overwrite zero-arg startup bundle result.
+    precondition(!fresh.isFirstLaunchForBundle("999"))
+    precondition(fresh.isFirstLaunchForBundle(nil))
+    // Reject non-numeric version core and traversal strings.
+    precondition(!fresh.isFirstLaunchForBundle("v1000"))
     precondition(!fresh.isFirstLaunchForBundle("../escape"))
 
     let restart = launch("6.5.0")
@@ -155,7 +160,7 @@ func testFirstLaunchHistory() throws {
     precondition(!restart.isFirstLaunchForBundle("1000"))
     precondition(!restart.isFirstLaunchForBundle(nil))
     precondition(restart.isFirstLaunchForBundle("1001") && restart.isFirstLaunchForBundle("1001"))
-    precondition(restart.isFirstLaunchForBundle(nil))
+    precondition(!restart.isFirstLaunchForBundle(nil))
 
     let rollback = launch("6.5.0")
     precondition(!rollback.isFirstLaunch && !rollback.isFirstLaunchForCurrentAppVersion)
@@ -186,6 +191,18 @@ func testFirstLaunchHistory() throws {
         hasPreviousLaunch: true
     )
     precondition(!legacyUpgraded.isFirstLaunch && legacyUpgraded.isFirstLaunchForCurrentAppVersion)
+
+    // Corrupted files (empty, invalid JSON, invalid version string) must fail closed without overwriting.
+    for (idx, bad) in ["", "not-json", "{}", "{\"hasLaunched\":true,\"highestAppVersion\":\"6.6.0!\"}"].enumerated() {
+        let corruptDir = directory.appendingPathComponent("corrupt-\(idx)")
+        try FileManager.default.createDirectory(at: corruptDir, withIntermediateDirectories: true)
+        let corruptFile = corruptDir.appendingPathComponent(FirstLaunchHistory.fileName)
+        try bad.data(using: .utf8)!.write(to: corruptFile)
+        let corrupted = FirstLaunchHistory(directory: corruptDir, appVersion: "6.5.0", previousAppVersion: nil, hasPreviousLaunch: false)
+        precondition(!corrupted.isFirstLaunch && !corrupted.isFirstLaunchForCurrentAppVersion && !corrupted.isFirstLaunchForBundle("1000"))
+        let remaining = try String(contentsOf: corruptFile, encoding: .utf8)
+        precondition(remaining == bad)
+    }
 
     let file = directory.appendingPathComponent("file")
     try Data().write(to: file)

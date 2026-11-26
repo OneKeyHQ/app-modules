@@ -21,21 +21,24 @@ interface PersistedFirstLaunchState {
 }
 
 export const FIRST_LAUNCH_STORAGE_KEY = 'onekey:device-utils:first-launch';
-const invalidVersionCharacter = /[^0-9A-Za-z._+-]/;
+const validVersionPattern =
+  /^[0-9]+(?:\.[0-9]+)*(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const digitsOnly = /^[0-9]+$/;
 
-let cachedFirstLaunch: boolean | undefined;
-let cachedAppVersionResult: boolean | undefined;
-let cachedAppVersion: string | undefined;
+let initialized = false;
+let storageAvailable = false;
+let cachedFirstLaunch = false;
+let startupAppVersion: string | undefined;
+let startupBundleVersion: string | undefined;
+const cachedAppResults = new Map<string, boolean>();
 const cachedBundleResults = new Map<string, boolean>();
-let lastBundleVersion: string | undefined;
 
-function isValidVersion(version?: string | null): version is string {
+function isValidVersion(version?: unknown): version is string {
   return (
     typeof version === 'string' &&
     version.length > 0 &&
     version.length <= 120 &&
-    !invalidVersionCharacter.test(version)
+    validVersionPattern.test(version)
   );
 }
 
@@ -132,6 +135,18 @@ function getStorage(): Storage | null {
   }
 }
 
+function parseOptionalVersionField(
+  value: unknown
+): { ok: true; value: string | null } | { ok: false } {
+  if (value === undefined || value === null) {
+    return { ok: true, value: null };
+  }
+  if (isValidVersion(value)) {
+    return { ok: true, value };
+  }
+  return { ok: false };
+}
+
 function readState(
   storage: Storage,
   legacyAppVersion?: string
@@ -153,16 +168,28 @@ function readState(
         existed: false,
       };
     }
-    const parsed = JSON.parse(raw) as Partial<PersistedFirstLaunchState> | null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return null;
+    }
+    const record = parsed as Record<string, unknown>;
+    if (typeof record.hasLaunched !== 'boolean') {
+      return null;
+    }
+    const appField = parseOptionalVersionField(record.highestAppVersion);
+    const bundleField = parseOptionalVersionField(record.highestBundleVersion);
+    if (!appField.ok || !bundleField.ok) {
+      return null;
+    }
     return {
       state: {
-        hasLaunched: parsed?.hasLaunched === true,
-        highestAppVersion: isValidVersion(parsed?.highestAppVersion)
-          ? parsed.highestAppVersion
-          : null,
-        highestBundleVersion: isValidVersion(parsed?.highestBundleVersion)
-          ? parsed.highestBundleVersion
-          : null,
+        hasLaunched: record.hasLaunched,
+        highestAppVersion: appField.value,
+        highestBundleVersion: bundleField.value,
       },
       existed: true,
     };
@@ -183,65 +210,130 @@ function writeState(
   }
 }
 
-function ensureFirstLaunch(
-  isLegacyInstall = false,
-  legacyAppVersion?: string
-): boolean {
-  if (cachedFirstLaunch !== undefined) {
-    return cachedFirstLaunch;
+export function initFirstLaunch(options?: FirstLaunchInitOptions): void {
+  if (initialized) {
+    return;
   }
+  initialized = true;
+
+  const validAppVersion = isValidVersion(options?.appVersion)
+    ? options.appVersion
+    : undefined;
+  const validBundleVersion = isValidVersion(options?.bundleVersion)
+    ? options.bundleVersion
+    : undefined;
+  startupAppVersion = validAppVersion;
+  startupBundleVersion = validBundleVersion;
+
+  const failClosed = () => {
+    storageAvailable = false;
+    cachedFirstLaunch = false;
+    if (validAppVersion !== undefined) {
+      cachedAppResults.set(validAppVersion, false);
+    }
+    if (validBundleVersion !== undefined) {
+      cachedBundleResults.set(validBundleVersion, false);
+    }
+  };
+
   const storage = getStorage();
   if (!storage) {
-    cachedFirstLaunch = false;
-    return false;
+    failClosed();
+    return;
   }
-  const loaded = readState(storage, legacyAppVersion);
+
+  const isLegacyInstall = options?.isLegacyInstall === true;
+  const loaded = readState(storage, options?.legacyAppVersion);
   if (!loaded) {
-    cachedFirstLaunch = false;
-    return false;
+    failClosed();
+    return;
   }
+
   const { state, existed } = loaded;
-  if (state.hasLaunched) {
-    cachedFirstLaunch = false;
+  const nextState: PersistedFirstLaunchState = { ...state };
+  let needsWrite = !existed;
+
+  const computedFirstLaunch = !state.hasLaunched && !isLegacyInstall;
+  if (!state.hasLaunched) {
+    nextState.hasLaunched = true;
+    needsWrite = true;
+  }
+
+  let computedAppVersion = false;
+  if (validAppVersion !== undefined) {
+    computedAppVersion =
+      nextState.highestAppVersion === null ||
+      compareVersions(validAppVersion, nextState.highestAppVersion) > 0;
+    if (computedAppVersion) {
+      nextState.highestAppVersion = validAppVersion;
+      needsWrite = true;
+    }
+  }
+
+  let computedBundleVersion = false;
+  if (validBundleVersion !== undefined) {
+    computedBundleVersion =
+      nextState.highestBundleVersion === null ||
+      compareVersions(validBundleVersion, nextState.highestBundleVersion) > 0;
+    if (computedBundleVersion) {
+      nextState.highestBundleVersion = validBundleVersion;
+      needsWrite = true;
+    }
+  }
+
+  if (needsWrite && !writeState(storage, nextState)) {
+    failClosed();
+    return;
+  }
+
+  storageAvailable = true;
+  cachedFirstLaunch = computedFirstLaunch;
+  if (validAppVersion !== undefined) {
+    cachedAppResults.set(validAppVersion, computedAppVersion);
+  }
+  if (validBundleVersion !== undefined) {
+    cachedBundleResults.set(validBundleVersion, computedBundleVersion);
+  }
+}
+
+export function isFirstLaunch(): boolean {
+  if (!initialized) {
     return false;
   }
-  const nextState: PersistedFirstLaunchState = {
-    ...state,
-    hasLaunched: true,
-  };
-  if (!writeState(storage, nextState)) {
-    cachedFirstLaunch = false;
-    return false;
-  }
-  cachedFirstLaunch = existed ? false : !isLegacyInstall;
   return cachedFirstLaunch;
 }
 
-function resolveAppVersion(
-  appVersion?: string,
-  isLegacyInstall = false,
-  legacyAppVersion?: string
+export function isFirstLaunchForCurrentAppVersion(
+  appVersion?: string
 ): boolean {
+  if (!initialized) {
+    return false;
+  }
   if (appVersion === undefined) {
-    return cachedAppVersionResult ?? false;
+    return startupAppVersion !== undefined
+      ? (cachedAppResults.get(startupAppVersion) ?? false)
+      : false;
   }
   if (!isValidVersion(appVersion)) {
     return false;
   }
-  if (cachedAppVersionResult !== undefined && cachedAppVersion === appVersion) {
-    return cachedAppVersionResult;
+  const cached = cachedAppResults.get(appVersion);
+  if (cached !== undefined) {
+    return cached;
   }
-  ensureFirstLaunch(isLegacyInstall, legacyAppVersion);
-  const storage = getStorage();
-  if (!storage) {
-    cachedAppVersion = appVersion;
-    cachedAppVersionResult = false;
+  if (!storageAvailable) {
+    cachedAppResults.set(appVersion, false);
     return false;
   }
-  const loaded = readState(storage, legacyAppVersion);
+  const storage = getStorage();
+  if (!storage) {
+    cachedAppResults.set(appVersion, false);
+    return false;
+  }
+  const loaded = readState(storage);
   if (!loaded) {
-    cachedAppVersion = appVersion;
-    cachedAppVersionResult = false;
+    storageAvailable = false;
+    cachedAppResults.set(appVersion, false);
     return false;
   }
   const { state } = loaded;
@@ -255,24 +347,23 @@ function resolveAppVersion(
       highestAppVersion: appVersion,
     };
     if (!writeState(storage, nextState)) {
-      cachedAppVersion = appVersion;
-      cachedAppVersionResult = false;
+      cachedAppResults.set(appVersion, false);
       return false;
     }
   }
-  cachedAppVersion = appVersion;
-  cachedAppVersionResult = isHigher;
+  cachedAppResults.set(appVersion, isHigher);
   return isHigher;
 }
 
-function resolveBundleVersion(
-  bundleVersion?: string,
-  isLegacyInstall = false,
-  legacyAppVersion?: string
+export function isFirstLaunchForCurrentBundle(
+  bundleVersion?: string
 ): boolean {
+  if (!initialized) {
+    return false;
+  }
   if (bundleVersion === undefined) {
-    return lastBundleVersion !== undefined
-      ? (cachedBundleResults.get(lastBundleVersion) ?? false)
+    return startupBundleVersion !== undefined
+      ? (cachedBundleResults.get(startupBundleVersion) ?? false)
       : false;
   }
   if (!isValidVersion(bundleVersion)) {
@@ -280,20 +371,21 @@ function resolveBundleVersion(
   }
   const cached = cachedBundleResults.get(bundleVersion);
   if (cached !== undefined) {
-    lastBundleVersion = bundleVersion;
     return cached;
   }
-  ensureFirstLaunch(isLegacyInstall, legacyAppVersion);
+  if (!storageAvailable) {
+    cachedBundleResults.set(bundleVersion, false);
+    return false;
+  }
   const storage = getStorage();
   if (!storage) {
     cachedBundleResults.set(bundleVersion, false);
-    lastBundleVersion = bundleVersion;
     return false;
   }
-  const loaded = readState(storage, legacyAppVersion);
+  const loaded = readState(storage);
   if (!loaded) {
+    storageAvailable = false;
     cachedBundleResults.set(bundleVersion, false);
-    lastBundleVersion = bundleVersion;
     return false;
   }
   const { state } = loaded;
@@ -308,43 +400,9 @@ function resolveBundleVersion(
     };
     if (!writeState(storage, nextState)) {
       cachedBundleResults.set(bundleVersion, false);
-      lastBundleVersion = bundleVersion;
       return false;
     }
   }
   cachedBundleResults.set(bundleVersion, isHigher);
-  lastBundleVersion = bundleVersion;
   return isHigher;
-}
-
-export function initFirstLaunch(options?: FirstLaunchInitOptions): void {
-  const isLegacyInstall = options?.isLegacyInstall === true;
-  const legacyAppVersion = options?.legacyAppVersion;
-  ensureFirstLaunch(isLegacyInstall, legacyAppVersion);
-  if (options?.appVersion !== undefined) {
-    resolveAppVersion(options.appVersion, isLegacyInstall, legacyAppVersion);
-  }
-  if (options?.bundleVersion !== undefined) {
-    resolveBundleVersion(
-      options.bundleVersion,
-      isLegacyInstall,
-      legacyAppVersion
-    );
-  }
-}
-
-export function isFirstLaunch(): boolean {
-  return ensureFirstLaunch();
-}
-
-export function isFirstLaunchForCurrentAppVersion(
-  appVersion?: string
-): boolean {
-  return resolveAppVersion(appVersion);
-}
-
-export function isFirstLaunchForCurrentBundle(
-  bundleVersion?: string
-): boolean {
-  return resolveBundleVersion(bundleVersion);
 }

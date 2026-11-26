@@ -1,6 +1,7 @@
 package com.margelo.nitro.reactnativedeviceutils
 
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 
 internal class FirstLaunchHistory(
@@ -22,7 +23,7 @@ internal class FirstLaunchHistory(
   private var persisted: PersistedState
   private val storageAvailable: Boolean
   private val bundleResults = mutableMapOf<String, Boolean>()
-  private var lastBundleVersion: String? = null
+  private var initialBundleVersion: String? = null
 
   init {
     val validPrevious = validatedVersion(previousAppVersion)
@@ -88,16 +89,17 @@ internal class FirstLaunchHistory(
   @Synchronized
   fun isFirstLaunchForBundle(bundleVersion: String?): Boolean {
     if (bundleVersion == null) {
-      return lastBundleVersion?.let { bundleResults[it] } ?: false
+      return initialBundleVersion?.let { bundleResults[it] } ?: false
     }
     val validBundle = validatedVersion(bundleVersion) ?: return false
+    if (initialBundleVersion == null) {
+      initialBundleVersion = validBundle
+    }
     bundleResults[validBundle]?.let {
-      lastBundleVersion = validBundle
       return it
     }
     if (!storageAvailable) {
       bundleResults[validBundle] = false
-      lastBundleVersion = validBundle
       return false
     }
     val baseline = persisted.highestBundleVersion
@@ -106,13 +108,11 @@ internal class FirstLaunchHistory(
       val next = persisted.copy(highestBundleVersion = validBundle)
       if (!writeState(next)) {
         bundleResults[validBundle] = false
-        lastBundleVersion = validBundle
         return false
       }
       persisted = next
     }
     bundleResults[validBundle] = isHigher
-    lastBundleVersion = validBundle
     return isHigher
   }
 
@@ -120,18 +120,7 @@ internal class FirstLaunchHistory(
     if (!file.isFile) {
       null
     } else {
-      val text = file.readText(Charsets.UTF_8)
-      val hasLaunched = Regex(""""hasLaunched"\s*:\s*(true|false)""")
-        .find(text)?.groupValues?.get(1) == "true"
-      val highestApp = Regex(""""highestAppVersion"\s*:\s*"([^"]*)"""")
-        .find(text)?.groupValues?.get(1)?.let(::validatedVersion)
-      val highestBundle = Regex(""""highestBundleVersion"\s*:\s*"([^"]*)"""")
-        .find(text)?.groupValues?.get(1)?.let(::validatedVersion)
-      PersistedState(
-        hasLaunched = hasLaunched,
-        highestAppVersion = highestApp,
-        highestBundleVersion = highestBundle,
-      )
+      parsePersistedJson(file.readText(Charsets.UTF_8))
     }
   } catch (_: IOException) {
     null
@@ -139,36 +128,175 @@ internal class FirstLaunchHistory(
     null
   }
 
-  private fun writeState(state: PersistedState): Boolean = try {
-    if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) {
-      false
-    } else if (!directory.isDirectory) {
-      false
-    } else {
-      val appJson = state.highestAppVersion?.let { "\"$it\"" } ?: "null"
-      val bundleJson = state.highestBundleVersion?.let { "\"$it\"" } ?: "null"
-      val json =
-        """{"hasLaunched":${state.hasLaunched},"highestAppVersion":$appJson,"highestBundleVersion":$bundleJson}"""
-      val temp = File(directory, "${stateFile.name}.tmp")
-      temp.writeText(json, Charsets.UTF_8)
-      if (!temp.renameTo(stateFile)) {
-        stateFile.writeText(json, Charsets.UTF_8)
-        temp.delete()
+  private fun writeState(state: PersistedState): Boolean {
+    var temp: File? = null
+    return try {
+      if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) {
+        false
+      } else if (!directory.isDirectory) {
+        false
+      } else {
+        val appJson = state.highestAppVersion?.let { "\"$it\"" } ?: "null"
+        val bundleJson = state.highestBundleVersion?.let { "\"$it\"" } ?: "null"
+        val json =
+          """{"hasLaunched":${state.hasLaunched},"highestAppVersion":$appJson,"highestBundleVersion":$bundleJson}"""
+        temp = File.createTempFile("${stateFile.name}.", ".tmp", directory)
+        FileOutputStream(temp).use { fos ->
+          fos.write(json.toByteArray(Charsets.UTF_8))
+          fos.fd.sync()
+        }
+        if (temp.renameTo(stateFile)) {
+          temp = null
+          true
+        } else {
+          false
+        }
       }
-      true
+    } catch (_: IOException) {
+      false
+    } catch (_: SecurityException) {
+      false
+    } finally {
+      temp?.delete()
     }
-  } catch (_: IOException) {
-    false
-  } catch (_: SecurityException) {
-    false
+  }
+
+  private fun parsePersistedJson(raw: String): PersistedState? {
+    var pos = 0
+    val len = raw.length
+
+    fun skipWs() {
+      while (pos < len && raw[pos] in " \t\r\n") pos++
+    }
+
+    fun readString(): String? {
+      if (pos >= len || raw[pos] != '"') return null
+      pos++
+      val sb = StringBuilder()
+      while (pos < len) {
+        val c = raw[pos++]
+        when {
+          c == '"' -> return sb.toString()
+          c == '\\' -> {
+            if (pos >= len) return null
+            val esc = raw[pos++]
+            when (esc) {
+              '"', '\\', '/' -> sb.append(esc)
+              'b' -> sb.append('\b')
+              'f' -> sb.append('\u000C')
+              'n' -> sb.append('\n')
+              'r' -> sb.append('\r')
+              't' -> sb.append('\t')
+              'u' -> {
+                if (pos + 4 > len) return null
+                val hex = raw.substring(pos, pos + 4)
+                val code = hex.toIntOrNull(16) ?: return null
+                sb.append(code.toChar())
+                pos += 4
+              }
+              else -> return null
+            }
+          }
+          c.code < 0x20 -> return null
+          else -> sb.append(c)
+        }
+      }
+      return null
+    }
+
+    fun readLiteral(expected: String): Boolean {
+      if (raw.regionMatches(pos, expected, 0, expected.length)) {
+        pos += expected.length
+        return true
+      }
+      return false
+    }
+
+    skipWs()
+    if (pos >= len || raw[pos] != '{') return null
+    pos++
+    skipWs()
+
+    var hasLaunched: Boolean? = null
+    var highestAppVersion: String? = null
+    var highestBundleVersion: String? = null
+    var sawAppKey = false
+    var sawBundleKey = false
+
+    if (pos < len && raw[pos] == '}') {
+      // Missing required hasLaunched field.
+      return null
+    }
+
+    while (true) {
+      skipWs()
+      val key = readString() ?: return null
+      skipWs()
+      if (pos >= len || raw[pos] != ':') return null
+      pos++
+      skipWs()
+      when (key) {
+        "hasLaunched" -> {
+          if (hasLaunched != null) return null
+          hasLaunched = when {
+            readLiteral("true") -> true
+            readLiteral("false") -> false
+            else -> return null
+          }
+        }
+        "highestAppVersion" -> {
+          if (sawAppKey) return null
+          sawAppKey = true
+          highestAppVersion = if (readLiteral("null")) {
+            null
+          } else {
+            val s = readString() ?: return null
+            validatedVersion(s) ?: return null
+          }
+        }
+        "highestBundleVersion" -> {
+          if (sawBundleKey) return null
+          sawBundleKey = true
+          highestBundleVersion = if (readLiteral("null")) {
+            null
+          } else {
+            val s = readString() ?: return null
+            validatedVersion(s) ?: return null
+          }
+        }
+        else -> return null
+      }
+      skipWs()
+      if (pos >= len) return null
+      when (raw[pos]) {
+        ',' -> pos++
+        '}' -> {
+          pos++
+          break
+        }
+        else -> return null
+      }
+    }
+
+    skipWs()
+    if (pos != len) return null
+    val resolvedHasLaunched = hasLaunched ?: return null
+    return PersistedState(
+      hasLaunched = resolvedHasLaunched,
+      highestAppVersion = highestAppVersion,
+      highestBundleVersion = highestBundleVersion,
+    )
   }
 
   companion object {
     internal const val FILE_NAME = "onekey-device-utils-first-launch.json"
 
+    private val VERSION_REGEX =
+      Regex("""^[0-9]+(?:\.[0-9]+)*(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$""")
+
     internal fun validatedVersion(version: String?): String? {
       if (version == null || version.length !in 1..120) return null
-      if (!version.all { it in '0'..'9' || it in 'A'..'Z' || it in 'a'..'z' || it in "._-+" }) return null
+      if (!VERSION_REGEX.matches(version)) return null
       return version
     }
 

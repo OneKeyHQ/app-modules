@@ -6,12 +6,17 @@ public final class DeviceUtilsFirstLaunch: NSObject {
     private static var history: FirstLaunchHistory?
 
     /// Returns true if the persisted first-launch state file already exists on disk.
-    /// Safe to call via `NSClassFromString("OneKeyDeviceUtilsFirstLaunch")` before
-    /// running host-specific legacy upgrade checks.
-    @objc public static func hasPersistedState() -> Bool {
+    public static func hasPersistedState() -> Bool {
         guard let directory = defaultDirectory() else { return false }
         let fileURL = directory.appendingPathComponent(FirstLaunchHistory.fileName)
         return FileManager.default.fileExists(atPath: fileURL.path)
+    }
+
+    /// Object-returning variant of `hasPersistedState()` safe for dynamic invocation
+    /// via `NSClassFromString("OneKeyDeviceUtilsFirstLaunch")` + `perform(_:)`.
+    @objc(hasPersistedStateNumber)
+    public static func hasPersistedStateNumber() -> NSNumber {
+        NSNumber(value: hasPersistedState())
     }
 
     /// Initializes the process-wide first-launch state from the host app (e.g. AppDelegate).
@@ -95,7 +100,7 @@ final class FirstLaunchHistory {
     private var persisted: PersistedState
     private var storageAvailable: Bool
     private var bundleResults: [String: Bool] = [:]
-    private var lastBundleVersion: String?
+    private var initialBundleVersion: String?
 
     init(directory: URL, appVersion: String?, previousAppVersion: String?, hasPreviousLaunch: Bool) {
         fileURL = directory.appendingPathComponent(Self.fileName)
@@ -159,18 +164,19 @@ final class FirstLaunchHistory {
 
     func isFirstLaunchForBundle(_ bundleVersion: String?) -> Bool {
         guard let bundleVersion else {
-            return lastBundleVersion.flatMap { bundleResults[$0] } ?? false
+            return initialBundleVersion.flatMap { bundleResults[$0] } ?? false
         }
         guard let validBundle = Self.validatedVersion(bundleVersion) else {
             return false
         }
+        if initialBundleVersion == nil {
+            initialBundleVersion = validBundle
+        }
         if let cached = bundleResults[validBundle] {
-            lastBundleVersion = validBundle
             return cached
         }
         guard storageAvailable else {
             bundleResults[validBundle] = false
-            lastBundleVersion = validBundle
             return false
         }
         let baseline = persisted.highestBundleVersion
@@ -180,13 +186,11 @@ final class FirstLaunchHistory {
             next.highestBundleVersion = validBundle
             guard Self.writeState(next, to: fileURL, directory: fileURL.deletingLastPathComponent()) else {
                 bundleResults[validBundle] = false
-                lastBundleVersion = validBundle
                 return false
             }
             persisted = next
         }
         bundleResults[validBundle] = isHigher
-        lastBundleVersion = validBundle
         return isHigher
     }
 
@@ -263,24 +267,31 @@ final class FirstLaunchHistory {
         }
     }
 
-    private static func validatedVersion(_ version: String?) -> String? {
-        guard let version, (1...120).contains(version.utf8.count),
-              version.utf8.allSatisfy({
-                  switch $0 {
-                  case 43, 45, 46, 48...57, 65...90, 95, 97...122: return true
-                  default: return false
-                  }
-              }) else { return nil }
+    static func validatedVersion(_ version: String?) -> String? {
+        guard let version, (1...120).contains(version.utf8.count) else { return nil }
+        let fullRange = NSRange(version.startIndex..<version.endIndex, in: version)
+        guard versionRegex.firstMatch(in: version, options: [], range: fullRange) != nil else {
+            return nil
+        }
         return version
     }
 
+    private static let versionRegex: NSRegularExpression = {
+        let pattern = "^[0-9]+(?:\\.[0-9]+)*(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        return try! NSRegularExpression(pattern: pattern, options: [])
+    }()
+
     private static func readState(from url: URL) -> PersistedState? {
         guard let data = try? Data(contentsOf: url),
-              var decoded = try? JSONDecoder().decode(PersistedState.self, from: data) else {
+              let decoded = try? JSONDecoder().decode(PersistedState.self, from: data) else {
             return nil
         }
-        decoded.highestAppVersion = validatedVersion(decoded.highestAppVersion)
-        decoded.highestBundleVersion = validatedVersion(decoded.highestBundleVersion)
+        if let app = decoded.highestAppVersion, validatedVersion(app) == nil {
+            return nil
+        }
+        if let bundle = decoded.highestBundleVersion, validatedVersion(bundle) == nil {
+            return nil
+        }
         return decoded
     }
 

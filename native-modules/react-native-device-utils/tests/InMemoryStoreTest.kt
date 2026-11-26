@@ -150,6 +150,11 @@ fun main() {
         check(!fresh.isFirstLaunchForBundle(null))
         check(fresh.isFirstLaunchForBundle("1000") && fresh.isFirstLaunchForBundle("1000"))
         check(fresh.isFirstLaunchForBundle(null))
+        // Explicit lookup of another bundle must not overwrite zero-arg startup bundle result.
+        check(!fresh.isFirstLaunchForBundle("999"))
+        check(fresh.isFirstLaunchForBundle(null))
+        // Reject non-numeric version core and traversal strings.
+        check(!fresh.isFirstLaunchForBundle("v1000"))
         check(!fresh.isFirstLaunchForBundle("../escape"))
 
         val restart = launch("6.5.0")
@@ -157,7 +162,7 @@ fun main() {
         check(!restart.isFirstLaunchForBundle("1000"))
         check(!restart.isFirstLaunchForBundle(null))
         check(restart.isFirstLaunchForBundle("1001") && restart.isFirstLaunchForBundle("1001"))
-        check(restart.isFirstLaunchForBundle(null))
+        check(!restart.isFirstLaunchForBundle(null))
 
         val rollback = launch("6.5.0")
         check(!rollback.isFirstLaunch && !rollback.isFirstLaunchForCurrentAppVersion)
@@ -178,6 +183,24 @@ fun main() {
 
         val legacyUpgraded = FirstLaunchHistory(directory.resolve("legacy-upgraded"), "6.6.0", "6.5.0", hasPreviousLaunch = true)
         check(!legacyUpgraded.isFirstLaunch && legacyUpgraded.isFirstLaunchForCurrentAppVersion)
+
+        // Corrupted files (empty, invalid JSON, wrong types, invalid version string) must fail closed without overwriting.
+        val corruptPayloads = listOf(
+            "",
+            "not-json",
+            "{}",
+            """{"hasLaunched":"true"}""",
+            """{"hasLaunched":true,"highestAppVersion":23}""",
+            """{"hasLaunched":true,"highestAppVersion":"6.6.0!"}""",
+            """{"hasLaunched":true,"highestBundleVersion":"v1000"}""",
+        )
+        corruptPayloads.forEachIndexed { idx, bad ->
+            val corruptDir = directory.resolve("corrupt-$idx").apply { mkdirs() }
+            val corruptFile = corruptDir.resolve(FirstLaunchHistory.FILE_NAME).apply { writeText(bad) }
+            val corrupted = FirstLaunchHistory(corruptDir, "6.5.0", null, hasPreviousLaunch = false)
+            check(!corrupted.isFirstLaunch && !corrupted.isFirstLaunchForCurrentAppVersion && !corrupted.isFirstLaunchForBundle("1000"))
+            check(corruptFile.readText() == bad)
+        }
 
         val file = directory.resolve("file").apply { writeText("") }
         val failed = FirstLaunchHistory(file, "6.5.0", null, hasPreviousLaunch = false)

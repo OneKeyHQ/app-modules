@@ -109,7 +109,7 @@ const firstBundleLaunch = isFirstLaunchForCurrentBundle();
 
 On iOS and Android, initialize the pure native singleton early in
 `AppDelegate.didFinishLaunchingWithOptions` (`OneKeyDeviceUtilsFirstLaunch` via
-`initializeWithOptions:` / `hasPersistedState`) or `Application.onCreate()`
+`initializeWithOptions:` / `hasPersistedStateNumber`) or `Application.onCreate()`
 (`DeviceUtilsFirstLaunch.initialize(context, isLegacyInstall = { ... })`) so
 host-specific legacy upgrade detection stays in the app and runs before React Native starts.
 
