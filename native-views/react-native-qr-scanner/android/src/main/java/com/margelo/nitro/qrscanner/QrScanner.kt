@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CaptureRequest
 import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
@@ -20,6 +22,10 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.annotation.OptIn
+import androidx.camera.camera2.interop.Camera2CameraControl
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.CaptureRequestOptions
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
@@ -49,8 +55,10 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * React Native drives layout from Yoga and suppresses Android's native
@@ -94,6 +102,7 @@ internal class QrScannerContainer(context: Context) : FrameLayout(context) {
 class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), LifecycleOwner {
   internal companion object {
     const val DECODE_ERROR_INTERVAL_MS = 1_000L
+    private const val RESUME_CAPTURE_TIMEOUT_MS = 1_000L
     const val FOCUS_INDICATOR_DP = 73
     // A tapped focus point is held this long, then CameraX returns to
     // continuous focus over the whole frame.
@@ -189,6 +198,8 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     val multiSymbol: Boolean = false,
     val frozen: Boolean = false,
     val freezeRevision: Long = 0L,
+    // Null blocks analysis until the running capture acknowledges resume.
+    val frameCutoff: Long? = Long.MIN_VALUE,
     val previewTap: ((Double) -> Unit)? = null,
     val ready: ((Double, String) -> Unit)? = null,
     val frame: ((String, Double) -> Unit)? = null,
@@ -219,6 +230,8 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   private var boundCameraId: String? = null
   private var previewUseCase: Preview? = null
   private var analysisUseCase: ImageAnalysis? = null
+  private var cameraFrameClock: AtomicLong? = null
+  private var resumeTimeout: Runnable? = null
   private var streamObserver: Observer<PreviewView.StreamState>? = null
   private var cameraObserver: Observer<CameraState>? = null
   private var pinchRatio = 1f
@@ -391,9 +404,14 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     main.post {
       if (dropped) return@post
       val previous = callbacks
-      if (previous.frozen != nextFrozen) gate.resetRepeatFilter()
+      val freezeChanged = previous.frozen != nextFrozen
+      if (freezeChanged) {
+        clearResumeTimeout()
+        gate.resetRepeatFilter()
+      }
       callbacks = nextCallbacks.copy(
-        freezeRevision = previous.freezeRevision + if (previous.frozen == nextFrozen) 0L else 1L,
+        freezeRevision = previous.freezeRevision + if (freezeChanged) 1L else 0L,
+        frameCutoff = if (freezeChanged) null else previous.frameCutoff,
       )
       applyFrozen(if (shouldRun) nextFrozen else false)
       val changed = requested != requestedCameraId || shouldRun != this.shouldRun
@@ -405,7 +423,13 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
           permissionDenied = false
           stop()
         }
-        running -> updateCamera(resumingAnalysis = previous.frozen && !nextFrozen)
+        running -> {
+          val generation = gate.currentGeneration
+          switchCameraIfNeeded()
+          if (freezeChanged && !nextFrozen && generation == gate.currentGeneration) {
+            beginResumeBoundary(generation, callbacks.freezeRevision, retry = true)
+          }
+        }
         changed -> start()
       }
       if (nextFocus != null && nextFocus.id.isFinite() && nextFocus.id > lastFocusRequestId) {
@@ -449,14 +473,12 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     }
   }
 
-  private fun updateCamera(resumingAnalysis: Boolean) {
+  /** Rebinds to a changed `cameraId` in a new capture generation. */
+  private fun switchCameraIfNeeded() {
     val provider = cameraProvider ?: return
-    val (selector, targetId) = selectorFor(provider) ?: return
-    if (targetId != boundCameraId) {
-      bind(provider, gate.nextGeneration())
-    } else if (resumingAnalysis) {
-      replaceAnalysis(provider, selector)
-    }
+    val target = selectorFor(provider) ?: return
+    if (target.second == boundCameraId) return
+    bind(provider, gate.nextGeneration())
   }
 
   /** The requested camera when connected, else back, else front. */
@@ -622,6 +644,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     container.addOnLayoutChangeListener(listener)
   }
 
+  @OptIn(ExperimentalCamera2Interop::class)
   private fun bindLaidOutPreview(
     provider: ProcessCameraProvider,
     selector: CameraSelector,
@@ -634,10 +657,38 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       .setTargetRotation(initialRotation)
       .build()
       .also { it.surfaceProvider = targetPreview.surfaceProvider }
-    val analysis = createAnalysis(generation, initialRotation)
+    val frameClock = AtomicLong(-1L)
+    val analysisBuilder = ImageAnalysis.Builder()
+      .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+      .setTargetRotation(initialRotation)
+      .setResolutionSelector(
+        ResolutionSelector.Builder()
+          .setResolutionStrategy(
+            ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
+          )
+          .build(),
+      )
+    Camera2Interop.Extender(analysisBuilder)
+      .setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureStarted(
+          session: CameraCaptureSession,
+          request: CaptureRequest,
+          timestamp: Long,
+          frameNumber: Long,
+        ) {
+          frameClock.set(timestamp)
+        }
+      })
+    val analysis = analysisBuilder.build()
+    analysis.setAnalyzer(analysisExecutor) { proxy -> analyze(proxy, generation) }
+    callbacks = callbacks.copy(frameCutoff = if (callbacks.frozen) null else Long.MIN_VALUE)
     lastDecodeFailureAt = null
     val bound = try {
-      provider.bindToLifecycle(this, selector, analysisGroup(preview, analysis, targetPreview))
+      val groupBuilder = UseCaseGroup.Builder()
+        .addUseCase(preview)
+        .addUseCase(analysis)
+      targetPreview.viewPort?.let { groupBuilder.setViewPort(it) }
+      provider.bindToLifecycle(this, selector, groupBuilder.build())
     } catch (error: Exception) {
       analysis.clearAnalyzer()
       provider.unbind(preview, analysis)
@@ -646,6 +697,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     }
     previewUseCase = preview
     analysisUseCase = analysis
+    cameraFrameClock = frameClock
     camera = bound
     val activeCameraId = HybridQrCameraList.cameraId(bound.cameraInfo)
     boundCameraId = activeCameraId
@@ -689,54 +741,56 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     syncLifecycle()
   }
 
-  private fun createAnalysis(generation: Int, initialRotation: Int): ImageAnalysis {
-    val freezeRevision = callbacks.freezeRevision
-    return ImageAnalysis.Builder()
-      .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-      .setTargetRotation(initialRotation)
-      .setResolutionSelector(
-        ResolutionSelector.Builder()
-          .setResolutionStrategy(
-            ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
-          )
-          .build(),
-      )
-      .build()
-      .also { analysis ->
-        analysis.setAnalyzer(analysisExecutor) { proxy -> analyze(proxy, generation, freezeRevision) }
+  @OptIn(ExperimentalCamera2Interop::class)
+  private fun beginResumeBoundary(generation: Int, revision: Long, retry: Boolean) {
+    val bound = camera ?: return
+    val frameClock = cameraFrameClock ?: return
+    lateinit var timeout: Runnable
+    fun finish(cutoff: Long?) {
+      if (
+        resumeTimeout !== timeout || !running || camera !== bound ||
+        gate.currentGeneration != generation || callbacks.freezeRevision != revision || callbacks.frozen
+      ) return
+      clearResumeTimeout()
+      if (cutoff != null && cutoff >= 0L) {
+        callbacks = callbacks.copy(frameCutoff = cutoff)
+      } else if (retry) {
+        beginResumeBoundary(generation, revision, retry = false)
+      } else {
+        // Recover once through a new capture session if the running one cannot
+        // acknowledge a repeating request. The normal resume leaves preview bound.
+        cameraProvider?.let { bind(it, gate.nextGeneration()) }
       }
+    }
+    timeout = Runnable { finish(null) }
+    resumeTimeout = timeout
+    main.postDelayed(timeout, RESUME_CAPTURE_TIMEOUT_MS)
+
+    // Empty options change no camera settings. CameraX 1.6.0 sends a tagged
+    // repeating request and completes the future on its result. The corresponding
+    // capture-start callback has already run on the same CameraX serial executor.
+    // ImageAnalysis timestamps and capture-start timestamps come from this camera.
+    val marker = try {
+      Camera2CameraControl.from(bound.cameraControl)
+        .addCaptureRequestOptions(CaptureRequestOptions.Builder().build())
+    } catch (_: IllegalArgumentException) {
+      finish(null)
+      return
+    }
+    marker.addListener({
+      val cutoff = try {
+        marker.get()
+        frameClock.get()
+      } catch (_: Exception) {
+        null
+      }
+      main.post { finish(cutoff) }
+    }, Executor { it.run() })
   }
 
-  private fun analysisGroup(
-    preview: Preview,
-    analysis: ImageAnalysis,
-    targetPreview: PreviewView,
-  ): UseCaseGroup {
-    val group = UseCaseGroup.Builder().addUseCase(preview).addUseCase(analysis)
-    targetPreview.viewPort?.let { group.setViewPort(it) }
-    return group.build()
-  }
-
-  private fun replaceAnalysis(provider: ProcessCameraProvider, selector: CameraSelector) {
-    val preview = previewUseCase ?: return
-    val generation = gate.currentGeneration
-    // Keep the preview bound. A fresh analysis surface has no pre-resume buffers,
-    // including on cameras whose timestamps cannot be compared to the system clock.
-    analysisUseCase?.let { previous ->
-      previous.clearAnalyzer()
-      provider.unbind(previous)
-    }
-    analysisUseCase = null
-    val rotation = lastTargetRotation ?: Surface.ROTATION_0
-    val analysis = createAnalysis(generation, rotation)
-    try {
-      provider.bindToLifecycle(this, selector, analysisGroup(preview, analysis, previewView))
-      analysisUseCase = analysis
-    } catch (error: Exception) {
-      analysis.clearAnalyzer()
-      provider.unbind(analysis)
-      emitError("decoder-unavailable", error.message ?: "The QR detector could not resume", generation)
-    }
+  private fun clearResumeTimeout() {
+    resumeTimeout?.let { main.removeCallbacks(it) }
+    resumeTimeout = null
   }
 
   private fun stop() {
@@ -747,6 +801,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
   }
 
   private fun unbind() {
+    clearResumeTimeout()
     gate.setCapturing(false)
     pendingBindLayoutListener?.let { listener ->
       pendingBindLayoutHost?.removeOnLayoutChangeListener(listener)
@@ -773,6 +828,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     analysisUseCase?.clearAnalyzer()
     previewUseCase = null
     analysisUseCase = null
+    cameraFrameClock = null
     camera = null
     boundCameraId = null
     running = false
@@ -796,13 +852,14 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
   /** Runs on the analysis executor; KEEP_ONLY_LATEST keeps one frame in flight. */
   @OptIn(ExperimentalGetImage::class, TransformExperimental::class)
-  private fun analyze(proxy: ImageProxy, generation: Int, freezeRevision: Long) {
+  private fun analyze(proxy: ImageProxy, generation: Int) {
     // Capture callbacks before async ML Kit decode so session-identity guards
     // on the original callback still discard stale frames if sessionKey/mode
     // changed mid-decode (SPEC section 4).
     val frameCallbacks = callbacks
+    val cutoff = frameCallbacks.frameCutoff
     if (
-      frameCallbacks.frozen || frameCallbacks.freezeRevision != freezeRevision ||
+      frameCallbacks.frozen || cutoff == null || proxy.imageInfo.timestamp < cutoff ||
       gate.currentGeneration != generation
     ) {
       proxy.close()

@@ -539,7 +539,7 @@ class HybridQrScanner: HybridQrScannerSpec {
 
   // Replace the QR output while keeping the same input and preview layer. An
   // old output can still deliver queued metadata after the preview resumes.
-  private func replaceMetadataOutput(generation: Int) {
+  private func replaceMetadataOutput(generation: Int, retry: Bool = true) {
     let previous = output
     session.beginConfiguration()
     if let previous, session.outputs.contains(previous) { session.removeOutput(previous) }
@@ -550,7 +550,22 @@ class HybridQrScanner: HybridQrScannerSpec {
       output = nil
     }
     session.commitConfiguration()
-    if let error { emitError("decoder-unavailable", error, generation) }
+    guard error != nil else { return }
+
+    if retry {
+      let revision = currentFrameRevision()
+      sessionQueue.asyncAfter(deadline: .now() + .milliseconds(150)) { [weak self] in
+        guard let self, self.running, self.captureProps.active, !self.captureProps.frozen,
+          self.currentGeneration() == generation, self.currentFrameRevision() == revision
+        else { return }
+        self.replaceMetadataOutput(generation: generation, retry: false)
+      }
+    } else {
+      // If the running session cannot add the detector, recover once through
+      // the normal start path, which reports any remaining configuration error.
+      stop()
+      start()
+    }
   }
 
   /// Called within a session configuration transaction after removing the old output.
