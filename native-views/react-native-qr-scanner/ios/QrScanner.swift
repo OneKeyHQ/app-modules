@@ -343,10 +343,8 @@ class HybridQrScanner: HybridQrScannerSpec {
     let focusCapture = currentReadyCapture()
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      self.isFrozenMain = props.frozen
-      if props.active {
-        self.previewView.setFrozen(props.frozen)
-      }
+      self.isFrozenMain = props.active && props.frozen
+      self.previewView.setFrozen(self.isFrozenMain)
     }
     sessionQueue.async { [weak self] in
       guard let self, !self.disposed else { return }
@@ -395,6 +393,10 @@ class HybridQrScanner: HybridQrScannerSpec {
   func onDropView() { dispose() }
 
   func dispose() {
+    DispatchQueue.main.async { [weak self] in
+      self?.isFrozenMain = false
+      self?.previewView.setFrozen(false)
+    }
     // Retain the scanner until its queue has released the session and observers.
     sessionQueue.async {
       guard !self.disposed else { return }
@@ -455,7 +457,7 @@ class HybridQrScanner: HybridQrScannerSpec {
     setCapturing(running)
     if running, let device {
       setReadyCapture(true)
-      updatePreviewOrientation()
+      updatePreviewConnection()
       captureProps.ready?(Double(currentGeneration), device.uniqueID)
     } else {
       emitError("camera-busy", "The camera could not start", currentGeneration)
@@ -468,10 +470,6 @@ class HybridQrScanner: HybridQrScannerSpec {
     _ = nextGeneration()
     pinchGeneration = nil
     output?.setMetadataObjectsDelegate(nil, queue: nil)
-    DispatchQueue.main.async { [weak self] in
-      self?.isFrozenMain = false
-      self?.previewView.setFrozen(false)
-    }
     guard running || session.isRunning else { return }
     session.stopRunning()
     running = false
@@ -507,7 +505,7 @@ class HybridQrScanner: HybridQrScannerSpec {
         if let output, session.canAddOutput(output) { session.addOutput(output) }
       }
       session.commitConfiguration()
-      if installed || restoredInput { updatePreviewOrientation() }
+      if installed || restoredInput { updatePreviewConnection() }
     }
 
     let presets: [AVCaptureSession.Preset] = [.hd1920x1080, .hd1280x720, .high, .medium, .low, .inputPriority]
@@ -550,6 +548,7 @@ class HybridQrScanner: HybridQrScannerSpec {
       output = nil
     }
     session.commitConfiguration()
+    updatePreviewConnection()
     guard error != nil else { return }
 
     if retry {
@@ -604,9 +603,12 @@ class HybridQrScanner: HybridQrScannerSpec {
     captureProps.ready?(Double(generation), target.uniqueID)
   }
 
-  private func updatePreviewOrientation() {
-    DispatchQueue.main.async { [weak previewView] in
-      previewView?.updateCaptureOrientation()
+  private func updatePreviewConnection() {
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.previewView.updateCaptureOrientation()
+      // Startup can replace the connection while another freeze is requested.
+      self.previewView.setFrozen(self.isFrozenMain)
     }
   }
 
