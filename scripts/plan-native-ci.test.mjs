@@ -121,6 +121,24 @@ test("Docs skip native jobs, while shared, unknown, and unregistered inputs run 
   assert.deepEqual(scheduledJobs(planFor(
     "README.md", "docs/README.md",
   )), []);
+  assert.deepEqual(scheduledJobs(planFor(
+    "desktop/mac/electron-qr-scanner/package.json",
+    "desktop/win/electron-qr-scanner/Cargo.lock",
+    "desktop/scripts/qr-scanner-pause.test.mjs",
+    "chain-runtimes/zcash/Cargo.toml",
+    ".github/workflows/desktop-qr-scanner-check.yml",
+    ".github/workflows/runtime-checks.yml",
+  )), []);
+  const qrWithDesktop = planFor(
+    ".github/workflows/desktop-qr-scanner-check.yml",
+    "desktop/mac/electron-qr-scanner/swift/QrCapture.swift",
+    "desktop/win/electron-qr-scanner/src/capture.rs",
+    "native-views/react-native-qr-scanner/ios/QrScanner.swift",
+  );
+  assert.equal(qrWithDesktop.mode, "affected");
+  assert.deepEqual(qrWithDesktop.changedModules, ["react-native-qr-scanner"]);
+  assert.deepEqual(qrWithDesktop.affectedModules, ["react-native-qr-scanner"]);
+  assert.deepEqual(scheduledJobs(qrWithDesktop), ["device-utils-store", "android-unit"]);
   const fullJobs = ["native-overlay-package", "ios-native", "device-utils-store", "android-unit"];
   for (const path of [
     "example/react-native/ios/Podfile.lock",

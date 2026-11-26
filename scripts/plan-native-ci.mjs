@@ -52,6 +52,9 @@ const androidModules = new Set([
 // Changes to these inputs can affect shared configuration and the dependency graph itself.
 const buildInput = /(?:^|\/)(?:package\.json|react-native\.config\.[cm]?js|nitro\.json|CMakeLists\.txt|Package\.swift|Podfile(?:\.lock)?|gradle\.properties|project\.pbxproj|[^/]+\.(?:podspec|gradle(?:\.kts)?|lock|cmake|xcconfig))$/;
 const docsOnly = /^(?:docs\/.*\.md|(?:README|CHANGELOG|CONTRIBUTING)\.md)$/;
+// Paths owned by separate non-React-Native toolchains and workflows.
+const nonNativeInput =
+  /^(?:(?:desktop|chain-runtimes)\/|\.github\/workflows\/(?:desktop-[^/]+|runtime-checks|publish-runtime-packages|package-publish|test-integrity)\.ya?ml$)/;
 const iosInput = /^(?:ios|tests\/(?:ios|swiftpm)|native-tests\/ios)\//;
 const androidInput = /^(?:android|tests\/(?:android|kotlin)|native-tests\/android)\//;
 
@@ -179,7 +182,7 @@ export function planNativeCI(paths, dependents) {
   const changedModules = new Set();
   let fullReason;
   for (const path of paths) {
-    if (docsOnly.test(path)) continue;
+    if (docsOnly.test(path) || nonNativeInput.test(path)) continue;
     const match = /^native-(?:modules|views)\/([^/]+)\/(.+)$/.exec(path);
     if (match) changedModules.add(match[1]);
     if (!match || buildInput.test(path)) {
