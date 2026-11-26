@@ -155,7 +155,24 @@ export interface ReactNativeDeviceUtils
 
   // Android Channel & Installer
   getAndroidChannel(): AndroidChannel;
+  /**
+   * Synchronously reads the installer package name.
+   * @deprecated On iOS, prefer `getInstallerPackageNameAsync()` which uses
+   * StoreKit 2 `AppTransaction.shared` instead of the deprecated receipt URL.
+   */
   getInstallerPackageName(): InstallerPackageName;
+  /**
+   * Asynchronously determines the install source.
+   * Uses StoreKit 2 `AppTransaction.shared` on iOS 16.4+ and PackageManager on Android.
+   * Resolves to `'unknown'` when the source cannot be verified.
+   */
+  getInstallerPackageNameAsync(): Promise<InstallerPackageName>;
+  /**
+   * Returns the app installation timestamp in Unix epoch milliseconds.
+   * Uses the sandbox Documents directory creation date on iOS and
+   * `PackageInfo.firstInstallTime` on Android.
+   */
+  getInstallationTime(): Promise<number>;
 
   /** Returns an AdServices token on iOS 14.3+, or undefined on unsupported platforms. */
   getAppleAdsAttributionToken(): Promise<string | undefined>;

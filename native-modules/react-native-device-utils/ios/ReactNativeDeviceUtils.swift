@@ -1,5 +1,6 @@
 import AdServices
 import NitroModules
+import StoreKit
 import UIKit
 import ReactNativeNativeLogger
 import os
@@ -350,8 +351,8 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     }
 
     func getInstallerPackageName() throws -> InstallerPackageName {
-        // Mirror react-native-device-info: distinguish AppStore / TestFlight / Other
-        // via receipt path and embedded mobileprovision. Simulator has neither.
+        // Legacy synchronous fallback using receipt path and embedded mobileprovision.
+        // Prefer getInstallerPackageNameAsync() which uses StoreKit 2 AppTransaction.shared.
         #if targetEnvironment(simulator)
         return .unknown
         #else
@@ -364,6 +365,99 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         }
         return hasEmbeddedProvision ? .other : .unknown
         #endif
+    }
+
+    enum AppleStoreEnvironment: Sendable, Equatable {
+        case production
+        case sandbox
+        case xcode
+    }
+
+    func getInstallerPackageNameAsync() throws -> Promise<InstallerPackageName> {
+        #if targetEnvironment(simulator)
+        let isSimulator = true
+        #else
+        let isSimulator = false
+        #endif
+        let hasEmbeddedProvision = Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") != nil
+        return Self.resolveInstallerPackageName(
+            isSimulator: isSimulator,
+            hasEmbeddedProvision: hasEmbeddedProvision
+        ) {
+            guard #available(iOS 16.0, *) else {
+                return nil
+            }
+            guard case .verified(let transaction) = try await AppTransaction.shared else {
+                return nil
+            }
+            switch transaction.environment {
+            case .production:
+                return .production
+            case .sandbox:
+                return .sandbox
+            case .xcode:
+                return .xcode
+            default:
+                return nil
+            }
+        }
+    }
+
+    static func resolveInstallerPackageName(
+        isSimulator: Bool,
+        hasEmbeddedProvision: Bool,
+        environmentProvider: @escaping @Sendable () async throws -> AppleStoreEnvironment?
+    ) -> Promise<InstallerPackageName> {
+        if isSimulator {
+            return .resolved(withResult: .unknown)
+        }
+        if hasEmbeddedProvision {
+            return .resolved(withResult: .other)
+        }
+        return Promise.async {
+            do {
+                guard let environment = try await environmentProvider() else {
+                    return .unknown
+                }
+                switch environment {
+                case .production:
+                    return .appstore
+                case .sandbox:
+                    return .testflight
+                case .xcode:
+                    return .other
+                }
+            } catch {
+                OneKeyLog.warn("DeviceUtils", "getInstallerPackageNameAsync failed: \(error.localizedDescription)")
+                return .unknown
+            }
+        }
+    }
+
+    func getInstallationTime() throws -> Promise<Double> {
+        return Self.resolveInstallationTime {
+            guard let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).last else {
+                throw RuntimeError.error(withMessage: "Unable to locate Documents directory")
+            }
+            // Uses Required Reason API NSPrivacyAccessedAPICategoryFileTimestamp (C617.1).
+            let attributes = try FileManager.default.attributesOfItem(atPath: documentsURL.path)
+            return attributes[.creationDate] as? Date
+        }
+    }
+
+    static func resolveInstallationTime(
+        using provider: @escaping @Sendable () throws -> Date?
+    ) -> Promise<Double> {
+        return Promise.parallel(.global(qos: .utility)) {
+            guard let date = try provider() else {
+                throw RuntimeError.error(withMessage: "Unable to determine app installation time")
+            }
+            let timestampMs = date.timeIntervalSince1970 * 1000.0
+            guard timestampMs.isFinite && timestampMs > 0 else {
+                throw RuntimeError.error(withMessage: "App installation time is invalid")
+            }
+            return timestampMs
+        }
     }
 
     func getAppleAdsAttributionToken() throws -> Promise<String?> {

@@ -486,3 +486,80 @@ non-empty string, an empty string, and a thrown error. Android native CI builds
 the Kotlin implementation and generated JNI bindings. The consumer's Android
 native harness verifies the result is JavaScript `undefined`. Real AdServices
 token issuance requires an on-device check.
+
+# DeviceUtils: Install source and installation time
+
+## Purpose, scope, and non-goals
+
+`ReactNativeDeviceUtils` owns cross-platform install source detection and app
+installation timestamp lookup so consumers do not depend on `expo-application` or
+deprecated iOS receipt APIs for install attribution and channel checks.
+
+- Supported platforms: iOS 16.4+ and Android.
+- Non-goals: StoreKit receipt refresh or Apple ID sign-in prompts, Google Play
+  Install Referrer IPC, and attribution reporting or retry orchestration (owned
+  by the host app).
+
+## Public API and defaults
+
+```ts
+getInstallerPackageNameAsync(): Promise<InstallerPackageName>;
+getInstallationTime(): Promise<number>;
+```
+
+- `getInstallerPackageNameAsync()` resolves to one of
+  `'appStore' | 'testFlight' | 'other' | 'playStore' | 'huaweiAppGallery' | 'unknown'`.
+  It never rejects; unavailable or unverified native sources resolve to
+  `'unknown'`.
+- `getInstallationTime()` resolves to the app's installation time as Unix epoch
+  milliseconds (`number`, matching `Date.now()`). It rejects if the platform
+  cannot read a valid positive finite timestamp.
+- The existing synchronous `getInstallerPackageName()` remains available for
+  backwards compatibility, but is deprecated for iOS install-source checks
+  because `Bundle.main.appStoreReceiptURL` is deprecated in iOS 18 and can be
+  absent on valid App Store installs.
+
+## Lifecycle and concurrency
+
+- Each call runs independently with no retained state or cross-call caching.
+- On iOS, `getInstallerPackageNameAsync()` runs asynchronously via Swift
+  concurrency (`Promise.async`), and `getInstallationTime()` runs off the main
+  thread on a utility dispatch queue (`Promise.parallel(.global(qos: .utility))`).
+- On Android, both methods run asynchronously via `Promise.async` off the JS
+  thread.
+
+## Platform contract
+
+| Method | iOS (16.4+) | Android |
+| --- | --- | --- |
+| `getInstallerPackageNameAsync()` | Simulator returns `'unknown'`. Builds with `embedded.mobileprovision` return `'other'`. Otherwise reads cached StoreKit 2 `AppTransaction.shared` (no refresh / no sign-in prompt): `.verified` `.production` -> `'appStore'`, `.sandbox` -> `'testFlight'`, `.xcode` -> `'other'`; unverified or error -> `'unknown'`. | Delegates to `PackageManager.getInstallSourceInfo(packageName).installingPackageName` (API 30+) or `getInstallerPackageName` (API < 30): `com.android.vending` -> `'playStore'`, `com.huawei.appmarket` -> `'huaweiAppGallery'`, null/empty/error -> `'unknown'`, other -> `'other'`. |
+| `getInstallationTime()` | Reads `FileAttributeKey.creationDate` of the app sandbox `Documents` directory and returns `timeIntervalSince1970 * 1000`. Rejects if missing or non-positive. | Reads `PackageInfo.firstInstallTime` (`PackageInfoFlags.of(0)` on API 33+, `0` on API < 33) and returns epoch milliseconds. Rejects if context/package info is unavailable or non-positive. |
+
+### Known divergences and privacy notes
+
+- **Installation timestamp semantics**: Android provides an OS-level
+  `firstInstallTime`; iOS has no dedicated install-time API and uses the sandbox
+  `Documents` directory `creationDate`, which matches `expo-application`
+  semantics.
+- **Privacy manifest**: iOS `FileAttributeKey.creationDate` is a Required Reason
+  API (`NSPrivacyAccessedAPICategoryFileTimestamp`, reason `C617.1`), which the
+  host app declares in `PrivacyInfo.xcprivacy`.
+
+## Conformance and acceptance
+
+- Status: `Implemented` (runtime StoreKit 2 verification requires an on-device
+  App Store / TestFlight build).
+- Contract: `src/ReactNativeDeviceUtils.nitro.ts`.
+- Native implementations: `ios/ReactNativeDeviceUtils.swift` (links `StoreKit`
+  in `ReactNativeDeviceUtils.podspec`) and
+  `android/src/main/java/com/margelo/nitro/reactnativedeviceutils/ReactNativeDeviceUtils.kt`.
+- Automated checks:
+  - iOS XCTest (`ios/tests/AppleAdsAttributionTests.swift` /
+    `InstallInfoTests.swift`) covers StoreKit 2 environment mapping
+    (`production`, `sandbox`, `xcode`, `nil`/error), embedded provisioning
+    override, simulator behavior, and off-main-thread `getInstallationTime()`
+    conversion and error rejection.
+  - Android Gradle build (`:onekeyfe_react-native-device-utils:assembleDebug`)
+    verifies Kotlin compilation and generated Nitro JNI bindings.
+  - TypeScript / Nitrogen build (`bob build`, `typecheck`, `lint`) verifies JS
+    and generated bindings.

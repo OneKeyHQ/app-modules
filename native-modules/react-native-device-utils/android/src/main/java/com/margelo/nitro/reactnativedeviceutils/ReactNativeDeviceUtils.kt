@@ -1438,4 +1438,30 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
             InstallerPackageName.UNKNOWN
         }
     }
+
+    override fun getInstallerPackageNameAsync(): Promise<InstallerPackageName> {
+        return Promise.async {
+            getInstallerPackageName()
+        }
+    }
+
+    override fun getInstallationTime(): Promise<Double> {
+        return Promise.async {
+            val context = NitroModules.applicationContext
+                ?: throw IllegalStateException("Application context is unavailable")
+            val packageName = context.packageName
+            val pm = context.packageManager
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(packageName, 0)
+            }
+            val firstInstallTime = packageInfo.firstInstallTime
+            if (firstInstallTime <= 0L) {
+                throw IllegalStateException("App installation time is invalid")
+            }
+            firstInstallTime.toDouble()
+        }
+    }
 }

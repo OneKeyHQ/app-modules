@@ -3927,7 +3927,7 @@ SPEC CHECKSUMS:
   ReactNativeCaptureProtection: ac103d5f2311fc6cb7412b49ebdc821b845bf97a
   ReactNativeCheckBiometricAuthChanged: 9028250455b331bd52a29bf8223ffd29c158e60f
   ReactNativeDependencies: d3b7423ba1e52525e42085c8470109abde583d2e
-  ReactNativeDeviceUtils: d3d18adc9c517eee5d427fa7b68ed3a32da57622
+  ReactNativeDeviceUtils: 0664aa178122a925cd134c94b782ccfcc7d82b87
   ReactNativeGetRandomValues: a8dd2d44b9f13e6a7c5165bf6fbbbf16d422a388
   ReactNativeImageCropPicker: bb1e798732909427df3f83f2d0159f815bacc773
   ReactNativeJpush: 7e7958e03c904e0bcc1f45b38688f4ec3bfb823f
