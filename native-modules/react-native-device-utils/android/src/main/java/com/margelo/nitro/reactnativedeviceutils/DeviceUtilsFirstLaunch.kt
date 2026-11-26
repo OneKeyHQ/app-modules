@@ -17,7 +17,7 @@ object DeviceUtilsFirstLaunch {
 
   private fun baseDirectory(context: Context): File? {
     val appContext = context.applicationContext ?: context
-    return appContext.noBackupFilesDir ?: appContext.filesDir
+    return appContext.noBackupFilesDir
   }
 
   /**
@@ -84,38 +84,47 @@ object DeviceUtilsFirstLaunch {
   /**
    * Deletes persisted first-launch files and clears in-memory state so a subsequent
    * JS restart within the same native process observes a fresh launch.
+   * Returns true if persisted files were removed (or already absent), false on failure.
    */
   @JvmStatic
-  fun reset(context: Context? = null) {
+  fun reset(context: Context): Boolean {
     synchronized(lock) {
-      if (context != null) {
-        baseDirectory(context)?.let { base ->
-          runCatching { File(base, FirstLaunchHistory.DIRECTORY_NAME).deleteRecursively() }
+      val base = baseDirectory(context) ?: return false
+      val storeDir = File(base, FirstLaunchHistory.DIRECTORY_NAME)
+      if (storeDir.exists()) {
+        val deleted = try {
+          storeDir.deleteRecursively() && !storeDir.exists()
+        } catch (_: SecurityException) {
+          false
+        }
+        if (!deleted) {
+          return false
         }
       }
       history = null
+      return true
     }
   }
 
-  internal fun isFirstLaunch(fallbackContext: Context? = null): Boolean {
-    ensureInitialized(fallbackContext)
-    return history?.isFirstLaunch ?: false
+  internal fun isFirstLaunch(fallbackContext: Context? = null): Boolean = synchronized(lock) {
+    ensureInitializedLocked(fallbackContext)
+    history?.isFirstLaunch ?: false
   }
 
-  internal fun isFirstLaunchForCurrentAppVersion(fallbackContext: Context? = null): Boolean {
-    ensureInitialized(fallbackContext)
-    return history?.isFirstLaunchForCurrentAppVersion ?: false
+  internal fun isFirstLaunchForCurrentAppVersion(fallbackContext: Context? = null): Boolean = synchronized(lock) {
+    ensureInitializedLocked(fallbackContext)
+    history?.isFirstLaunchForCurrentAppVersion ?: false
   }
 
   internal fun isFirstLaunchForBundle(
     bundleVersion: String?,
     fallbackContext: Context? = null,
-  ): Boolean {
-    ensureInitialized(fallbackContext)
-    return history?.isFirstLaunchForBundle(bundleVersion) ?: false
+  ): Boolean = synchronized(lock) {
+    ensureInitializedLocked(fallbackContext)
+    history?.isFirstLaunchForBundle(bundleVersion) ?: false
   }
 
-  private fun ensureInitialized(fallbackContext: Context?) {
+  private fun ensureInitializedLocked(fallbackContext: Context?) {
     if (history == null && fallbackContext != null) {
       initialize(fallbackContext)
     }

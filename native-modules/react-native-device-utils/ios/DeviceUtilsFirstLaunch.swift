@@ -53,14 +53,21 @@ public final class DeviceUtilsFirstLaunch: NSObject {
 
     /// Deletes persisted first-launch files and clears in-memory state so a subsequent
     /// JS restart within the same native process observes a fresh launch.
-    @objc public static func reset() {
+    /// Returns true if persisted files were removed (or already absent), false on failure.
+    @objc @discardableResult public static func reset() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        if let directory = defaultDirectory() {
-            let storeDir = directory.appendingPathComponent(FirstLaunchHistory.directoryName, isDirectory: true)
-            try? FileManager.default.removeItem(at: storeDir)
+        guard let directory = defaultDirectory() else { return false }
+        let storeDir = directory.appendingPathComponent(FirstLaunchHistory.directoryName, isDirectory: true)
+        if FileManager.default.fileExists(atPath: storeDir.path) {
+            do {
+                try FileManager.default.removeItem(at: storeDir)
+            } catch {
+                return false
+            }
         }
         history = nil
+        return true
     }
 
     static var value: Bool {
@@ -117,23 +124,30 @@ final class FirstLaunchHistory {
 
         let launchedURL = dir.appendingPathComponent(Self.launchedFileName)
         let launchedExists = FileManager.default.fileExists(atPath: launchedURL.path)
-        if launchedExists {
-            isFirstLaunch = false
-        } else {
-            let wrote = Self.writeString("1", to: launchedURL, directory: dir)
-            isFirstLaunch = wrote && !hasPreviousLaunch
-        }
-
         let legacyBaseline = launchedExists ? nil : Self.validatedVersion(previousAppVersion)
+
+        // Seed or evaluate app_ver BEFORE writing `launched` so an interrupted
+        // startup never loses the legacy app-version baseline.
+        let appVerURL = dir.appendingPathComponent(Self.appVersionFileName)
         if let validCurrent = Self.validatedVersion(appVersion) {
             isFirstLaunchForCurrentAppVersion = Self.evaluateVersionFile(
-                at: dir.appendingPathComponent(Self.appVersionFileName),
+                at: appVerURL,
                 directory: dir,
                 currentVersion: validCurrent,
                 legacyBaseline: legacyBaseline
             )
         } else {
+            if let legacyBaseline, !FileManager.default.fileExists(atPath: appVerURL.path) {
+                _ = Self.writeString(legacyBaseline, to: appVerURL, directory: dir)
+            }
             isFirstLaunchForCurrentAppVersion = false
+        }
+
+        if launchedExists {
+            isFirstLaunch = false
+        } else {
+            let wrote = Self.writeString("1", to: launchedURL, directory: dir)
+            isFirstLaunch = wrote && !hasPreviousLaunch
         }
     }
 
@@ -196,7 +210,7 @@ final class FirstLaunchHistory {
             var dirURL = directory
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
-            try? dirURL.setResourceValues(values)
+            try dirURL.setResourceValues(values)
             try Data(value.utf8).write(to: url, options: .atomic)
             return true
         } catch {

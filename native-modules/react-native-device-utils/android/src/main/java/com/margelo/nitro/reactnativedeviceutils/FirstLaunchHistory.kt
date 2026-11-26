@@ -19,23 +19,30 @@ internal class FirstLaunchHistory(
   init {
     val launchedFile = File(storeDirectory, LAUNCHED_FILE_NAME)
     val launchedExists = launchedFile.exists()
+    val legacyBaseline = if (launchedExists) null else validatedVersion(previousAppVersion)
+    val validCurrent = validatedVersion(appVersion)
+    val appVerFile = File(storeDirectory, APP_VERSION_FILE_NAME)
+
+    // Seed or evaluate app_ver BEFORE writing `launched` so an interrupted
+    // startup never loses the legacy app-version baseline.
+    isFirstLaunchForCurrentAppVersion = if (validCurrent != null) {
+      evaluateVersionFile(
+        file = appVerFile,
+        currentVersion = validCurrent,
+        legacyBaseline = legacyBaseline,
+      )
+    } else {
+      if (legacyBaseline != null && !appVerFile.exists()) {
+        writeString(appVerFile, legacyBaseline)
+      }
+      false
+    }
+
     isFirstLaunch = if (launchedExists) {
       false
     } else {
       val wrote = writeString(launchedFile, "1")
       wrote && !hasPreviousLaunch
-    }
-
-    val legacyBaseline = if (launchedExists) null else validatedVersion(previousAppVersion)
-    val validCurrent = validatedVersion(appVersion)
-    isFirstLaunchForCurrentAppVersion = if (validCurrent != null) {
-      evaluateVersionFile(
-        file = File(storeDirectory, APP_VERSION_FILE_NAME),
-        currentVersion = validCurrent,
-        legacyBaseline = legacyBaseline,
-      )
-    } else {
-      false
     }
   }
 
@@ -84,8 +91,8 @@ internal class FirstLaunchHistory(
     if (isHigher) {
       return writeString(file, currentVersion)
     }
-    if (existing == null) {
-      writeString(file, baseline)
+    if (existing == null && legacyBaseline != null) {
+      writeString(file, legacyBaseline)
     }
     return false
   }

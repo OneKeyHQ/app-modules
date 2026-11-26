@@ -55,8 +55,9 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   override fun isFirstLaunchForCurrentBundle(bundleVersion: String?): Boolean =
     DeviceUtilsFirstLaunch.isFirstLaunchForBundle(bundleVersion, NitroModules.applicationContext)
 
-  override fun resetFirstLaunch() {
-    DeviceUtilsFirstLaunch.reset(NitroModules.applicationContext)
+  override fun resetFirstLaunch(): Boolean {
+    val context = NitroModules.applicationContext ?: return false
+    return DeviceUtilsFirstLaunch.reset(context)
   }
 
   override fun getInMemoryValue(key: String): InMemoryValue? = InMemoryStore.get(key)

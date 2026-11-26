@@ -134,7 +134,7 @@ UI page; an MV3 service worker returns `false`.
 | `isFirstLaunch()` | `boolean` | iOS, Android | Synchronous first launch of the local installation, with a stable result for the native process. |
 | `isFirstLaunchForCurrentAppVersion()` | `boolean` | iOS, Android | First launch of a native release version higher than any previously launched version. |
 | `isFirstLaunchForCurrentBundle(bundleVersion?)` | `boolean` | iOS, Android | First launch of a bundle version higher than any previously launched bundle. |
-| `resetFirstLaunch()` | `void` | iOS, Android | Clears persisted `1k_first_launch/` files and in-memory launch state. |
+| `resetFirstLaunch()` | `boolean` | iOS, Android | Clears persisted `1k_first_launch/` files and in-memory launch state; returns `false` if deletion fails. |
 | `getDeviceToken()` / `saveDeviceToken(token)` / `registerDeviceToken()` | `Promise<string>` / `Promise<void>` / `Promise<boolean>` | iOS, Android | Push-token plumbing; host setup still owns registration. |
 | `getInMemoryValue(key)` / `setInMemoryValue(key, value)` / `removeInMemoryValue(key)` / `setInMemoryValueIfAbsent(key, value)` | `InMemoryValue \| undefined` / `void` / `boolean` / `boolean` | iOS, Android | Synchronous bounded primitive store. |
 | `getAndClearColdStartLocalNotification()` | `Promise<string>` | iOS, Android | Returns local-notification JSON once; Android returns `""`. |

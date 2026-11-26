@@ -31,7 +31,7 @@ On each launch, startup reads the persisted entries, computes and freezes the cu
 | Android | Host calls `DeviceUtilsFirstLaunch.initialize(context, isLegacyInstall = { ... }, legacyAppVersion = { ... })` in `Application.onCreate()`. Lazy fallback initializes with `isLegacyInstall = false`. | `context.noBackupFilesDir/1k_first_launch/` (immune to Clear Cache and Auto Backup) | Owned by the host app (lambdas are only invoked when `launched` does not exist yet). |
 | Web / Desktop / Extension | Host calls `initFirstLaunch({ appVersion, bundleVersion, isLegacyInstall, legacyAppVersion })` once at UI startup before reading getters. | `localStorage` keys `1k_fl_launched`, `1k_fl_app_ver`, `1k_fl_bundle_ver` | Owned by the host app (e.g. sampled in an HTML `<head>` script or Electron preload before app JS writes to storage). |
 
-`resetFirstLaunch()` (and native `DeviceUtilsFirstLaunch.reset()`) removes the `1k_first_launch/` directory (or the 3 `localStorage` keys) **and clears the in-memory launch cache**, so a Reset App flow followed by a JS soft restart in the same native process observes a fresh launch.
+`resetFirstLaunch(): boolean` (and native `DeviceUtilsFirstLaunch.reset()` on iOS / `DeviceUtilsFirstLaunch.reset(context)` on Android) removes the `1k_first_launch/` directory (or the 3 `localStorage` keys) **and clears the in-memory launch cache**, returning `true` when deletion succeeds (including already-absent entries) and `false` on failure so callers can retry before soft-restarting JS.
 
 Version strings must have a numeric dot-separated core with optional SemVer pre-release (`-...`) and build metadata (`+...`) suffixes (1–120 ASCII chars, e.g. `6.5.0`, `6.5.0-beta.1`, `1000`). Non-numeric cores such as `v6.5.0` are rejected. Version comparison compares numeric dot-separated segments by integer value (e.g. `6.10.0 > 6.5.0`, `1000 > 999`) with SemVer pre-release ordering (`6.5.0 > 6.5.0-beta.1`). A version strictly higher than the persisted highest version returns `true` for the current launch and advances the persisted entry. Rolling back to or running any version lower than or equal to the persisted highest version returns `false` and keeps the higher value persisted.
 
@@ -45,7 +45,7 @@ The `@onekeyfe/react-native-device-utils/first-launch` entry point exposes:
 - `isFirstLaunch(): boolean`
 - `isFirstLaunchForCurrentAppVersion(appVersion?: string): boolean`
 - `isFirstLaunchForCurrentBundle(bundleVersion?: string): boolean`
-- `resetFirstLaunch(): void`
+- `resetFirstLaunch(): boolean`
 
 React Native delegates to `ReactNativeDeviceUtils`. Web documents, Electron renderers, and extension-owned pages share `src/firstLaunch.web.ts` backed by `window.localStorage`. After `initFirstLaunch(...)` runs at startup, getters can be called with zero arguments to read the cached launch results. Server runtimes and MV3 service workers have no `window.localStorage` and return `false`.
 

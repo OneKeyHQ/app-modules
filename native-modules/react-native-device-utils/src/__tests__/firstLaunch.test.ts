@@ -120,12 +120,32 @@ it('clears both persisted keys and in-memory state on resetFirstLaunch', () => {
   expect(restarted.isFirstLaunchForCurrentBundle()).toBe(false);
 
   // Reset in the same runtime (e.g. Reset App + JS soft restart)
-  restarted.resetFirstLaunch();
+  expect(restarted.resetFirstLaunch()).toBe(true);
   expect(restarted.isFirstLaunch()).toBe(false);
   restarted.initFirstLaunch({ appVersion: '6.5.0', bundleVersion: '1000' });
   expect(restarted.isFirstLaunch()).toBe(true);
   expect(restarted.isFirstLaunchForCurrentAppVersion()).toBe(true);
   expect(restarted.isFirstLaunchForCurrentBundle()).toBe(true);
+
+  // Reset returns false when storage deletion fails and preserves in-memory state.
+  storage.removeItem.mockImplementationOnce(() => {
+    throw new Error('Remove failed');
+  });
+  expect(restarted.resetFirstLaunch()).toBe(false);
+  expect(restarted.isFirstLaunch()).toBe(true);
+});
+
+it('preserves legacyAppVersion even when appVersion is omitted during initFirstLaunch', () => {
+  const storage = createStorage();
+  const doc = openDocument(storage);
+  doc.initFirstLaunch({ isLegacyInstall: true, legacyAppVersion: '6.5.0' });
+  expect(doc.isFirstLaunch()).toBe(false);
+  expect(storage.getItem('1k_fl_app_ver')).toBe('6.5.0');
+
+  const next = openDocument(storage);
+  next.initFirstLaunch({ appVersion: '6.5.0' });
+  expect(next.isFirstLaunch()).toBe(false);
+  expect(next.isFirstLaunchForCurrentAppVersion()).toBe(false);
 });
 
 it('does not touch storage before initFirstLaunch so legacy init is never consumed early', () => {

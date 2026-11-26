@@ -208,19 +208,10 @@ export function initFirstLaunch(options?: FirstLaunchInitOptions): void {
   const isLegacyInstall = options?.isLegacyInstall === true;
   const launchedRead = safeGet(storage, FIRST_LAUNCH_KEYS.launched);
   const isFreshStorage = launchedRead.ok && launchedRead.value === null;
-
-  if (!launchedRead.ok) {
-    cachedFirstLaunch = false;
-  } else if (launchedRead.value === null) {
-    const wrote = safeSet(storage, FIRST_LAUNCH_KEYS.launched, '1');
-    cachedFirstLaunch = wrote && !isLegacyInstall;
-  } else {
-    // Present ("1" or corrupted): not a first launch, do not overwrite.
-    cachedFirstLaunch = false;
-  }
-
   const legacyBaseline = isFreshStorage ? options?.legacyAppVersion : undefined;
 
+  // Seed or evaluate app_ver BEFORE writing `launched`, so a legacy baseline is
+  // never lost even when `appVersion` is omitted or startup is interrupted.
   if (validAppVersion !== undefined) {
     cachedAppResults.set(
       validAppVersion,
@@ -231,6 +222,11 @@ export function initFirstLaunch(options?: FirstLaunchInitOptions): void {
         legacyBaseline
       )
     );
+  } else if (isValidVersion(legacyBaseline)) {
+    const existingApp = safeGet(storage, FIRST_LAUNCH_KEYS.appVersion);
+    if (existingApp.ok && existingApp.value === null) {
+      safeSet(storage, FIRST_LAUNCH_KEYS.appVersion, legacyBaseline);
+    }
   }
 
   if (validBundleVersion !== undefined) {
@@ -242,6 +238,16 @@ export function initFirstLaunch(options?: FirstLaunchInitOptions): void {
         validBundleVersion
       )
     );
+  }
+
+  if (!launchedRead.ok) {
+    cachedFirstLaunch = false;
+  } else if (launchedRead.value === null) {
+    const wrote = safeSet(storage, FIRST_LAUNCH_KEYS.launched, '1');
+    cachedFirstLaunch = wrote && !isLegacyInstall;
+  } else {
+    // Present ("1" or corrupted): not a first launch, do not overwrite.
+    cachedFirstLaunch = false;
   }
 }
 
@@ -304,16 +310,17 @@ export function isFirstLaunchForCurrentBundle(
   return result;
 }
 
-export function resetFirstLaunch(): void {
+export function resetFirstLaunch(): boolean {
   const storage = getStorage();
-  if (storage) {
-    try {
-      storage.removeItem(FIRST_LAUNCH_KEYS.launched);
-      storage.removeItem(FIRST_LAUNCH_KEYS.appVersion);
-      storage.removeItem(FIRST_LAUNCH_KEYS.bundleVersion);
-    } catch {
-      // Ignore storage errors during reset.
-    }
+  if (!storage) {
+    return false;
+  }
+  try {
+    storage.removeItem(FIRST_LAUNCH_KEYS.launched);
+    storage.removeItem(FIRST_LAUNCH_KEYS.appVersion);
+    storage.removeItem(FIRST_LAUNCH_KEYS.bundleVersion);
+  } catch {
+    return false;
   }
   initialized = false;
   cachedFirstLaunch = false;
@@ -321,4 +328,5 @@ export function resetFirstLaunch(): void {
   startupBundleVersion = undefined;
   cachedAppResults.clear();
   cachedBundleResults.clear();
+  return true;
 }

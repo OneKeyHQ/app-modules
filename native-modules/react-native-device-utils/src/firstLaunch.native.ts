@@ -46,7 +46,10 @@ export function isFirstLaunchForCurrentBundle(
   );
 }
 
-export function resetFirstLaunch(): void {
-  startupBundleVersion = undefined;
-  ReactNativeDeviceUtils.resetFirstLaunch();
+export function resetFirstLaunch(): boolean {
+  const removed = ReactNativeDeviceUtils.resetFirstLaunch();
+  if (removed) {
+    startupBundleVersion = undefined;
+  }
+  return removed;
 }

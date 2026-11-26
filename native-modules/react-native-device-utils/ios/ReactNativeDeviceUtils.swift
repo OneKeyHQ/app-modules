@@ -95,7 +95,7 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         DeviceUtilsFirstLaunch.forBundle(bundleVersion)
     }
 
-    func resetFirstLaunch() throws {
+    func resetFirstLaunch() throws -> Bool {
         DeviceUtilsFirstLaunch.reset()
     }
 
