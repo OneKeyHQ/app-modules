@@ -10,17 +10,25 @@ import ReactNativeNativeLogger
 /// orientation. The device orientation cannot stand in for it: the window can
 /// turn to landscape while the device lies flat or is held upright.
 final class InterfaceOrientationObserver {
-    static let shared = InterfaceOrientationObserver()
+    static let shared = InterfaceOrientationObserver(observesKeyWindowScene: true)
+
+    private struct Listener {
+        let owner: ObjectIdentifier
+        let callback: (InterfaceOrientation) -> Void
+    }
 
     private let lock = NSLock()
     private var orientation: InterfaceOrientation = .unknown
-    private var listeners: [Double: (InterfaceOrientation) -> Void] = [:]
+    private var listeners: [Double: Listener] = [:]
     private var nextListenerId: Double = 1
     private var keyWindowObserver: NSObjectProtocol?
+    private var sceneDisconnectObserver: NSObjectProtocol?
     private weak var observedScene: UIWindowScene?
     private var geometryObservation: NSKeyValueObservation?
 
-    private init() {
+    /// Tests create an observer that only stores what `receive` hands it.
+    init(observesKeyWindowScene: Bool) {
+        guard observesKeyWindowScene else { return }
         DispatchQueue.main.async { [weak self] in
             self?.install()
         }
@@ -32,12 +40,14 @@ final class InterfaceOrientationObserver {
         return orientation
     }
 
-    func addListener(_ callback: @escaping (InterfaceOrientation) -> Void) -> Double {
+    /// `owner` is the DeviceUtils HybridObject of the JS runtime that
+    /// subscribes; it removes its listeners when the runtime releases it.
+    func addListener(_ callback: @escaping (InterfaceOrientation) -> Void, owner: AnyObject) -> Double {
         lock.lock()
         defer { lock.unlock() }
         let id = nextListenerId
         nextListenerId += 1
-        listeners[id] = callback
+        listeners[id] = Listener(owner: ObjectIdentifier(owner), callback: callback)
         return id
     }
 
@@ -47,46 +57,19 @@ final class InterfaceOrientationObserver {
         listeners.removeValue(forKey: id)
     }
 
-    private func install(in keyWindow: UIWindow? = nil) {
-        guard #available(iOS 16.0, *) else { return }
-        if keyWindowObserver == nil {
-            keyWindowObserver = NotificationCenter.default.addObserver(
-                forName: UIWindow.didBecomeKeyNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] notification in
-                guard let window = notification.object as? UIWindow else { return }
-                self?.install(in: window)
-            }
-        }
-        guard let scene = (keyWindow ?? InterfaceOrientationObserver.keyWindow())?.windowScene,
-              scene !== observedScene else { return }
-        observedScene = scene
-        // Starts with the current value; later changes arrive on the main thread.
-        geometryObservation = scene.observe(\.effectiveGeometry, options: [.initial, .new]) { [weak self] scene, _ in
-            self?.update(scene.effectiveGeometry.interfaceOrientation, from: scene)
-        }
-    }
-
-    private func update(_ interfaceOrientation: UIInterfaceOrientation, from scene: UIWindowScene) {
-        // A scene the observer has moved away from must not overwrite the value.
-        guard scene === observedScene else { return }
-        let next = InterfaceOrientationObserver.orientation(from: interfaceOrientation)
-
+    func removeListeners(ownedBy owner: AnyObject) {
+        let ownerId = ObjectIdentifier(owner)
         lock.lock()
-        let didChange = next != orientation
-        if didChange {
-            orientation = next
-        }
-        let callbacks = didChange ? Array(listeners.values) : []
-        lock.unlock()
-
-        guard didChange else { return }
-        OneKeyLog.debug("DeviceUtils", "Interface orientation: \(next.stringValue)")
-        callbacks.forEach { $0(next) }
+        defer { lock.unlock() }
+        listeners = listeners.filter { $0.value.owner != ownerId }
     }
 
-    private static func orientation(from interfaceOrientation: UIInterfaceOrientation) -> InterfaceOrientation {
+    /// Stores a scene orientation and notifies listeners when the value changed.
+    func receive(_ interfaceOrientation: UIInterfaceOrientation) {
+        store(InterfaceOrientationObserver.orientation(from: interfaceOrientation))
+    }
+
+    static func orientation(from interfaceOrientation: UIInterfaceOrientation) -> InterfaceOrientation {
         switch interfaceOrientation {
         case .portrait:
             return .portrait
@@ -101,8 +84,65 @@ final class InterfaceOrientationObserver {
         }
     }
 
-    private static func keyWindow() -> UIWindow? {
+    private func install(in keyWindow: UIWindow? = nil) {
+        guard #available(iOS 16.0, *) else { return }
+        if keyWindowObserver == nil {
+            keyWindowObserver = NotificationCenter.default.addObserver(
+                forName: UIWindow.didBecomeKeyNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let window = notification.object as? UIWindow else { return }
+                self?.install(in: window)
+            }
+        }
+        if sceneDisconnectObserver == nil {
+            // A window of another scene can stay key without becoming key again.
+            sceneDisconnectObserver = NotificationCenter.default.addObserver(
+                forName: UIScene.didDisconnectNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let self, let scene = notification.object as? UIWindowScene,
+                      scene === self.observedScene else { return }
+                self.observedScene = nil
+                self.geometryObservation = nil
+                // The departing scene can still be listed as connected.
+                if let window = InterfaceOrientationObserver.keyWindow(excluding: scene) {
+                    self.install(in: window)
+                } else {
+                    self.store(.unknown)
+                }
+            }
+        }
+        guard let scene = (keyWindow ?? InterfaceOrientationObserver.keyWindow())?.windowScene,
+              scene !== observedScene else { return }
+        observedScene = scene
+        // Starts with the current value; later changes arrive on the main thread.
+        geometryObservation = scene.observe(\.effectiveGeometry, options: [.initial, .new]) { [weak self] scene, _ in
+            // A scene the observer has moved away from must not overwrite the value.
+            guard let self, scene === self.observedScene else { return }
+            self.receive(scene.effectiveGeometry.interfaceOrientation)
+        }
+    }
+
+    private func store(_ next: InterfaceOrientation) {
+        lock.lock()
+        let didChange = next != orientation
+        if didChange {
+            orientation = next
+        }
+        let callbacks = didChange ? listeners.values.map(\.callback) : []
+        lock.unlock()
+
+        guard didChange else { return }
+        OneKeyLog.debug("DeviceUtils", "Interface orientation: \(next.stringValue)")
+        callbacks.forEach { $0(next) }
+    }
+
+    private static func keyWindow(excluding excludedScene: UIScene? = nil) -> UIWindow? {
         UIApplication.shared.connectedScenes
+            .filter { $0 !== excludedScene }
             .compactMap { $0 as? UIWindowScene }
             .flatMap { $0.windows }
             .first { $0.isKeyWindow }

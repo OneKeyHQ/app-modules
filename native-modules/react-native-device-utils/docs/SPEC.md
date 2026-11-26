@@ -419,7 +419,10 @@ consumer decides what each orientation means for its content.
 
 One process-wide native observer owns the value, the scene observation, and
 the listener table. The main and background JS runtimes share it through their
-DeviceUtils HybridObjects; listener IDs are unique per process.
+DeviceUtils HybridObjects; listener IDs are unique per process. Each listener
+belongs to the HybridObject that added it: when that object is released, for
+example when its JS runtime is torn down without removing its listeners, they
+are removed with it.
 
 ## Public API and defaults
 
@@ -451,15 +454,19 @@ removeInterfaceOrientationChangedListener(id: number): void;
    observing, starting with the current value. When a window of another scene
    becomes key, observation moves to that scene; a window of the same scene
    becoming key keeps the existing observation. Callbacks from a previously
-   observed scene are ignored.
+   observed scene are ignored. When the observed scene disconnects, observation
+   moves to the key window of another scene, because that window may stay key
+   without posting the notification again; with no such window the value
+   becomes `unknown`.
 3. Listeners fire on the main thread, once per changed value, after the stored
    value is updated. Equal values do not notify. A rotation by 180 degrees
    (landscape left to landscape right) notifies even though the window size
    does not change.
 
-The observer, the observation, and the listeners live for the process.
-Callers must read the getter after subscribing, because the first reading can
-land before a listener is added.
+The observer and the observation live for the process. Listeners live until
+they are removed or their HybridObject is released. Callers must read the
+getter after subscribing, because the first reading can land before a listener
+is added.
 
 ## Platform contract
 
@@ -483,11 +490,16 @@ listener table.
 - iOS: `ios/InterfaceOrientationObserver.swift`, forwarded by
   `ios/ReactNativeDeviceUtils.swift`.
 - Android: `ReactNativeDeviceUtils.kt` (`getInterfaceOrientation`).
-- No automated native test covers this API; the standalone Swift runner cannot
-  host a UIKit window scene. Runtime verified: the value after a presented
-  controller forces landscape from a portrait-locked root, from either device
-  side, and 180-degree rotations while in landscape. Remaining acceptance: the
-  return to portrait on hardware and iOS 15 returning `unknown`.
+- `ios/tests/InterfaceOrientationObserverTests.swift` (pod test target) drives
+  the value through `receive(_:)`: each landscape side notifies once, a
+  repeated value does not notify, every UIKit orientation maps to its value,
+  and removed listeners and the listeners of a released owner are not called.
+  It does not cover the scene observation, which needs a UIKit window scene.
+- Runtime verified: the value after a presented controller forces landscape
+  from a portrait-locked root, from either device side, and 180-degree
+  rotations while in landscape. Remaining acceptance: the return to portrait on
+  hardware, iOS 15 returning `unknown`, a scene disconnect with multiple
+  scenes, and a JS reload releasing its listeners.
 
 # DeviceUtils: main menu
 

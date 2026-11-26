@@ -74,9 +74,20 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
     private static let userInterfaceStyleKey = "1k_user_interface_style"
 
+    // Set from this object's JS thread; read once more when it is released.
+    private var hasInterfaceOrientationListeners = false
+
     override init() {
         super.init()
         restoreUserInterfaceStyle()
+    }
+
+    deinit {
+        // A JS runtime torn down without removing its listeners releases this
+        // object; its listeners must not outlive it in the process-wide table.
+        if hasInterfaceOrientationListeners {
+            InterfaceOrientationObserver.shared.removeListeners(ownedBy: self)
+        }
     }
 
     private func restoreUserInterfaceStyle() {
@@ -157,7 +168,8 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
     }
 
     func addInterfaceOrientationChangedListener(callback: @escaping (InterfaceOrientation) -> Void) throws -> Double {
-        return InterfaceOrientationObserver.shared.addListener(callback)
+        hasInterfaceOrientationListeners = true
+        return InterfaceOrientationObserver.shared.addListener(callback, owner: self)
     }
 
     func removeInterfaceOrientationChangedListener(id: Double) throws -> Void {
