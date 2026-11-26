@@ -610,3 +610,80 @@ non-empty string, an empty string, and a thrown error. Android native CI builds
 the Kotlin implementation and generated JNI bindings. The consumer's Android
 native harness verifies the result is JavaScript `undefined`. Real AdServices
 token issuance requires an on-device check.
+
+# DeviceUtils: SKAdNetwork conversion value
+
+## Scope and platform contract
+
+`markSkanMilestones(bits, coarseRule): Promise<SkanUpdateResult | undefined>`
+ORs `bits` (an integer from 0 to 63), pending bits, and the last accepted
+SKAdNetwork fine conversion value. On iOS 16.1 and later it then calls
+`SKAdNetwork.updatePostbackConversionValue(_:coarseValue:lockWindow:completionHandler:)`
+with `lockWindow: false`. Android and older iOS resolve to `undefined`.
+
+The coarse value is `high` when the merged value shares a bit with
+`coarseRule.highMask`. Otherwise it is `medium` when it shares a bit with
+`coarseRule.mediumMask`, and `low` in every other case. Both masks are integers
+from 0 to 63. The OneKey app owns the milestone bit schema and the masks, and
+must keep them in line with the conversion value schema configured for the ad
+network. DeviceUtils assigns no meaning to individual bits.
+
+Supported iOS calls submit to StoreKit even with `bits` set to 0 or with the
+same fine and coarse values as the last report, subject to the validation and
+in-flight rules below.
+SKAdNetwork 4 requires an update during each conversion window for multiple
+postbacks. StoreKit manages the windows, and the app must call this API during
+each window in which it wants to submit an update.
+
+The result carries the submitted `fineValue`, its `coarseValue`, and
+`updated: true` after StoreKit reports success. StoreKit determines which
+values appear in a postback. SKAdNetwork 4 uses only coarse values in the
+second and third windows.
+
+## Lifecycle and concurrency
+
+The main and background React runtimes each create their own HybridObject.
+Every call goes through one process-wide store with a serial queue, so the
+read, merge, report and persist steps run as one unit. Calls from either
+runtime are applied in arrival order, and the fine value includes every bit
+from prior accepted submissions. The queue waits for the SKAdNetwork
+completion handler for up to 30 seconds. A timed-out submission remains in
+flight until StoreKit completes it. While it is pending, subsequent valid
+calls retain their new bits and reject without making another submission.
+A late success persists the accepted fine value and clears the bits it
+reports from pending storage before submissions resume. A late failure
+leaves all unreported bits pending. If StoreKit never completes a timed-out
+submission, only a process restart resets this guard.
+
+## Data and retention
+
+The last accepted fine value lives in `UserDefaults.standard` under
+`so.onekey.deviceutils.skan.fineValue`. It is written only after SKAdNetwork
+accepts the update. Valid milestone bits are retained separately under
+`so.onekey.deviceutils.skan.pendingBits` before submission. An accepted value
+is written before its bits are cleared from pending storage. Reports merge
+the two values with bitwise OR, so replaying any leftover bits is safe.
+Pending bits survive a process restart. The coarse value is derived on every
+call from the merged fine value and the caller's current masks. Deleting the
+app clears both stored values. The values hold no user or wallet identifiers
+and are not logged.
+
+## Failure
+
+The Promise rejects for invalid inputs, StoreKit errors, a 30-second timeout,
+or a pending timed-out submission. The last accepted fine value stays in
+storage until StoreKit confirms a successful update, including a late
+success. The next submission includes the pending bits, even when the caller
+passes `bits: 0`. Invalid calls leave storage unchanged.
+
+## Conformance and acceptance
+
+The contract is defined in `src/ReactNativeDeviceUtils.nitro.ts` and implemented
+in `ios/SkanConversionStore.swift`, `ios/ReactNativeDeviceUtils.swift` and
+`ReactNativeDeviceUtils.kt`. The iOS pod's XCTest suite injects a reporter and
+an isolated `UserDefaults` suite. It covers bit merging, coarse mapping, the
+same fine and coarse values submitted in consecutive simulated windows, zero
+values, a coarse rule change, retry after a rejected report and store
+recreation, input validation, a timeout with late completion, and concurrent
+callers. Android native CI builds the Kotlin stub. Confirming real postbacks
+across windows requires an eligible ad attribution on a test device.

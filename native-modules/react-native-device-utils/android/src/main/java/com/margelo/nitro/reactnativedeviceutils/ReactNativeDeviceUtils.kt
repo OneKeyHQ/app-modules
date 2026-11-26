@@ -1353,6 +1353,14 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
         return Promise.resolved(null)
     }
 
+    // SKAdNetwork is iOS-only.
+    override fun markSkanMilestones(
+        bits: Double,
+        coarseRule: SkanCoarseRule
+    ): Promise<SkanUpdateResult?> {
+        return Promise.resolved(null)
+    }
+
     // MARK: - Android Channel & Installer
 
     override fun getAndroidChannel(): AndroidChannel {

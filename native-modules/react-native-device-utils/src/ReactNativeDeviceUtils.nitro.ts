@@ -87,6 +87,25 @@ export interface GooglePlayServicesStatus {
   isAvailable: boolean;
 }
 
+export type SkanCoarseValue = 'low' | 'medium' | 'high';
+
+/** Bit masks (0-63) that map a fine conversion value to a coarse value. */
+export interface SkanCoarseRule {
+  highMask: number;
+  mediumMask: number;
+}
+
+export interface SkanUpdateResult {
+  /**
+   * Merged fine conversion value submitted to SKAdNetwork (0-63).
+   * Only the first SKAdNetwork 4 conversion window uses fine values.
+   */
+  fineValue: number;
+  coarseValue: SkanCoarseValue;
+  /** True when StoreKit reports a successful submission. */
+  updated: boolean;
+}
+
 export interface ReactNativeDeviceUtils
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   initEventListeners(): void;
@@ -182,4 +201,20 @@ export interface ReactNativeDeviceUtils
 
   /** Returns an AdServices token on iOS 14.3+, or undefined on unsupported platforms. */
   getAppleAdsAttributionToken(): Promise<string | undefined>;
+
+  /**
+   * ORs `bits` (0-63) with pending bits and the last accepted fine conversion
+   * value. Submits even unchanged values on iOS 16.1+. Call during each
+   * conversion window that needs an update. The coarse
+   * value is `high` when the merged value shares a bit with
+   * `coarseRule.highMask`, else `medium` for `coarseRule.mediumMask`, else
+   * `low`. Rejects on invalid input, a StoreKit error, a timeout, or while a
+   * timed-out submission is still pending. Valid bits are kept for the next
+   * submission until StoreKit accepts them. Android and older iOS resolve to
+   * undefined.
+   */
+  markSkanMilestones(
+    bits: number,
+    coarseRule: SkanCoarseRule
+  ): Promise<SkanUpdateResult | undefined>;
 }

@@ -19,7 +19,7 @@ Pod::Spec.new do |s|
     "cpp/**/*.{hpp,cpp}",
   ]
   s.exclude_files = "ios/tests/**/*"
-  s.frameworks   = "AdServices"
+  s.frameworks   = "AdServices", "StoreKit"
 
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
