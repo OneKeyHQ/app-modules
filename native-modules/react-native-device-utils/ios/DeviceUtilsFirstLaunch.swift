@@ -280,14 +280,15 @@ final class FirstLaunchHistory {
     static func validatedVersion(_ version: String?) -> String? {
         guard let version, (1...120).contains(version.utf8.count) else { return nil }
         let fullRange = NSRange(version.startIndex..<version.endIndex, in: version)
-        guard versionRegex.firstMatch(in: version, options: [], range: fullRange) != nil else {
+        guard let match = versionRegex.firstMatch(in: version, options: [], range: fullRange),
+              match.range == fullRange else {
             return nil
         }
         return version
     }
 
     private static let versionRegex: NSRegularExpression = {
-        let pattern = "^[0-9]+(?:\\.[0-9]+)*(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+        let pattern = "\\A[0-9]+(?:\\.[0-9]+)*(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?\\z"
         return try! NSRegularExpression(pattern: pattern, options: [])
     }()
 }

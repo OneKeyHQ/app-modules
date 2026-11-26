@@ -151,8 +151,9 @@ func testFirstLaunchHistory() throws {
     // Explicit lookup of another bundle must not overwrite zero-arg startup bundle result.
     precondition(!fresh.isFirstLaunchForBundle("999"))
     precondition(fresh.isFirstLaunchForBundle(nil))
-    // Reject non-numeric version core and traversal strings.
+    // Reject non-numeric version core, trailing newlines, and traversal strings.
     precondition(!fresh.isFirstLaunchForBundle("v1000"))
+    precondition(!fresh.isFirstLaunchForBundle("1000\n"))
     precondition(!fresh.isFirstLaunchForBundle("../escape"))
 
     let restart = launch("6.5.0")

@@ -153,8 +153,9 @@ fun main() {
         // Explicit lookup of another bundle must not overwrite zero-arg startup bundle result.
         check(!fresh.isFirstLaunchForBundle("999"))
         check(fresh.isFirstLaunchForBundle(null))
-        // Reject non-numeric version core and traversal strings.
+        // Reject non-numeric version core, trailing newlines, and traversal strings.
         check(!fresh.isFirstLaunchForBundle("v1000"))
+        check(!fresh.isFirstLaunchForBundle("1000\n"))
         check(!fresh.isFirstLaunchForBundle("../escape"))
 
         val restart = launch("6.5.0")
