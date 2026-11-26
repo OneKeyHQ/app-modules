@@ -46,6 +46,15 @@ private data class NavigationBarAppearance(
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
 
+  override fun isFirstLaunch(): Boolean =
+    DeviceUtilsFirstLaunch.isFirstLaunch(NitroModules.applicationContext)
+
+  override fun isFirstLaunchForCurrentAppVersion(): Boolean =
+    DeviceUtilsFirstLaunch.isFirstLaunchForCurrentAppVersion(NitroModules.applicationContext)
+
+  override fun isFirstLaunchForCurrentBundle(bundleVersion: String?): Boolean =
+    DeviceUtilsFirstLaunch.isFirstLaunchForBundle(bundleVersion, NitroModules.applicationContext)
+
   override fun getInMemoryValue(key: String): InMemoryValue? = InMemoryStore.get(key)
 
   override fun setInMemoryValue(key: String, value: InMemoryValue) = InMemoryStore.set(key, value)

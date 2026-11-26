@@ -63,6 +63,11 @@ ReactNativeDeviceUtils.initEventListeners();
 const { launchType, deepLink } =
   await ReactNativeDeviceUtils.getLaunchOptions();
 const startupTime = await ReactNativeDeviceUtils.getStartupTime();
+const isFirstLaunch = ReactNativeDeviceUtils.isFirstLaunch();
+const isFirstAppVersionLaunch = ReactNativeDeviceUtils.isFirstLaunchForCurrentAppVersion();
+const isFirstBundleLaunch = ReactNativeDeviceUtils.isFirstLaunchForCurrentBundle(
+  process.env.BUNDLE_VERSION,
+);
 
 // Claim a startup stage exactly once across runtimes.
 const claimed = ReactNativeDeviceUtils.setInMemoryValueIfAbsent(
@@ -74,6 +79,47 @@ const claimed = ReactNativeDeviceUtils.setInMemoryValueIfAbsent(
 Consumers own key namespaces and decide what to do with each result. Store
 values are native copies, not retained JS objects.
 
+### First launch in shared code
+
+The following entry point works in React Native, Web, Electron renderers,
+and extension pages. Call `initFirstLaunch` once at app startup, then read
+the cached booleans synchronously anywhere:
+
+```ts
+import {
+  initFirstLaunch,
+  isFirstLaunch,
+  isFirstLaunchForCurrentAppVersion,
+  isFirstLaunchForCurrentBundle,
+} from '@onekeyfe/react-native-device-utils/first-launch';
+
+// Call once at app startup. On Web/Desktop/Extension, pass host-sampled
+// `isLegacyInstall` / `legacyAppVersion` if upgrading from versions before this API.
+initFirstLaunch({
+  appVersion,
+  bundleVersion,
+  isLegacyInstall,
+});
+
+// Pure in-memory reads during the current launch.
+const firstLaunch = isFirstLaunch();
+const firstAppVersionLaunch = isFirstLaunchForCurrentAppVersion();
+const firstBundleLaunch = isFirstLaunchForCurrentBundle();
+```
+
+On iOS and Android, initialize the pure native singleton early in
+`AppDelegate.didFinishLaunchingWithOptions` (`OneKeyDeviceUtilsFirstLaunch` via
+`initializeWithOptions:` / `hasPersistedState`) or `Application.onCreate()`
+(`DeviceUtilsFirstLaunch.initialize(context, isLegacyInstall = { ... })`) so
+host-specific legacy upgrade detection stays in the app and runs before React Native starts.
+
+Persisted state is a fixed 3-field record (`hasLaunched`, `highestAppVersion`,
+`highestBundleVersion`), so storage never grows and requires no cleanup.
+Rolling back to a version lower than the recorded highest version returns `false`.
+Outside React Native, the record is stored in `localStorage` under
+`onekey:device-utils:first-launch`. Call from an extension-owned UI page; an MV3
+service worker returns `false`.
+
 ## API
 
 | Method | Result | Platforms | Description |
@@ -81,6 +127,9 @@ values are native copies, not retained JS objects.
 | `initEventListeners()` | `void` | iOS, Android | Registers native listeners; call once at startup. |
 | `getLaunchOptions()` / `clearLaunchOptions()` | `Promise<LaunchOptions>` / `Promise<boolean>` | iOS, Android | Read or consume the app's launch type and optional deep link. |
 | `getStartupTime()` | `Promise<number>` | iOS, Android | Native startup timestamp. |
+| `isFirstLaunch()` | `boolean` | iOS, Android | Synchronous first launch of the local installation, with a stable result for the native process. |
+| `isFirstLaunchForCurrentAppVersion()` | `boolean` | iOS, Android | First launch of a native release version higher than any previously launched version. |
+| `isFirstLaunchForCurrentBundle(bundleVersion?)` | `boolean` | iOS, Android | First launch of a bundle version higher than any previously launched bundle. |
 | `getDeviceToken()` / `saveDeviceToken(token)` / `registerDeviceToken()` | `Promise<string>` / `Promise<void>` / `Promise<boolean>` | iOS, Android | Push-token plumbing; host setup still owns registration. |
 | `getInMemoryValue(key)` / `setInMemoryValue(key, value)` / `removeInMemoryValue(key)` / `setInMemoryValueIfAbsent(key, value)` | `InMemoryValue \| undefined` / `void` / `boolean` / `boolean` | iOS, Android | Synchronous bounded primitive store. |
 | `getAndClearColdStartLocalNotification()` | `Promise<string>` | iOS, Android | Returns local-notification JSON once; Android returns `""`. |

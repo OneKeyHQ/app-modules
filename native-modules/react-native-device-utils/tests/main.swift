@@ -129,3 +129,69 @@ DispatchQueue.concurrentPerform(iterations: 256) { index in
 }
 precondition(capacityWinners == 128 && rejectedClaims == 128)
 print("Swift in-memory store: passed")
+
+func testFirstLaunchHistory() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    func launch(_ version: String, previous: String? = nil) -> FirstLaunchHistory {
+        FirstLaunchHistory(
+            directory: directory,
+            appVersion: version,
+            previousAppVersion: previous,
+            hasPreviousLaunch: previous != nil
+        )
+    }
+
+    let fresh = launch("6.5.0")
+    precondition(fresh.isFirstLaunch && fresh.isFirstLaunchForCurrentAppVersion)
+    precondition(!fresh.isFirstLaunchForBundle(nil))
+    precondition(fresh.isFirstLaunchForBundle("1000") && fresh.isFirstLaunchForBundle("1000"))
+    precondition(fresh.isFirstLaunchForBundle(nil))
+    precondition(!fresh.isFirstLaunchForBundle("../escape"))
+
+    let restart = launch("6.5.0")
+    precondition(!restart.isFirstLaunch && !restart.isFirstLaunchForCurrentAppVersion)
+    precondition(!restart.isFirstLaunchForBundle("1000"))
+    precondition(!restart.isFirstLaunchForBundle(nil))
+    precondition(restart.isFirstLaunchForBundle("1001") && restart.isFirstLaunchForBundle("1001"))
+    precondition(restart.isFirstLaunchForBundle(nil))
+
+    let rollback = launch("6.5.0")
+    precondition(!rollback.isFirstLaunch && !rollback.isFirstLaunchForCurrentAppVersion)
+    precondition(!rollback.isFirstLaunchForBundle("1000"))
+    precondition(!rollback.isFirstLaunchForBundle("999"))
+
+    let upgrade = launch("6.10.0", previous: "6.5.0")
+    precondition(!upgrade.isFirstLaunch && upgrade.isFirstLaunchForCurrentAppVersion)
+    precondition(!upgrade.isFirstLaunchForBundle("1001"))
+    precondition(upgrade.isFirstLaunchForBundle("1002"))
+
+    let downgrade = launch("6.9.0", previous: "6.10.0")
+    precondition(!downgrade.isFirstLaunch && !downgrade.isFirstLaunchForCurrentAppVersion)
+    precondition(!downgrade.isFirstLaunchForBundle("1001"))
+
+    let legacySameVersion = FirstLaunchHistory(
+        directory: directory.appendingPathComponent("legacy-same"),
+        appVersion: "6.5.0",
+        previousAppVersion: "6.5.0",
+        hasPreviousLaunch: true
+    )
+    precondition(!legacySameVersion.isFirstLaunch && !legacySameVersion.isFirstLaunchForCurrentAppVersion)
+
+    let legacyUpgraded = FirstLaunchHistory(
+        directory: directory.appendingPathComponent("legacy-upgraded"),
+        appVersion: "6.6.0",
+        previousAppVersion: "6.5.0",
+        hasPreviousLaunch: true
+    )
+    precondition(!legacyUpgraded.isFirstLaunch && legacyUpgraded.isFirstLaunchForCurrentAppVersion)
+
+    let file = directory.appendingPathComponent("file")
+    try Data().write(to: file)
+    let failed = FirstLaunchHistory(directory: file, appVersion: "6.5.0", previousAppVersion: nil, hasPreviousLaunch: false)
+    precondition(!failed.isFirstLaunch && !failed.isFirstLaunchForCurrentAppVersion && !failed.isFirstLaunchForBundle("1000"))
+}
+
+try testFirstLaunchHistory()
+print("Swift first launch history: passed")

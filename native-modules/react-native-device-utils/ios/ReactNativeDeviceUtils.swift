@@ -74,6 +74,18 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
     private static let userInterfaceStyleKey = "1k_user_interface_style"
 
+    func isFirstLaunch() throws -> Bool {
+        DeviceUtilsFirstLaunch.value
+    }
+
+    func isFirstLaunchForCurrentAppVersion() throws -> Bool {
+        DeviceUtilsFirstLaunch.forCurrentAppVersion
+    }
+
+    func isFirstLaunchForCurrentBundle(bundleVersion: String?) throws -> Bool {
+        DeviceUtilsFirstLaunch.forBundle(bundleVersion)
+    }
+
     override init() {
         super.init()
         restoreUserInterfaceStyle()

@@ -129,6 +129,12 @@ export interface ReactNativeDeviceUtils
   saveDeviceToken(token: string): Promise<void>;
   registerDeviceToken(): Promise<boolean>;
   getStartupTime(): Promise<number>;
+  /** Whether the current native process is the first launch of this local installation. */
+  isFirstLaunch(): boolean;
+  /** First launch of a native release version higher than any previously launched version. */
+  isFirstLaunchForCurrentAppVersion(): boolean;
+  /** First launch of a bundle version higher than any previously launched bundle. */
+  isFirstLaunchForCurrentBundle(bundleVersion?: string): boolean;
   // Process-owned primitive Map, shared by all runtimes and never persisted.
   getInMemoryValue(key: string): InMemoryValue | undefined;
   setInMemoryValue(key: string, value: InMemoryValue): void;

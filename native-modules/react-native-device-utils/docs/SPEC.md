@@ -1,3 +1,55 @@
+# DeviceUtils: first launch
+
+## Status and scope
+
+The iOS and Android Nitro first-launch getters return synchronous booleans. Results are
+shared by the main and background JavaScript runtimes and stay fixed for each
+identity across JS reloads and foreground transitions within the same process.
+Background process starts that run the normal native app bootstrap also count.
+
+| Method | First launch identity |
+| --- | --- |
+| `isFirstLaunch()` | The local app installation. |
+| `isFirstLaunchForCurrentAppVersion()` | The native app's release version (`CFBundleShortVersionString` on iOS, `versionName` on Android). Build number changes alone keep the same identity. |
+| `isFirstLaunchForCurrentBundle(bundleVersion?: string)` | The unique version embedded in the executing JS bundle. Call at JS startup with that version for built-in and OTA bundles. |
+
+## Lifecycle, persistence, and platform behavior
+
+Persisted state is stored as a fixed 3-field JSON object:
+
+```json
+{
+  "hasLaunched": true,
+  "highestAppVersion": "6.5.0",
+  "highestBundleVersion": "1000"
+}
+```
+
+Because only these three fields are persisted, storage size is constant and no cleanup or history pruning API is needed.
+
+On each launch, the startup path performs a single **read persisted state → compute and freeze current-launch booleans in memory → advance persisted fields if needed** cycle. All getters during that launch return the frozen in-memory booleans and never re-evaluate against the updated disk values.
+
+| Platform | Initialization | Storage | Legacy-install evidence |
+| --- | --- | --- | --- |
+| iOS | Host calls `DeviceUtilsFirstLaunch.initialize(options:)` (or dynamically via `NSClassFromString("OneKeyDeviceUtilsFirstLaunch")` + `initializeWithOptions:`) in `AppDelegate.didFinishLaunchingWithOptions` before initializing app storage. Lazy fallback initializes with `isLegacyInstall = false`. | `onekey-device-utils-first-launch.json` in Application Support | Owned by the host app. Use `hasPersistedState()` to skip legacy checks once persisted state exists. |
+| Android | Host calls `DeviceUtilsFirstLaunch.initialize(context, isLegacyInstall = { ... }, legacyAppVersion = { ... })` in `Application.onCreate()`. Lazy fallback initializes with `isLegacyInstall = false`. | `onekey-device-utils-first-launch.json` in `context.filesDir` | Owned by the host app (lambdas are only invoked when no persisted file exists yet). |
+| Web / Desktop / Extension | Host calls `initFirstLaunch({ appVersion, bundleVersion, isLegacyInstall, legacyAppVersion })` at UI startup. | `localStorage` key `onekey:device-utils:first-launch` | Owned by the host app (e.g. sampled in an HTML `<head>` script or Electron preload before app JS writes to storage). |
+
+Version comparison compares numeric dot-separated segments by integer value (e.g. `6.10.0 > 6.5.0`, `1000 > 999`) with SemVer pre-release ordering (`6.5.0 > 6.5.0-beta.1`). A version strictly higher than the persisted highest version returns `true` for the current launch and advances the persisted field. Rolling back to or running any version lower than or equal to the persisted highest version returns `false` and keeps the higher value persisted.
+
+Missing startup initialization, unavailable or corrupted storage, invalid identifiers (must be 1–120 ASCII `[0-9A-Za-z._+-]`), and write failures fail safe and return `false`. There are no network calls, JS callbacks, async waits, or wallet reads. Native app-install and app-version state are recorded during native startup even if JavaScript never calls a getter. Call `initFirstLaunch({ appVersion, bundleVersion })` at app JS startup so bundle versions on native and all three dimensions on Web/Desktop/Extension are recorded unconditionally.
+
+## Web, desktop renderer, and extension pages
+
+The `@onekeyfe/react-native-device-utils/first-launch` entry point exposes:
+
+- `initFirstLaunch(options?: { appVersion?: string; bundleVersion?: string }): void`
+- `isFirstLaunch(): boolean`
+- `isFirstLaunchForCurrentAppVersion(appVersion?: string): boolean`
+- `isFirstLaunchForCurrentBundle(bundleVersion?: string): boolean`
+
+React Native delegates to `ReactNativeDeviceUtils`. Web documents, Electron renderers, and extension-owned pages share `src/firstLaunch.web.ts` backed by `window.localStorage`. After `initFirstLaunch(...)` runs at startup, getters can be called with zero arguments to read the cached launch results. Server runtimes and MV3 service workers have no `window.localStorage` and return `false`.
+
 # DeviceUtils: InMemoryStore contract
 
 ## Status and scope

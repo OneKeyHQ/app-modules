@@ -139,4 +139,51 @@ fun main() {
     }
     check(capacityWinners.get() == 128 && rejectedClaims.get() == 128)
     println("Kotlin in-memory store: passed")
+
+    val directory = kotlin.io.path.createTempDirectory("device-utils-first-launch-").toFile()
+    try {
+        fun launch(version: String, previous: String? = null) =
+            FirstLaunchHistory(directory, version, previous, hasPreviousLaunch = previous != null)
+
+        val fresh = launch("6.5.0")
+        check(fresh.isFirstLaunch && fresh.isFirstLaunchForCurrentAppVersion)
+        check(!fresh.isFirstLaunchForBundle(null))
+        check(fresh.isFirstLaunchForBundle("1000") && fresh.isFirstLaunchForBundle("1000"))
+        check(fresh.isFirstLaunchForBundle(null))
+        check(!fresh.isFirstLaunchForBundle("../escape"))
+
+        val restart = launch("6.5.0")
+        check(!restart.isFirstLaunch && !restart.isFirstLaunchForCurrentAppVersion)
+        check(!restart.isFirstLaunchForBundle("1000"))
+        check(!restart.isFirstLaunchForBundle(null))
+        check(restart.isFirstLaunchForBundle("1001") && restart.isFirstLaunchForBundle("1001"))
+        check(restart.isFirstLaunchForBundle(null))
+
+        val rollback = launch("6.5.0")
+        check(!rollback.isFirstLaunch && !rollback.isFirstLaunchForCurrentAppVersion)
+        check(!rollback.isFirstLaunchForBundle("1000"))
+        check(!rollback.isFirstLaunchForBundle("999"))
+
+        val upgrade = launch("6.10.0", previous = "6.5.0")
+        check(!upgrade.isFirstLaunch && upgrade.isFirstLaunchForCurrentAppVersion)
+        check(!upgrade.isFirstLaunchForBundle("1001"))
+        check(upgrade.isFirstLaunchForBundle("1002"))
+
+        val downgrade = launch("6.9.0", previous = "6.10.0")
+        check(!downgrade.isFirstLaunch && !downgrade.isFirstLaunchForCurrentAppVersion)
+        check(!downgrade.isFirstLaunchForBundle("1001"))
+
+        val legacySame = FirstLaunchHistory(directory.resolve("legacy-same"), "6.5.0", "6.5.0", hasPreviousLaunch = true)
+        check(!legacySame.isFirstLaunch && !legacySame.isFirstLaunchForCurrentAppVersion)
+
+        val legacyUpgraded = FirstLaunchHistory(directory.resolve("legacy-upgraded"), "6.6.0", "6.5.0", hasPreviousLaunch = true)
+        check(!legacyUpgraded.isFirstLaunch && legacyUpgraded.isFirstLaunchForCurrentAppVersion)
+
+        val file = directory.resolve("file").apply { writeText("") }
+        val failed = FirstLaunchHistory(file, "6.5.0", null, hasPreviousLaunch = false)
+        check(!failed.isFirstLaunch && !failed.isFirstLaunchForCurrentAppVersion && !failed.isFirstLaunchForBundle("1000"))
+    } finally {
+        directory.deleteRecursively()
+    }
+    println("Kotlin first launch history: passed")
 }
