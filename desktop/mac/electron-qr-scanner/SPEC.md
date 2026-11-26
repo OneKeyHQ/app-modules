@@ -116,6 +116,11 @@ analysis queue, so preview rate is bounded by detection time per frame.
     queue while keeping capture and preview slots healthy; the Electron preload
     freezes the `<canvas>` by skipping `drawImage` while still releasing every
     `importedSharedTexture`).
+  - Every change to `setPaused` retires pending analysis and queued callbacks
+    from the previous pause state, including callbacks delivered by N-API
+    after a rapid pause and resume. A repeated call with the same value is
+    idempotent. The capture generation remains stable. Preview callbacks
+    from a retired pause state release their texture without delivery.
   - When `multiSymbol` is `true`, `VNDetectBarcodesRequest` reports all
     observations per frame without splitting through `QrFrameTextGate`. Vision
     `boundingBox` uses a bottom-left origin, so native flips Y before emitting:

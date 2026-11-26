@@ -26,6 +26,8 @@ function createMockCapture(options) {
       running = false;
     }
 
+    setPaused() { return 0; }
+
     setDevice() {
       return running ? this.start() : undefined;
     }
@@ -66,8 +68,8 @@ test("drops queued events across stop, restart and camera switch", () => {
       frame.release();
     },
   });
-  const text = (generation) => emit({ kind: "text", text: "qr", generation });
-  const frame = (generation, token) => emit({ kind: "frame", generation, token });
+  const text = (generation) => emit({ kind: "text", text: "qr", generation, analysisRevision: 0 });
+  const frame = (generation, token) => emit({ kind: "frame", generation, token, analysisRevision: 0 });
 
   capture.setDevice("initial");
   text(0);

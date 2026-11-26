@@ -10,6 +10,21 @@
       "types": "./lib/typescript/src/index.d.ts",
       "default": "./lib/module/index.js"
     },
+    "./first-launch": {
+      "browser": {
+        "types": "./lib/typescript/src/firstLaunch.web.d.ts",
+        "source": "./src/firstLaunch.web.ts",
+        "default": "./lib/module/firstLaunch.web.js"
+      },
+      "react-native": {
+        "types": "./lib/typescript/src/firstLaunch.native.d.ts",
+        "source": "./src/firstLaunch.native.ts",
+        "default": "./lib/module/firstLaunch.native.js"
+      },
+      "types": "./lib/typescript/src/firstLaunch.web.d.ts",
+      "source": "./src/firstLaunch.web.ts",
+      "default": "./lib/module/firstLaunch.web.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

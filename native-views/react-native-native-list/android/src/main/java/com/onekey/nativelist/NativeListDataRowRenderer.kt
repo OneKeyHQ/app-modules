@@ -227,6 +227,13 @@ internal class NativeListDataRowView(context: ThemedReactContext, fonts: NativeL
 internal class NativeListTableColumnView(
   context: android.content.Context, private val fonts: NativeListFonts, private val wrapSecondary: Boolean = false,
 ) : LinearLayout(context) {
+  var maxTableWidth: Int? = null
+  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+    val max = maxTableWidth
+    val width = if (max == null) widthMeasureSpec else
+      MeasureSpec.makeMeasureSpec(minOf(max, MeasureSpec.getSize(widthMeasureSpec)), MeasureSpec.AT_MOST)
+    super.onMeasure(width, heightMeasureSpec)
+  }
   private val primaryLine = LinearLayout(context)
   private val primary = NativeListTextView(context)
   private val titleIcon = OneKeyIconView(context)

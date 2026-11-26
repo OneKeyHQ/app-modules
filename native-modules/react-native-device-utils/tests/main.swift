@@ -129,3 +129,98 @@ DispatchQueue.concurrentPerform(iterations: 256) { index in
 }
 precondition(capacityWinners == 128 && rejectedClaims == 128)
 print("Swift in-memory store: passed")
+
+func testFirstLaunchHistory() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    func launch(_ version: String, previous: String? = nil) -> FirstLaunchHistory {
+        FirstLaunchHistory(
+            baseDirectory: directory,
+            appVersion: version,
+            previousAppVersion: previous,
+            hasPreviousLaunch: previous != nil
+        )
+    }
+
+    let fresh = launch("6.5.0")
+    precondition(fresh.isFirstLaunch && fresh.isFirstLaunchForCurrentAppVersion)
+    precondition(!fresh.isFirstLaunchForBundle(nil))
+    fresh.initForBundle("1000")
+    precondition(fresh.isFirstLaunchForBundle("1000") && fresh.isFirstLaunchForBundle(nil))
+    // Explicit lookup of another bundle must not overwrite zero-arg active bundle result.
+    precondition(!fresh.isFirstLaunchForBundle("999"))
+    precondition(fresh.isFirstLaunchForBundle(nil))
+    // Reject non-numeric version core, trailing newlines, and traversal strings.
+    precondition(!fresh.isFirstLaunchForBundle("v1000"))
+    precondition(!fresh.isFirstLaunchForBundle("1000\n"))
+    precondition(!fresh.isFirstLaunchForBundle("../escape"))
+
+    let restart = launch("6.5.0")
+    precondition(!restart.isFirstLaunch && !restart.isFirstLaunchForCurrentAppVersion)
+    restart.initForBundle("1000")
+    precondition(!restart.isFirstLaunchForBundle("1000") && !restart.isFirstLaunchForBundle(nil))
+    // Explicit lookup of a higher bundle must not overwrite active bundle.
+    precondition(restart.isFirstLaunchForBundle("1001") && restart.isFirstLaunchForBundle("1001"))
+    precondition(!restart.isFirstLaunchForBundle(nil))
+    // In-process OTA reload calls initForBundle with the new executing bundle and updates zero-arg getter.
+    restart.initForBundle("1001")
+    precondition(restart.isFirstLaunchForBundle(nil))
+    // Invalid startup bundle clears the active bundle identity so zero-arg getter returns false.
+    restart.initForBundle("v1002")
+    precondition(!restart.isFirstLaunchForBundle(nil))
+
+    let rollback = launch("6.5.0")
+    precondition(!rollback.isFirstLaunch && !rollback.isFirstLaunchForCurrentAppVersion)
+    precondition(!rollback.isFirstLaunchForBundle("1000"))
+    precondition(!rollback.isFirstLaunchForBundle("999"))
+
+    let upgrade = launch("6.10.0", previous: "6.5.0")
+    precondition(!upgrade.isFirstLaunch && upgrade.isFirstLaunchForCurrentAppVersion)
+    precondition(!upgrade.isFirstLaunchForBundle("1001"))
+    precondition(upgrade.isFirstLaunchForBundle("1002"))
+
+    let downgrade = launch("6.9.0", previous: "6.10.0")
+    precondition(!downgrade.isFirstLaunch && !downgrade.isFirstLaunchForCurrentAppVersion)
+    precondition(!downgrade.isFirstLaunchForBundle("1001"))
+
+    let legacySameVersion = FirstLaunchHistory(
+        baseDirectory: directory.appendingPathComponent("legacy-same"),
+        appVersion: "6.5.0",
+        previousAppVersion: "6.5.0",
+        hasPreviousLaunch: true
+    )
+    precondition(!legacySameVersion.isFirstLaunch && !legacySameVersion.isFirstLaunchForCurrentAppVersion)
+
+    let legacyUpgraded = FirstLaunchHistory(
+        baseDirectory: directory.appendingPathComponent("legacy-upgraded"),
+        appVersion: "6.6.0",
+        previousAppVersion: "6.5.0",
+        hasPreviousLaunch: true
+    )
+    precondition(!legacyUpgraded.isFirstLaunch && legacyUpgraded.isFirstLaunchForCurrentAppVersion)
+
+    // Corrupted individual files must fail closed without overwriting or breaking healthy files.
+    for (idx, bad) in ["", "6.6.0!", "v1000"].enumerated() {
+        let corruptBase = directory.appendingPathComponent("corrupt-\(idx)")
+        let corruptStore = corruptBase.appendingPathComponent(FirstLaunchHistory.directoryName, isDirectory: true)
+        try FileManager.default.createDirectory(at: corruptStore, withIntermediateDirectories: true)
+        try Data("1".utf8).write(to: corruptStore.appendingPathComponent(FirstLaunchHistory.launchedFileName))
+        let badAppFile = corruptStore.appendingPathComponent(FirstLaunchHistory.appVersionFileName)
+        try Data(bad.utf8).write(to: badAppFile)
+        let corrupted = FirstLaunchHistory(baseDirectory: corruptBase, appVersion: "6.5.0", previousAppVersion: nil, hasPreviousLaunch: false)
+        precondition(!corrupted.isFirstLaunch && !corrupted.isFirstLaunchForCurrentAppVersion)
+        let remaining = try String(contentsOf: badAppFile, encoding: .utf8)
+        precondition(remaining == bad)
+        // Healthy bundle file still works independently.
+        precondition(corrupted.isFirstLaunchForBundle("1000"))
+    }
+
+    let file = directory.appendingPathComponent("file")
+    try Data().write(to: file)
+    let failed = FirstLaunchHistory(baseDirectory: file, appVersion: "6.5.0", previousAppVersion: nil, hasPreviousLaunch: false)
+    precondition(!failed.isFirstLaunch && !failed.isFirstLaunchForCurrentAppVersion && !failed.isFirstLaunchForBundle("1000"))
+}
+
+try testFirstLaunchHistory()
+print("Swift first launch history: passed")

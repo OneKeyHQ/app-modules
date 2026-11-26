@@ -38,6 +38,18 @@ export interface WindowControlsInsets {
   right: number;
 }
 
+/**
+ * Orientation of the app's window scene, named as UIKit names it.
+ * `landscapeRight` turns the top of the device, and an iPhone's sensor
+ * housing, to the left edge of the screen; `landscapeLeft` to the right edge.
+ */
+export type InterfaceOrientation =
+  | 'portrait'
+  | 'portraitUpsideDown'
+  | 'landscapeLeft'
+  | 'landscapeRight'
+  | 'unknown';
+
 /** App commands in the iPadOS menu bar that JS performs. */
 export type MainMenuCommand = 'about' | 'preferences' | 'lockNow';
 
@@ -73,6 +85,25 @@ export interface WebViewPackageInfo {
 export interface GooglePlayServicesStatus {
   status: number;
   isAvailable: boolean;
+}
+
+export type SkanCoarseValue = 'low' | 'medium' | 'high';
+
+/** Bit masks (0-63) that map a fine conversion value to a coarse value. */
+export interface SkanCoarseRule {
+  highMask: number;
+  mediumMask: number;
+}
+
+export interface SkanUpdateResult {
+  /**
+   * Merged fine conversion value submitted to SKAdNetwork (0-63).
+   * Only the first SKAdNetwork 4 conversion window uses fine values.
+   */
+  fineValue: number;
+  coarseValue: SkanCoarseValue;
+  /** True when StoreKit reports a successful submission. */
+  updated: boolean;
 }
 
 export interface ReactNativeDeviceUtils
@@ -112,6 +143,17 @@ export interface ReactNativeDeviceUtils
   ): number;
   removeWindowControlsInsetsChangedListener(id: number): void;
   /**
+   * Interface orientation of the key window's scene. iOS 16+ reads the
+   * scene's geometry, so the value follows rotations that a presented view
+   * controller forces; iOS before 16 and Android return `unknown`. Listeners
+   * fire on the main thread when the value changes.
+   */
+  getInterfaceOrientation(): InterfaceOrientation;
+  addInterfaceOrientationChangedListener(
+    callback: (orientation: InterfaceOrientation) => void
+  ): number;
+  removeInterfaceOrientationChangedListener(id: number): void;
+  /**
    * Replaces the custom main menu content and rebuilds the menu bar. The menu
    * only shows on iPadOS (and in windows with a menu bar); Android ignores it.
    */
@@ -129,6 +171,16 @@ export interface ReactNativeDeviceUtils
   saveDeviceToken(token: string): Promise<void>;
   registerDeviceToken(): Promise<boolean>;
   getStartupTime(): Promise<number>;
+  /** Whether the current native process is the first launch of this local installation. */
+  isFirstLaunch(): boolean;
+  /** First launch of a native release version higher than any previously launched version. */
+  isFirstLaunchForCurrentAppVersion(): boolean;
+  /** Records the executing bundle version at JS startup / OTA reload as the active bundle identity. */
+  initFirstLaunchForBundle(bundleVersion: string): void;
+  /** First launch of a bundle version higher than any previously launched bundle. */
+  isFirstLaunchForCurrentBundle(bundleVersion?: string): boolean;
+  /** Clears persisted first-launch files and in-memory state (e.g. on Reset App). Returns false if deletion fails. */
+  resetFirstLaunch(): boolean;
   // Process-owned primitive Map, shared by all runtimes and never persisted.
   getInMemoryValue(key: string): InMemoryValue | undefined;
   setInMemoryValue(key: string, value: InMemoryValue): void;
@@ -177,4 +229,20 @@ export interface ReactNativeDeviceUtils
 
   /** Returns an AdServices token on iOS 14.3+, or undefined on unsupported platforms. */
   getAppleAdsAttributionToken(): Promise<string | undefined>;
+
+  /**
+   * ORs `bits` (0-63) with pending bits and the last accepted fine conversion
+   * value. Submits even unchanged values on iOS 16.1+. Call during each
+   * conversion window that needs an update. The coarse
+   * value is `high` when the merged value shares a bit with
+   * `coarseRule.highMask`, else `medium` for `coarseRule.mediumMask`, else
+   * `low`. Rejects on invalid input, a StoreKit error, a timeout, or while a
+   * timed-out submission is still pending. Valid bits are kept for the next
+   * submission until StoreKit accepts them. Android and older iOS resolve to
+   * undefined.
+   */
+  markSkanMilestones(
+    bits: number,
+    coarseRule: SkanCoarseRule
+  ): Promise<SkanUpdateResult | undefined>;
 }

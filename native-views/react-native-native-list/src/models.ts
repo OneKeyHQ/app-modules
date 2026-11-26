@@ -701,6 +701,12 @@ export type DataColumn = Readonly<{
   secondaryTone?: TextTone;
 }>;
 
+type TableColumnAction = Readonly<{
+  name: string;
+  actionKey: string;
+  accessibilityLabel: string;
+}>;
+
 export type NativeListTableColumn = Pick<
   DataColumn,
   | 'key'
@@ -717,8 +723,18 @@ export type NativeListTableColumn = Pick<
     leading?: LeadingVisual;
   }> &
   (
-    | Readonly<{ actionKey: string; accessibilityLabel: string }>
-    | Readonly<{ actionKey?: undefined; accessibilityLabel?: undefined }>
+    | Readonly<{
+        actionKey: string;
+        accessibilityLabel: string;
+        actions?: never;
+        actionPlacement?: never;
+      }>
+    | Readonly<{
+        actionKey?: undefined;
+        accessibilityLabel?: undefined;
+        actions?: readonly TableColumnAction[];
+        actionPlacement?: 'inline' | 'below';
+      }>
   );
 
 export type DataRow = RowBase &

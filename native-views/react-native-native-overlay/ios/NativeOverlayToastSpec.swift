@@ -142,55 +142,9 @@ struct NativeOverlayToastText {
   }
 }
 
-struct NativeOverlayToastStatus {
-  struct Dot { let center: CGPoint; let radius: CGFloat }
-  struct Ring { let radius: CGFloat; let trackOpacity: Float; let arcFraction: CGFloat }
-
-  let status: String
-  let color: UIColor
-  let backgroundColor: UIColor
-  let size: CGFloat
-  let strokeWidth: CGFloat
-  let contours: [[CGPoint]]
-  let dot: Dot?
-  let ring: Ring?
-
-  init?(dict: [String: Any], size: CGFloat) {
-    guard let status = dict["status"] as? String,
-          let glyph = dict["glyph"] as? [String: Any],
-          let contours = glyph["contours"] as? [[[NSNumber]]] else { return nil }
-    self.status = status
-    self.size = size
-    color = NativeOverlayToastColor.parse(dict["color"]) ?? .white
-    backgroundColor = NativeOverlayToastColor.parse(dict["backgroundColor"]) ?? .clear
-    strokeWidth = toastNumber(glyph["strokeWidth"]) ?? 3
-    self.contours = contours.map { contour in
-      contour.compactMap { point in
-        guard point.count == 2 else { return nil }
-        return CGPoint(x: point[0].doubleValue, y: point[1].doubleValue)
-      }
-    }
-    if let dot = glyph["dot"] as? [NSNumber], dot.count == 3 {
-      self.dot = Dot(center: CGPoint(x: dot[0].doubleValue, y: dot[1].doubleValue), radius: dot[2].doubleValue)
-    } else {
-      dot = nil
-    }
-    if let ring = glyph["ring"] as? [String: Any] {
-      self.ring = Ring(
-        radius: toastNumber(ring["radius"]) ?? 8,
-        trackOpacity: Float(toastNumber(ring["trackOpacity"]) ?? 0.25),
-        arcFraction: toastNumber(ring["arcFraction"]) ?? 0.25
-      )
-    } else {
-      ring = nil
-    }
-  }
-}
-
 enum NativeOverlayToastIcon {
   case named(name: String, colorString: String, color: UIColor, size: CGFloat)
   case spinner(color: UIColor, size: CGFloat)
-  case status(NativeOverlayToastStatus)
   case image(uri: String, size: CGFloat, radius: CGFloat)
 
   init?(json: Any?) {
@@ -206,9 +160,6 @@ enum NativeOverlayToastIcon {
       )
     case "spinner":
       self = .spinner(color: NativeOverlayToastColor.parse(dict["color"]) ?? .gray, size: size)
-    case "status":
-      guard let status = NativeOverlayToastStatus(dict: dict, size: size) else { return nil }
-      self = .status(status)
     case "image":
       guard let uri = dict["uri"] as? String else { return nil }
       self = .image(uri: uri, size: size, radius: toastNumber(dict["borderRadius"]) ?? 0)
@@ -220,7 +171,6 @@ enum NativeOverlayToastIcon {
   var size: CGFloat {
     switch self {
     case let .named(_, _, _, size), let .spinner(_, size), let .image(_, size, _): return size
-    case let .status(status): return status.size
     }
   }
 }
@@ -301,8 +251,7 @@ struct NativeOverlayToastSpec {
     layout = Layout(rawValue: dict["layout"] as? String ?? "") ?? .message
     duration = (dict["duration"] as? NSNumber)?.doubleValue ?? 5000
     testID = dict["testID"] as? String
-    let statusIcon = layout == .message ? NativeOverlayToastIcon(json: dict["statusIcon"]) : nil
-    icon = statusIcon ?? NativeOverlayToastIcon(json: dict["icon"])
+    icon = NativeOverlayToastIcon(json: dict["icon"])
     title = NativeOverlayToastText(json: dict["title"])
     message = NativeOverlayToastText(json: dict["message"])
     actions = ((dict["actions"] as? [Any]) ?? []).compactMap(NativeOverlayToastAction.init(json:))
@@ -341,7 +290,6 @@ struct NativeOverlayToastItem {
 
 struct NativeOverlayToasterConfig {
   var cardColor: UIColor = .systemBackground
-  var cardBorderColor: UIColor?
   /// Width of the card's content box; nil derives it from the window.
   var contentWidth: CGFloat?
   var contentMaxHeight: CGFloat?
@@ -356,7 +304,6 @@ struct NativeOverlayToasterConfig {
     guard let data = jsonString.data(using: .utf8),
           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
     cardColor = NativeOverlayToastColor.parse(dict["cardColor"]) ?? .systemBackground
-    cardBorderColor = NativeOverlayToastColor.parse(dict["cardBorderColor"])
     contentWidth = toastNumber(dict["contentWidth"])
     contentMaxHeight = toastNumber(dict["contentMaxHeight"])
     topObstruction = toastNumber(dict["topObstruction"]) ?? 0

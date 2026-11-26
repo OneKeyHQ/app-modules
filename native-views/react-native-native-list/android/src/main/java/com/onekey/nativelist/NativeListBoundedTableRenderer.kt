@@ -1,14 +1,18 @@
 package com.margelo.nitro.nativelist
 
+import android.graphics.Rect
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.TouchDelegate
 import android.view.View
 import android.widget.LinearLayout
 import com.facebook.react.uimanager.ThemedReactContext
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: NativeListFonts) :
   NativeListMarketGestureRowView(context, fonts) {
-  private class Cell(context: ThemedReactContext, fonts: NativeListFonts) : LinearLayout(context) {
+  internal class Cell(context: ThemedReactContext, fonts: NativeListFonts) : LinearLayout(context) {
     val visual = NativeListLeadingVisual(context, fonts)
     val labels = NativeListTableColumnView(context, fonts, wrapSecondary = true)
     val content = LinearLayout(context).apply {
@@ -16,6 +20,117 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
       gravity = Gravity.CENTER_VERTICAL
       addView(visual)
       addView(labels, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+    }
+    private val actions = LinearLayout(context)
+    private inner class IconDelegate(private val initial: Rect, val icon: View) : TouchDelegate(initial, icon) {
+      private val current = Rect()
+      override fun onTouchEvent(event: MotionEvent): Boolean {
+        // TouchDelegate keeps its original bounds for the gesture, even if the icon moves.
+        icon.getDrawingRect(current)
+        offsetDescendantRectToMyCoords(icon, current)
+        val adjusted = MotionEvent.obtain(event)
+        try {
+          adjusted.offsetLocation((initial.centerX() - current.centerX()).toFloat(),
+            (initial.centerY() - current.centerY()).toFloat())
+          return super.onTouchEvent(adjusted)
+        } finally { adjusted.recycle() }
+      }
+    }
+    private fun removeIcon(index: Int) {
+      val icon = actions.getChildAt(index)
+      if ((touchDelegate as? IconDelegate)?.icon === icon) touchDelegate = null
+      icon.cancelPendingInputEvents()
+      icon.setOnClickListener(null)
+      actions.removeViewAt(index)
+    }
+    fun clearActions() {
+      while (actions.childCount > 0) removeIcon(actions.childCount - 1)
+    }
+    private var inlineWidth = 0
+    fun bindActions(column: JSONObject, disabled: Boolean, color: Int, onAction: (String, View) -> Unit) {
+      val descriptors = column.optJSONArray("actions")
+      val count = minOf(2, descriptors?.length() ?: 0)
+      val below = column.optString("actionPlacement") == "below"
+      val size = NativeListScale.dp(resources, 16)
+      val gap = NativeListScale.dp(resources, 6)
+      inlineWidth = if (below) 0 else count * (size + gap)
+      val keys = (0 until count).map { descriptors!!.getJSONObject(it).getString("actionKey") }
+      for (i in actions.childCount - 1 downTo 0) {
+        if (actions.getChildAt(i).tag !in keys) removeIcon(i)
+      }
+      val parent = if (below) labels else content
+      if (actions.parent !== parent || count == 0) {
+        (actions.parent as? LinearLayout)?.removeView(actions)
+        if (count > 0) parent.addView(actions, LayoutParams(LayoutParams.WRAP_CONTENT, size).apply {
+          if (below) topMargin = gap else marginStart = gap
+        })
+      }
+      for (i in 0 until count) {
+        val descriptor = descriptors!!.getJSONObject(i)
+        val key = keys[i]
+        val icon = actions.findViewWithTag<OneKeyIconView>(key) ?: OneKeyIconView(context).also {
+          it.tag = key
+          actions.addView(it, i, LayoutParams(size, size))
+        }
+        if (actions.getChildAt(i) !== icon) {
+          // There are at most two icons. Move the sibling behind this one without detaching either.
+          actions.bringChildToFront(actions.getChildAt(i))
+        }
+        val params = icon.layoutParams as LayoutParams
+        val margin = if (i == 0) 0 else gap
+        if (params.marginStart != margin) {
+          params.marginStart = margin
+          icon.layoutParams = params
+        }
+        icon.iconName = descriptor.getString("name")
+        icon.glyphSizeDp = 16
+        icon.tintColor = color
+        icon.contentDescription = descriptor.getString("accessibilityLabel")
+        icon.isEnabled = !disabled
+        icon.isFocusable = true
+        icon.setOnClickListener { if (!disabled) onAction(key, icon) }
+      }
+    }
+    // Coordinates are local to the column, so the hit area can extend past the icon dock.
+    fun actionAt(x: Int, y: Int, bounds: Rect): View? {
+      val slop = (8 * resources.displayMetrics.density).roundToInt()
+      var closest: View? = null
+      var distance = Int.MAX_VALUE
+      val candidate = Rect()
+      for (i in 0 until actions.childCount) {
+        val icon = actions.getChildAt(i)
+        if (!icon.isEnabled) continue
+        icon.getDrawingRect(candidate)
+        offsetDescendantRectToMyCoords(icon, candidate)
+        val dx = kotlin.math.abs(x - candidate.centerX())
+        candidate.inset(-slop, -slop)
+        if (candidate.contains(x, y) && dx < distance) {
+          closest = icon
+          distance = dx
+          bounds.set(candidate)
+        }
+      }
+      return closest
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+      if (event.actionMasked == MotionEvent.ACTION_DOWN && actions.childCount > 0) {
+        val bounds = Rect()
+        touchDelegate = actionAt(event.x.toInt(), event.y.toInt(), bounds)?.let { IconDelegate(bounds, it) }
+      }
+      val handled = super.onTouchEvent(event)
+      if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL)
+        touchDelegate = null
+      return handled
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+      labels.maxTableWidth = if (inlineWidth > 0 && MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED) {
+        val lp = visual.layoutParams as? MarginLayoutParams
+        val leading = if (visual.visibility == GONE || lp == null) 0 else lp.width + lp.marginEnd
+        (MeasureSpec.getSize(widthMeasureSpec) - leading - inlineWidth).coerceAtLeast(0)
+      } else null
+      super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
     init {
       addView(content, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
@@ -80,6 +195,12 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
         columnColor(column.optString("secondaryTone", "secondary"), theme),
         parseNativeListColor(theme?.optString("info", "#006DCBF2") ?: "#006DCBF2"),
         14f, style)
+      val defaultIconTint = 0x72000000
+      val iconTint = if ((column.optJSONArray("actions")?.length() ?: 0) > 0 && theme?.has("iconSubdued") == true)
+        color(theme.optString("iconSubdued"), defaultIconTint) else defaultIconTint
+      cell.bindActions(column, item.json.optBoolean("disabled"), iconTint) { key, view ->
+        emitAction(key, view, "leadingAction", index)
+      }
       val action = column.optString("actionKey")
       cell.setOnClickListener(null)
       cell.isClickable = action.isNotEmpty() && !item.json.optBoolean("disabled")
@@ -125,6 +246,7 @@ internal class NativeListBoundedTableView(context: ThemedReactContext, fonts: Na
       val cell = getChildAt(index) as Cell
       cell.visual.recycle()
       cell.labels.reset()
+      cell.clearActions()
       cell.setOnClickListener(null)
       cell.isClickable = false
     }

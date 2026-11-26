@@ -75,9 +75,54 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
     private static let userInterfaceStyleKey = "1k_user_interface_style"
 
+    // Set from this object's JS thread; read once more when it is released.
+    private var hasInterfaceOrientationListeners = false
+    private let injectedInterfaceOrientationObserver: InterfaceOrientationObserver?
+
+    // Resolved on first use, so creating DeviceUtils does not start observing.
+    private var interfaceOrientationObserver: InterfaceOrientationObserver {
+        injectedInterfaceOrientationObserver ?? InterfaceOrientationObserver.shared
+    }
+
+    func isFirstLaunch() throws -> Bool {
+        DeviceUtilsFirstLaunch.value
+    }
+
+    func isFirstLaunchForCurrentAppVersion() throws -> Bool {
+        DeviceUtilsFirstLaunch.forCurrentAppVersion
+    }
+
+    func initFirstLaunchForBundle(bundleVersion: String) throws {
+        DeviceUtilsFirstLaunch.initForBundle(bundleVersion)
+    }
+
+    func isFirstLaunchForCurrentBundle(bundleVersion: String?) throws -> Bool {
+        DeviceUtilsFirstLaunch.forBundle(bundleVersion)
+    }
+
+    func resetFirstLaunch() throws -> Bool {
+        DeviceUtilsFirstLaunch.reset()
+    }
+
     override init() {
+        injectedInterfaceOrientationObserver = nil
         super.init()
         restoreUserInterfaceStyle()
+    }
+
+    /// Tests pass an observer that does not watch a window scene.
+    init(interfaceOrientationObserver: InterfaceOrientationObserver) {
+        injectedInterfaceOrientationObserver = interfaceOrientationObserver
+        super.init()
+        restoreUserInterfaceStyle()
+    }
+
+    deinit {
+        // A JS runtime torn down without removing its listeners releases this
+        // object; its listeners must not outlive it in the process-wide table.
+        if hasInterfaceOrientationListeners {
+            interfaceOrientationObserver.removeListeners(ownedBy: self)
+        }
     }
 
     private func restoreUserInterfaceStyle() {
@@ -151,6 +196,19 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
 
     func removeWindowControlsInsetsChangedListener(id: Double) throws -> Void {
         WindowControlsInsetsObserver.shared.removeListener(id)
+    }
+
+    func getInterfaceOrientation() throws -> InterfaceOrientation {
+        return interfaceOrientationObserver.currentOrientation
+    }
+
+    func addInterfaceOrientationChangedListener(callback: @escaping (InterfaceOrientation) -> Void) throws -> Double {
+        hasInterfaceOrientationListeners = true
+        return interfaceOrientationObserver.addListener(callback, owner: self)
+    }
+
+    func removeInterfaceOrientationChangedListener(id: Double) throws -> Void {
+        interfaceOrientationObserver.removeListener(id)
     }
 
     func setMainMenuConfig(config: MainMenuConfig) throws -> Void {
@@ -479,5 +537,43 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
             }
             return token
         }
+    }
+
+    func markSkanMilestones(bits: Double, coarseRule: SkanCoarseRule) throws -> Promise<SkanUpdateResult?> {
+        guard #available(iOS 16.1, *) else {
+            return .resolved(withResult: nil)
+        }
+        return Self.markSkanMilestones(using: .shared, bits: bits, coarseRule: coarseRule)
+    }
+
+    static func markSkanMilestones(
+        using store: SkanConversionStore,
+        bits: Double,
+        coarseRule: SkanCoarseRule
+    ) -> Promise<SkanUpdateResult?> {
+        let promise = Promise<SkanUpdateResult?>()
+        store.mark(
+            bits: bits,
+            highMask: coarseRule.highMask,
+            mediumMask: coarseRule.mediumMask
+        ) { result in
+            switch result {
+            case .success(let outcome):
+                let coarseValue: SkanCoarseValue
+                switch outcome.coarse {
+                case .low: coarseValue = .low
+                case .medium: coarseValue = .medium
+                case .high: coarseValue = .high
+                }
+                promise.resolve(withResult: SkanUpdateResult(
+                    fineValue: Double(outcome.fineValue),
+                    coarseValue: coarseValue,
+                    updated: true
+                ))
+            case .failure(let error):
+                promise.reject(withError: error)
+            }
+        }
+        return promise
     }
 }

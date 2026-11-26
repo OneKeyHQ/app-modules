@@ -1,3 +1,55 @@
+# DeviceUtils: first launch
+
+## Status and scope
+
+The iOS and Android Nitro first-launch getters return synchronous booleans. Results are
+shared by the main and background JavaScript runtimes and stay fixed for each
+identity across JS reloads and foreground transitions within the same process.
+Background process starts that run the normal native app bootstrap also count.
+
+| Method | First launch identity |
+| --- | --- |
+| `isFirstLaunch()` | The local app installation. |
+| `isFirstLaunchForCurrentAppVersion()` | The native app's release version (`CFBundleShortVersionString` on iOS, `versionName` on Android). Build number changes alone keep the same identity. |
+| `initFirstLaunchForBundle(bundleVersion: string)` | Activates and records the executing JS bundle version at JS startup and after an OTA reload. Passing an invalid version clears the active bundle identity without writing disk state. Assumes all live JS runtimes in the process are version-locked and restarted together on OTA bundle switches. |
+| `isFirstLaunchForCurrentBundle(bundleVersion?: string)` | Returns whether the active bundle (when omitted) or explicitly supplied bundle version is higher than any previously launched bundle. Does not change the active bundle identity. |
+
+## Lifecycle, persistence, and platform behavior
+
+Persisted state is stored as **three independent plain-text entries** (no JSON container), so storage size is constant, no cleanup API is needed, and updating one dimension never clobbers or corrupts the others:
+
+| Dimension | Native file (inside `1k_first_launch/`) | Web `localStorage` key | Value |
+| --- | --- | --- | --- |
+| Installation launched | `launched` | `1k_fl_launched` | `"1"` |
+| Highest app version | `app_ver` | `1k_fl_app_ver` | e.g. `"6.5.0"` |
+| Highest bundle version | `bundle_ver` | `1k_fl_bundle_ver` | e.g. `"1000"` |
+
+On each launch, startup reads the persisted entries, computes and freezes the current-launch booleans in memory, and atomically writes any newly established or higher value. All getters during that launch return the frozen in-memory booleans and never re-evaluate against the updated disk values.
+
+| Platform | Initialization | Storage | Legacy-install evidence |
+| --- | --- | --- | --- |
+| iOS | Host calls `DeviceUtilsFirstLaunch.initialize(options:)` (or dynamically via `NSClassFromString("OneKeyDeviceUtilsFirstLaunch")` + `initializeWithOptions:`) in `AppDelegate.didFinishLaunchingWithOptions` before initializing app storage. Lazy fallback initializes with `isLegacyInstall = false`. | `Library/Application Support/1k_first_launch/` (`isExcludedFromBackup = true`) | Owned by the host app. Use `hasPersistedState()` (or `hasPersistedStateNumber` returning `NSNumber` for `perform(_:)`) to skip legacy checks once `launched` exists. |
+| Android | Host calls `DeviceUtilsFirstLaunch.initialize(context, isLegacyInstall = { ... }, legacyAppVersion = { ... })` in `Application.onCreate()`. Lazy fallback initializes with `isLegacyInstall = false`. | `context.noBackupFilesDir/1k_first_launch/` (immune to Clear Cache and Auto Backup) | Owned by the host app (lambdas are only invoked when `launched` does not exist yet). |
+| Web / Desktop / Extension | Host calls `initFirstLaunch({ appVersion, bundleVersion, isLegacyInstall, legacyAppVersion })` once at UI startup before reading getters. | `localStorage` keys `1k_fl_launched`, `1k_fl_app_ver`, `1k_fl_bundle_ver` | Owned by the host app (e.g. sampled in an HTML `<head>` script or Electron preload before app JS writes to storage). |
+
+`resetFirstLaunch(): boolean` (and native `DeviceUtilsFirstLaunch.reset()` on iOS / `DeviceUtilsFirstLaunch.reset(context)` on Android) removes the `1k_first_launch/` directory (or the 3 `localStorage` keys) **and clears the in-memory launch cache**, returning `true` when deletion succeeds (including already-absent entries) and `false` on failure so callers can retry before soft-restarting JS.
+
+Version strings must have a numeric dot-separated core with optional SemVer pre-release (`-...`) and build metadata (`+...`) suffixes (1–120 ASCII chars, e.g. `6.5.0`, `6.5.0-beta.1`, `1000`). Non-numeric cores such as `v6.5.0` are rejected. Version comparison compares numeric dot-separated segments by integer value (e.g. `6.10.0 > 6.5.0`, `1000 > 999`) with SemVer pre-release ordering (`6.5.0 > 6.5.0-beta.1`). A version strictly higher than the persisted highest version returns `true` for the current launch and advances the persisted entry. Rolling back to or running any version lower than or equal to the persisted highest version returns `false` and keeps the higher value persisted.
+
+Missing startup initialization, unavailable or corrupted entries (empty or invalid stored version strings), invalid identifiers, and write failures fail closed for the affected entry and return `false` without overwriting the damaged entry. Zero-argument getters remain bound to the startup identities and are unaffected by later explicit version lookups. On Web/Desktop/Extension, getters called before `initFirstLaunch(...)` return `false` without touching storage. Because synchronous Web Storage has no cross-document lock, simultaneous first loads across two separate tabs may both observe an absent key.
+
+## Web, desktop renderer, and extension pages
+
+The `@onekeyfe/react-native-device-utils/first-launch` entry point exposes:
+
+- `initFirstLaunch(options?: { appVersion?: string; bundleVersion?: string; isLegacyInstall?: boolean; legacyAppVersion?: string }): void`
+- `isFirstLaunch(): boolean`
+- `isFirstLaunchForCurrentAppVersion(appVersion?: string): boolean`
+- `isFirstLaunchForCurrentBundle(bundleVersion?: string): boolean`
+- `resetFirstLaunch(): boolean`
+
+React Native delegates to `ReactNativeDeviceUtils`. Web documents, Electron renderers, and extension-owned pages share `src/firstLaunch.web.ts` backed by `window.localStorage`. After `initFirstLaunch(...)` runs at startup, getters can be called with zero arguments to read the cached launch results. Server runtimes and MV3 service workers have no `window.localStorage` and return `false`.
+
 # DeviceUtils: InMemoryStore contract
 
 ## Status and scope
@@ -379,6 +431,130 @@ thread. Retained state is one view, one value, and the listener table.
   host a UIKit window. Remaining acceptance: values after rapid window resizes,
   iOS 26, and an iPhone returning zero.
 
+# DeviceUtils: interface orientation
+
+## Status and scope
+
+This section covers `getInterfaceOrientation()`,
+`addInterfaceOrientationChangedListener()`, and
+`removeInterfaceOrientationChangedListener()`. They tell JS which way the app's
+window scene is turned, so landscape layout can tell the side that holds an
+iPhone's sensor housing from the side that does not. The behavior below is
+Implemented.
+
+Runtime verified on an iPhone 16 Pro simulator (iOS 26.5, app built with
+Xcode 27.1) in OneKey's native chart fullscreen, a presented screen that forces
+landscape over a portrait-locked root: the value is `landscapeRight` when the
+forced rotation starts from a portrait device and `landscapeLeft` when the
+device is already turned the other way; turning the device 180 degrees in
+landscape notifies `landscapeLeft` and back `landscapeRight`. In the same app,
+`expo-screen-orientation` reported `unknown` for the forced rotation, because
+its root view controller does not take part in it. The Android stubs compile
+in the OneKey app (`compileDebugKotlin`). Unverified: hardware, iOS 15
+returning `unknown`, and multiple scenes.
+
+Non-goals: device (physical) orientation, orientation locks, and layout. The
+consumer decides what each orientation means for its content.
+
+## Definitions and ownership
+
+- **Interface orientation:** the orientation of the key window's
+  `UIWindowScene`, as `UIWindowScene.effectiveGeometry.interfaceOrientation`
+  reports it. It follows every rotation the scene takes, including one a
+  presented view controller forces while the root view controller keeps its
+  own orientation. The device orientation cannot stand in for it: a window can
+  turn to landscape while the device lies flat or is held upright.
+- Names follow UIKit. `landscapeRight` turns the top of the device to the left
+  edge of the screen, so an iPhone's sensor housing is on the left;
+  `landscapeLeft` puts it on the right. In landscape, iPhones report equal
+  left and right safe-area insets, so the insets do not tell the sides apart.
+
+One process-wide native observer owns the value, the scene observation, and
+the listener table. The main and background JS runtimes share it through their
+DeviceUtils HybridObjects; listener IDs are unique per process. Each listener
+belongs to the HybridObject that added it: when that object is released, for
+example when its JS runtime is torn down without removing its listeners, they
+are removed with it.
+
+## Public API and defaults
+
+```ts
+type InterfaceOrientation =
+  | 'portrait'
+  | 'portraitUpsideDown'
+  | 'landscapeLeft'
+  | 'landscapeRight'
+  | 'unknown';
+
+getInterfaceOrientation(): InterfaceOrientation;
+addInterfaceOrientationChangedListener(callback: (orientation: InterfaceOrientation) => void): number;
+removeInterfaceOrientationChangedListener(id: number): void;
+```
+
+- The value is `unknown` until the observer reads a scene, on iOS before 16,
+  and on Android.
+- The getter is synchronous and returns the last observed value.
+- Removing an unknown ID is a no-op.
+
+## Lifecycle and callbacks
+
+1. The first call to any of the three methods creates the observer. On iOS
+   16+ it installs on the main thread and observes
+   `UIWindow.didBecomeKeyNotification` for the process lifetime, including when
+   no key window exists yet.
+2. It observes `effectiveGeometry` of the key window's scene with key-value
+   observing, starting with the current value. When a window of another scene
+   becomes key, observation moves to that scene; a window of the same scene
+   becoming key keeps the existing observation. Callbacks from a previously
+   observed scene are ignored. When the observed scene disconnects, observation
+   moves to the key window of another scene, because that window may stay key
+   without posting the notification again; with no such window the value
+   becomes `unknown`.
+3. Listeners fire on the main thread, once per changed value, after the stored
+   value is updated. Equal values do not notify. A rotation by 180 degrees
+   (landscape left to landscape right) notifies even though the window size
+   does not change.
+
+The observer and the observation live for the process. Listeners live until
+they are removed or their HybridObject is released. Callers must read the
+getter after subscribing, because the first reading can land before a listener
+is added.
+
+## Platform contract
+
+| Concern | iOS 16+ | iOS < 16 | Android |
+| --- | --- | --- | --- |
+| Source | `UIWindowScene.effectiveGeometry.interfaceOrientation` (KVO) | None | None |
+| Value | Observed | `unknown` | `unknown` |
+| Listeners | Fire on change | Never fire | Accepted, never fire |
+
+Android needs no equivalent today: its window insets report a display cutout
+only on the side that has it.
+
+## Performance and resource budget
+
+The work per scene geometry change is one enum mapping and a comparison on the
+main thread. Retained state is one key-value observation, one value, and the
+listener table.
+
+## Conformance and acceptance
+
+- iOS: `ios/InterfaceOrientationObserver.swift`, forwarded by
+  `ios/ReactNativeDeviceUtils.swift`.
+- Android: `ReactNativeDeviceUtils.kt` (`getInterfaceOrientation`).
+- `ios/tests/InterfaceOrientationObserverTests.swift` (pod test target) drives
+  the value through `receive(_:)`: each landscape side notifies once, a
+  repeated value does not notify, every UIKit orientation maps to its value,
+  and removed listeners and the listeners of a released owner are not called.
+  It also releases a `ReactNativeDeviceUtils` that still has a listener and
+  checks that the listener's callback is released with it. It does not cover
+  the scene observation, which needs a UIKit window scene.
+- Runtime verified: the value after a presented controller forces landscape
+  from a portrait-locked root, from either device side, and 180-degree
+  rotations while in landscape. Remaining acceptance: the return to portrait on
+  hardware, iOS 15 returning `unknown`, a scene disconnect with multiple
+  scenes, and a JS reload releasing DeviceUtils on a device.
+
 # DeviceUtils: main menu
 
 ## Status and scope
@@ -486,6 +662,83 @@ non-empty string, an empty string, and a thrown error. Android native CI builds
 the Kotlin implementation and generated JNI bindings. The consumer's Android
 native harness verifies the result is JavaScript `undefined`. Real AdServices
 token issuance requires an on-device check.
+
+# DeviceUtils: SKAdNetwork conversion value
+
+## Scope and platform contract
+
+`markSkanMilestones(bits, coarseRule): Promise<SkanUpdateResult | undefined>`
+ORs `bits` (an integer from 0 to 63), pending bits, and the last accepted
+SKAdNetwork fine conversion value. On iOS 16.1 and later it then calls
+`SKAdNetwork.updatePostbackConversionValue(_:coarseValue:lockWindow:completionHandler:)`
+with `lockWindow: false`. Android and older iOS resolve to `undefined`.
+
+The coarse value is `high` when the merged value shares a bit with
+`coarseRule.highMask`. Otherwise it is `medium` when it shares a bit with
+`coarseRule.mediumMask`, and `low` in every other case. Both masks are integers
+from 0 to 63. The OneKey app owns the milestone bit schema and the masks, and
+must keep them in line with the conversion value schema configured for the ad
+network. DeviceUtils assigns no meaning to individual bits.
+
+Supported iOS calls submit to StoreKit even with `bits` set to 0 or with the
+same fine and coarse values as the last report, subject to the validation and
+in-flight rules below.
+SKAdNetwork 4 requires an update during each conversion window for multiple
+postbacks. StoreKit manages the windows, and the app must call this API during
+each window in which it wants to submit an update.
+
+The result carries the submitted `fineValue`, its `coarseValue`, and
+`updated: true` after StoreKit reports success. StoreKit determines which
+values appear in a postback. SKAdNetwork 4 uses only coarse values in the
+second and third windows.
+
+## Lifecycle and concurrency
+
+The main and background React runtimes each create their own HybridObject.
+Every call goes through one process-wide store with a serial queue, so the
+read, merge, report and persist steps run as one unit. Calls from either
+runtime are applied in arrival order, and the fine value includes every bit
+from prior accepted submissions. The queue waits for the SKAdNetwork
+completion handler for up to 30 seconds. A timed-out submission remains in
+flight until StoreKit completes it. While it is pending, subsequent valid
+calls retain their new bits and reject without making another submission.
+A late success persists the accepted fine value and clears the bits it
+reports from pending storage before submissions resume. A late failure
+leaves all unreported bits pending. If StoreKit never completes a timed-out
+submission, only a process restart resets this guard.
+
+## Data and retention
+
+The last accepted fine value lives in `UserDefaults.standard` under
+`so.onekey.deviceutils.skan.fineValue`. It is written only after SKAdNetwork
+accepts the update. Valid milestone bits are retained separately under
+`so.onekey.deviceutils.skan.pendingBits` before submission. An accepted value
+is written before its bits are cleared from pending storage. Reports merge
+the two values with bitwise OR, so replaying any leftover bits is safe.
+Pending bits survive a process restart. The coarse value is derived on every
+call from the merged fine value and the caller's current masks. Deleting the
+app clears both stored values. The values hold no user or wallet identifiers
+and are not logged.
+
+## Failure
+
+The Promise rejects for invalid inputs, StoreKit errors, a 30-second timeout,
+or a pending timed-out submission. The last accepted fine value stays in
+storage until StoreKit confirms a successful update, including a late
+success. The next submission includes the pending bits, even when the caller
+passes `bits: 0`. Invalid calls leave storage unchanged.
+
+## Conformance and acceptance
+
+The contract is defined in `src/ReactNativeDeviceUtils.nitro.ts` and implemented
+in `ios/SkanConversionStore.swift`, `ios/ReactNativeDeviceUtils.swift` and
+`ReactNativeDeviceUtils.kt`. The iOS pod's XCTest suite injects a reporter and
+an isolated `UserDefaults` suite. It covers bit merging, coarse mapping, the
+same fine and coarse values submitted in consecutive simulated windows, zero
+values, a coarse rule change, retry after a rejected report and store
+recreation, input validation, a timeout with late completion, and concurrent
+callers. Android native CI builds the Kotlin stub. Confirming real postbacks
+across windows requires an eligible ad attribution on a test device.
 
 # DeviceUtils: Install source and installation time
 

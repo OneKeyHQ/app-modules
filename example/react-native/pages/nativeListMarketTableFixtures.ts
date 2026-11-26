@@ -111,12 +111,33 @@ export function marketTableFixtures(
     ],
     [value('time', '2 min ago'), buy, amounts, total, price, holder],
   );
+  const holderAddress: NativeListTableColumn = {
+    key: 'address',
+    text: holder.text,
+    actions: [
+      {
+        name: 'Copy3Outline',
+        actionKey: 'copy',
+        accessibilityLabel: 'Copy address',
+      },
+      {
+        name: 'OpenOutline',
+        actionKey: 'explorer',
+        accessibilityLabel: 'Open in explorer',
+      },
+    ],
+  };
   detail(
     'Holders',
-    [{ ...holder, secondaryText: 'Rank 1' }, value('share', '2.45%'), total],
     [
       value('rank', '1'),
-      holder,
+      { ...holderAddress, actionPlacement: 'below' },
+      value('share', '2.45%'),
+      total,
+    ],
+    [
+      value('rank', '1'),
+      holderAddress,
       value('share', '2.45%'),
       value('quantity', '1,520 ETH'),
       total,

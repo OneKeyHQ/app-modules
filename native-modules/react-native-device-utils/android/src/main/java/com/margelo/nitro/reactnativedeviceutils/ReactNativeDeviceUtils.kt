@@ -46,6 +46,24 @@ private data class NavigationBarAppearance(
 @DoNotStrip
 class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEventListener {
 
+  override fun isFirstLaunch(): Boolean =
+    DeviceUtilsFirstLaunch.isFirstLaunch(NitroModules.applicationContext)
+
+  override fun isFirstLaunchForCurrentAppVersion(): Boolean =
+    DeviceUtilsFirstLaunch.isFirstLaunchForCurrentAppVersion(NitroModules.applicationContext)
+
+  override fun initFirstLaunchForBundle(bundleVersion: String) {
+    DeviceUtilsFirstLaunch.initForBundle(bundleVersion, NitroModules.applicationContext)
+  }
+
+  override fun isFirstLaunchForCurrentBundle(bundleVersion: String?): Boolean =
+    DeviceUtilsFirstLaunch.isFirstLaunchForBundle(bundleVersion, NitroModules.applicationContext)
+
+  override fun resetFirstLaunch(): Boolean {
+    val context = NitroModules.applicationContext ?: return false
+    return DeviceUtilsFirstLaunch.reset(context)
+  }
+
   override fun getInMemoryValue(key: String): InMemoryValue? = InMemoryStore.get(key)
 
   override fun setInMemoryValue(key: String, value: InMemoryValue) = InMemoryStore.set(key, value)
@@ -781,6 +799,22 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
 
   override fun removeWindowControlsInsetsChangedListener(id: Double) {}
 
+  // Android window insets report a display cutout only on the side that has
+  // it, so no consumer needs the interface orientation: the value is always
+  // unknown, and listeners are accepted but never called.
+  override fun getInterfaceOrientation(): InterfaceOrientation =
+    InterfaceOrientation.UNKNOWN
+
+  override fun addInterfaceOrientationChangedListener(
+    callback: (orientation: InterfaceOrientation) -> Unit
+  ): Double = synchronized(this) {
+    val id = nextListenerId
+    nextListenerId++
+    return@synchronized id
+  }
+
+  override fun removeInterfaceOrientationChangedListener(id: Double) {}
+
   // Android has no app-owned main menu bar: the config is ignored, and
   // listeners are accepted but never called.
   override fun setMainMenuConfig(config: MainMenuConfig) {}
@@ -1334,6 +1368,14 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
     }
 
     override fun getAppleAdsAttributionToken(): Promise<String?> {
+        return Promise.resolved(null)
+    }
+
+    // SKAdNetwork is iOS-only.
+    override fun markSkanMilestones(
+        bits: Double,
+        coarseRule: SkanCoarseRule
+    ): Promise<SkanUpdateResult?> {
         return Promise.resolved(null)
     }
 

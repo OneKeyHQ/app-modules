@@ -4,7 +4,11 @@ import type {
   NativeListTableColumn,
   NativeListTextStyle,
 } from '../../models';
-import { markActionAnchorSource } from './RowElements';
+import {
+  hasExplicitRowHeight,
+  markActionAnchorSource,
+  rowSizeModifier,
+} from './RowElements';
 import { applyValueSegments, fontWeight } from './RowText';
 import { type RowPrimitives, RowVisualStyle } from './RowVisual';
 
@@ -13,8 +17,11 @@ type Cell = {
   element: HTMLElement;
   content: HTMLElement;
   labels: HTMLElement;
+  labelGroup: HTMLElement;
   visual?: HTMLElement;
   visualKey?: string;
+  actions?: HTMLElement;
+  actionsKey?: string;
 };
 const states = new WeakMap<
   HTMLElement,
@@ -64,6 +71,15 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
   body.style.paddingInline = (row.style?.horizontalPadding ?? 0) + 'px';
   body.style.paddingBlock = (row.style?.verticalPadding ?? 0) + 'px';
   const columns = row.tableColumns!;
+  const fitContent =
+    !hasExplicitRowHeight(row) &&
+    columns.some(
+      (column) => column.actionPlacement === 'below' && column.actions?.length
+    );
+  body.style.height = fitContent ? 'auto' : '';
+  body.style.minHeight = fitContent
+    ? `max(100%, ${56 + rowSizeModifier(row.size)}px)`
+    : '';
   while (state.cells.length > columns.length) {
     const old = state.cells.pop()!;
     if (old.visual) primitives.dispose(old.visual);
@@ -84,9 +100,13 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
       const content = body.ownerDocument.createElement('span');
       content.style.cssText =
         'display:flex;align-items:center;min-width:0;max-width:100%';
-      content.appendChild(labels);
+      const labelGroup = body.ownerDocument.createElement('span');
+      labelGroup.style.cssText =
+        'display:flex;align-items:center;min-width:0;max-width:100%';
+      labelGroup.appendChild(labels);
+      content.appendChild(labelGroup);
       element.appendChild(content);
-      cell = { element, content, labels };
+      cell = { element, content, labelGroup, labels };
       state.cells[index] = cell;
     }
     const { element, labels } = cell;
@@ -155,6 +175,45 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
           primitives
         )
       );
+    const actionsKey = JSON.stringify([column.actions, row.disabled, index]);
+    if (cell.actionsKey !== actionsKey) {
+      cell.actions?.remove();
+      cell.actions = undefined;
+      if (column.actions?.length) {
+        const actions = body.ownerDocument.createElement('span');
+        actions.style.cssText =
+          'display:flex;align-items:center;flex:none;gap:6px';
+        for (const action of column.actions) {
+          const icon = primitives.iconAction(
+            action.name,
+            action.actionKey,
+            row.disabled,
+            undefined,
+            action.accessibilityLabel
+          );
+          icon.style.cssText =
+            'width:16px;min-width:16px;height:16px;padding:0;color:var(--nl-icon-subdued)';
+          const glyph = icon.querySelector('svg');
+          if (glyph) {
+            glyph.style.width = '16px';
+            glyph.style.height = '16px';
+          }
+          markActionAnchorSource(icon, 'leadingAction', index);
+          actions.appendChild(icon);
+        }
+        cell.actions = actions;
+      }
+      cell.actionsKey = actionsKey;
+    }
+    const below = cell.actions && column.actionPlacement === 'below';
+    cell.labelGroup.style.flexDirection = below ? 'column' : 'row';
+    cell.labelGroup.style.alignItems = below ? 'flex-start' : 'center';
+    if (cell.actions) {
+      cell.actions.style.marginInlineStart = below ? '0' : '6px';
+      cell.actions.style.marginTop = below ? '6px' : '0';
+      if (cell.actions.parentElement !== cell.labelGroup)
+        cell.labelGroup.appendChild(cell.actions);
+    }
   });
 }
 
@@ -172,7 +231,8 @@ export const boundedTableRenderer = {
   },
   bind,
   measure: () => 56,
-  measureRendered: () => undefined,
+  measureRendered: (body: HTMLElement) =>
+    body.style.height === 'auto' ? body.offsetHeight || undefined : undefined,
   recycle(body: HTMLElement) {
     const state = states.get(body);
     state?.cells.forEach((cell) => {

@@ -2838,6 +2838,30 @@ label clears the override and restores the generated label. Activating a cell
 delivers the existing row action event with `anchor.source = "leadingAction"`
 and `anchor.slot` equal to its zero-based column index, including right-hand cells.
 
+A passive column can instead present up to two independent icon buttons in
+`actions`. Each has a glyph `name`, a nonblank `actionKey` unique within the
+column, and a nonblank `accessibilityLabel`. The default `actionPlacement`
+is `inline` after the labels. With `below`, both buttons appear side by side
+under the labels. Each emits its own key with the column index as the anchor
+slot. On iOS and Android, touches up to 8 logical units outside the glyph
+can activate the button within its cell. The nearest button owns overlapping
+touch regions. Glyph layout and action anchor rectangles stay unchanged.
+Native presses are canceled if a patch replaces or removes the pressed action.
+Updates that retain its key preserve the press even when the two buttons swap
+positions. Clearing the buttons may retain either valid placement on a passive
+column. On Web, a row with below-text buttons and no explicit height grows to
+fit its rendered content and padding. In horizontal lists it fills at least the
+viewport height available after list padding. Clearing the buttons restores the
+ordinary cell alignment and row sizing. On iOS, the default row height
+accommodates below-text buttons, wrapped labels and padding, with a minimum
+of 56 points, including for small rows. Explicit heights retain precedence. Android uses the default subdued
+tint if the supplied icon tint cannot be parsed. A tap on an enabled
+icon counts as handled with the keyboard open, including in offset windows.
+A disabled row disables both buttons. Development rejects whole-cell actions
+combined with icon buttons. Production keeps the whole-cell action in that
+case and discards malformed or duplicate buttons. An invalid placement in a
+production snapshot or patch falls back to inline and preserves other updates.
+
 In production, snapshots and patches discard unknown column and visual fields,
 drop incomplete cell actions, and truncate each text line to 4096 characters
 and each formatted line to 64 segments and 4096 characters in total.

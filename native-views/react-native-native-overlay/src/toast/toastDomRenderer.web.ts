@@ -1,9 +1,7 @@
 /* cspell:ignore dasharray dashoffset */
 import { getOverlayLayerRoot, syncOverlayInert } from '../web/overlayLayers';
 
-import { buildToastContent, layoutMessageAction } from './toastDomContent.web';
-import { TOAST_GEOMETRY, TOAST_MOTION } from './toastMotion';
-import { stopStatusTile } from './toastStatusTile.web';
+import { buildToastContent } from './toastDomContent.web';
 import { ensureOverlayToastStyles } from './toastStyles.web';
 
 import type {
@@ -16,19 +14,17 @@ import type {
   IOverlayToasterConfig,
 } from './types';
 
+// The chrome constants of the renderer this replaces (sonner 1.4.41).
 const VISIBLE_TOASTS = 3;
 const VIEWPORT_OFFSET = 32;
 const TOAST_WIDTH = 356;
-const GAP = TOAST_GEOMETRY.stackGap;
-const SWIPE_DISTANCE = 64;
-const SWIPE_FLICK_DISTANCE = 20;
-const SWIPE_FLICK_VELOCITY = 0.5; // px per ms (500 px/s)
-const SWIPE_VELOCITY_WINDOW_MS = 80;
-const SWIPE_OPACITY_RANGE = 260;
-const SWIPE_MIN_OPACITY = 0.35;
+const GAP = 14;
+const SWIPE_THRESHOLD = 20;
+const SWIPE_VELOCITY = 0.11; // px per ms
 const TOUCH_START_THRESHOLD = 10;
 const POINTER_START_THRESHOLD = 2;
-const TIME_BEFORE_UNMOUNT = TOAST_MOTION.cardExitMs;
+// Equal to the exit transition.
+const TIME_BEFORE_UNMOUNT = 200;
 const DEFAULT_POSITION: IOverlayToastPosition = 'bottom-right';
 const DEFAULT_OBSTRUCTION_GAP = 8;
 const DEFAULT_OBSTRUCTION_ROOM = 88;
@@ -42,35 +38,24 @@ interface IToastNode {
   generation: number;
   position: IOverlayToastPosition;
   li: HTMLLIElement;
-  shell: HTMLElement;
-  surface: HTMLElement;
-  body: HTMLElement;
   content: HTMLElement;
   mounted: boolean;
   removed: boolean;
   swiping: boolean;
   swipeOut: boolean;
-  exitReason?: IOverlayToastDismissReason;
-  exitLayout?: {
-    index: number;
-    offset: number;
-    expanded: boolean;
-    paneScale: number;
-  };
+  offsetBeforeRemove: number;
   initialHeight: number;
   closeTimer?: ReturnType<typeof setTimeout>;
   unmountTimer?: ReturnType<typeof setTimeout>;
   swipePointerId?: number;
-  suppressNotificationClick?: boolean;
-  suppressClickTimer?: ReturnType<typeof setTimeout>;
 }
 
 interface IToastPress {
   node: IToastNode;
   x: number;
   y: number;
+  startedAt: number;
   moved: boolean;
-  samples: { x: number; t: number }[];
 }
 
 interface IToastGroup {
@@ -80,16 +65,17 @@ interface IToastGroup {
   toasts: IToastNode[];
   /** Newest first, without leaving cards. */
   heights: { id: string; height: number }[];
-  paneScale: number;
 }
 
 function getDocumentDirection(): 'ltr' | 'rtl' {
-  const root = document.documentElement;
-  const direction = globalThis.getComputedStyle(root).direction;
-  if (direction === 'rtl' || direction === 'ltr') {
-    return direction;
+  const attribute = document.documentElement.getAttribute('dir');
+  if (attribute === 'rtl' || attribute === 'ltr') {
+    return attribute;
   }
-  return root.dir === 'rtl' ? 'rtl' : 'ltr';
+  return globalThis.getComputedStyle(document.documentElement).direction ===
+    'rtl'
+    ? 'rtl'
+    : 'ltr';
 }
 
 function createCloseButton(label: string): HTMLButtonElement {
@@ -99,35 +85,45 @@ function createCloseButton(label: string): HTMLButtonElement {
   button.setAttribute('data-close-button', '');
   const svg = document.createElementNS(SVG_NS, 'svg');
   const attributes: Record<string, string> = {
-    'width': '10',
-    'height': '10',
+    'width': '12',
+    'height': '12',
     'viewBox': '0 0 24 24',
     'fill': 'none',
     'stroke': 'currentColor',
-    'stroke-width': '3',
+    'stroke-width': '1.5',
     'stroke-linecap': 'round',
-    'aria-hidden': 'true',
+    'stroke-linejoin': 'round',
   };
   Object.entries(attributes).forEach(([name, value]) =>
     svg.setAttribute(name, value)
   );
-  const path = document.createElementNS(SVG_NS, 'path');
-  path.setAttribute('d', 'M7 7l10 10M17 7L7 17');
-  svg.append(path);
+  [
+    ['18', '6', '6', '18'],
+    ['6', '6', '18', '18'],
+  ].forEach(([x1, y1, x2, y2]) => {
+    const line = document.createElementNS(SVG_NS, 'line');
+    line.setAttribute('x1', x1 ?? '');
+    line.setAttribute('y1', y1 ?? '');
+    line.setAttribute('x2', x2 ?? '');
+    line.setAttribute('y2', y2 ?? '');
+    svg.append(line);
+  });
   button.append(svg);
   return button;
 }
 
 /**
  * Draws message toasts with plain DOM in the `toast` overlay layer. No React:
- * the cards, their ring/shadow chrome, stacking, timers, swipe and spring
- * transitions live here.
+ * the cards, their stacking, timers, swipe and transitions live here, and the
+ * stylesheet reproduces the previous renderer's chrome rule for rule.
  */
 export function createToastDomRenderer(
   report: (event: IOverlayToastEvent) => void
 ): IOverlayToastRenderer {
   ensureOverlayToastStyles();
 
+  // Events raised while a sync is applying wait for it to finish: the store
+  // answers an event by syncing again.
   let syncing = false;
   const pendingEvents: IOverlayToastEvent[] = [];
   const onEvent = (event: IOverlayToastEvent) => {
@@ -147,45 +143,13 @@ export function createToastDomRenderer(
   let keyboardExpanded = false;
   let touchExpandedGroup: IToastGroup | undefined;
   let destroyed = false;
-  let documentDirection = getDocumentDirection();
-  let itemOrder = new Map<string, number>();
-  const groupResizeObserver =
-    typeof ResizeObserver === 'function'
-      ? new ResizeObserver(onResize)
-      : undefined;
 
   const isExpanded = (): boolean =>
     nodes.size > 1 &&
     (keyboardExpanded || !!touchExpandedGroup || hoveredGroups.size > 0);
 
-  const narrowViewport = globalThis.matchMedia?.('(max-width: 600px)');
-  const splitColumns = globalThis.matchMedia?.(
-    '(horizontal-viewport-segments: 2)'
-  );
-  const splitRows = globalThis.matchMedia?.('(vertical-viewport-segments: 2)');
-
-  function positionOf(spec: IOverlayToastSpec): IOverlayToastPosition {
-    const position = spec.position ?? config.position ?? DEFAULT_POSITION;
-    const [vertical, horizontal] = position.split('-');
-    if (splitColumns?.matches) {
-      const lane =
-        horizontal === 'center'
-          ? documentDirection === 'rtl'
-            ? 'right'
-            : 'left'
-          : horizontal;
-      return `${vertical}-${lane}` as IOverlayToastPosition;
-    }
-    return narrowViewport?.matches
-      ? (`${vertical}-center` as IOverlayToastPosition)
-      : position;
-  }
-
-  const motionPreference = globalThis.matchMedia?.(
-    '(prefers-reduced-motion: reduce)'
-  );
-  const reduceMotion = () =>
-    config.respectReducedMotion !== false && motionPreference?.matches;
+  const positionOf = (spec: IOverlayToastSpec): IOverlayToastPosition =>
+    spec.position ?? config.position ?? DEFAULT_POSITION;
 
   function ensureSection(): HTMLElement {
     const root = getOverlayLayerRoot('toast');
@@ -226,7 +190,6 @@ export function createToastDomRenderer(
         ol,
         toasts: [],
         heights: [],
-        paneScale: 1,
       };
       const hover = (event: PointerEvent) => {
         if (
@@ -249,14 +212,8 @@ export function createToastDomRenderer(
           update();
         }
       });
-      ol.addEventListener('transitionend', (event) => {
-        if (event.target === ol && event.propertyName === 'top') {
-          update();
-        }
-      });
       group = nextGroup;
       groups.set(position, group);
-      groupResizeObserver?.observe(ol);
     }
     if (group.ol.parentElement !== ensureSection()) {
       ensureSection().append(group.ol);
@@ -265,6 +222,8 @@ export function createToastDomRenderer(
   }
 
   function offsetOf(group: IToastGroup, node: IToastNode): number {
+    // The height index moves before the card list does, so the layout of the
+    // cards behind a leaving one starts closing at once.
     const heightIndex = Math.max(
       group.heights.findIndex((height) => height.id === node.id),
       0
@@ -275,42 +234,21 @@ export function createToastDomRenderer(
     return heightIndex * GAP + heightsBefore;
   }
 
-  function focusAfterLayout(
-    target: HTMLElement,
-    expectedFocus: Element | null,
-    isStillEligible?: () => boolean
-  ) {
-    // A focusin listener can synchronously change the toast store.
-    queueMicrotask(() => {
-      if (
-        !destroyed &&
-        target.isConnected &&
-        !target.closest('[inert]') &&
-        document.activeElement === expectedFocus &&
-        isStillEligible?.() !== false
-      ) {
-        target.focus({ preventScroll: true });
-      }
-    });
-  }
-
   function measure(node: IToastNode) {
     const group = groups.get(node.position);
     if (!group || node.removed) {
       return;
     }
+    // The card's own height: a card further back in the stack is scaled
+    // and pinned to the front card's height, neither of which is its size.
     const { style } = node.li;
     const originalHeight = style.height;
+    const originalTransform = style.transform;
     style.height = 'auto';
-    const actionToFocus = layoutMessageAction(
-      node.content,
-      config.webContentMaxHeight
-    );
-    if (actionToFocus) {
-      focusAfterLayout(actionToFocus, document.body);
-    }
-    const { offsetHeight: height } = node.li;
+    style.transform = 'none';
+    const { height } = node.li.getBoundingClientRect();
     style.height = originalHeight;
+    style.transform = originalTransform;
     node.initialHeight = height;
     const existing = group.heights.find((entry) => entry.id === node.id);
     if (existing) {
@@ -339,6 +277,7 @@ export function createToastDomRenderer(
         return;
       }
       if (node.closeTimer === undefined) {
+        // A resumed toast starts over with its whole lifetime, as before.
         node.closeTimer = setTimeout(() => {
           node.closeTimer = undefined;
           deleteToast(node, 'timeout', true);
@@ -349,11 +288,6 @@ export function createToastDomRenderer(
 
   function unmount(node: IToastNode, reason: IOverlayToastDismissReason) {
     clearNodePresses(node);
-    if (node.suppressClickTimer !== undefined) {
-      clearTimeout(node.suppressClickTimer);
-      node.suppressClickTimer = undefined;
-    }
-    node.suppressNotificationClick = false;
     if (node.unmountTimer !== undefined) {
       clearTimeout(node.unmountTimer);
       node.unmountTimer = undefined;
@@ -387,23 +321,9 @@ export function createToastDomRenderer(
     clearNodePresses(node);
     const group = groups.get(node.position);
     node.removed = true;
-    node.exitReason = reason;
-    const statusTile = node.content.querySelector<HTMLElement>(
-      ':scope > [data-okt-row] > [data-okt-icon-box] > [data-okt-status-tile]'
-    );
-    if (statusTile) {
-      stopStatusTile(statusTile);
-    }
+    // Keep the offset the card had, for the exit transition.
+    node.offsetBeforeRemove = group ? offsetOf(group, node) : 0;
     if (group) {
-      node.exitLayout = {
-        index: Math.max(
-          0,
-          group.heights.findIndex((entry) => entry.id === node.id)
-        ),
-        offset: offsetOf(group, node) * group.paneScale,
-        expanded: isExpanded(),
-        paneScale: group.paneScale,
-      };
       group.heights = group.heights.filter((entry) => entry.id !== node.id);
     }
     clearCloseTimer(node);
@@ -415,36 +335,25 @@ export function createToastDomRenderer(
         reason,
       });
     }
-    if (nodes.get(node.id) !== node) {
-      return;
-    }
-    if (reduceMotion()) {
+    node.unmountTimer = setTimeout(() => {
+      node.unmountTimer = undefined;
       unmount(node, reason);
-    } else {
-      node.unmountTimer = setTimeout(() => {
-        unmount(node, reason);
-        update();
-      }, TIME_BEFORE_UNMOUNT);
-    }
+      update();
+    }, TIME_BEFORE_UNMOUNT);
     update();
   }
 
-  function clearSwipe(node: IToastNode, pointerId: number) {
+  function clearPress(pointerId: number, { node }: IToastPress) {
+    presses.delete(pointerId);
     if (node.swipePointerId === pointerId) {
       node.swipePointerId = undefined;
       node.swiping = false;
       node.li.setAttribute('data-swiping', 'false');
       node.li.style.setProperty('--swipe-amount', '0px');
-      node.li.style.removeProperty('--swipe-opacity');
       if (node.li.hasPointerCapture?.(pointerId)) {
         node.li.releasePointerCapture(pointerId);
       }
     }
-  }
-
-  function clearPress(pointerId: number, { node }: IToastPress) {
-    presses.delete(pointerId);
-    clearSwipe(node, pointerId);
   }
 
   function clearNodePresses(node: IToastNode) {
@@ -456,48 +365,10 @@ export function createToastDomRenderer(
     });
   }
 
-  function swipeOpacityFor(deltaX: number): number {
-    return Math.max(
-      SWIPE_MIN_OPACITY,
-      1 - Math.abs(deltaX) / SWIPE_OPACITY_RANGE
-    );
-  }
-
-  function canSwipeNode(node: IToastNode): boolean {
-    if (node.removed) {
-      return false;
-    }
-    const group = groups.get(node.position);
-    if (!group || group.paneScale === 0) {
-      return false;
-    }
-    const active = group.toasts.filter((entry) => !entry.removed);
-    const index = active.indexOf(node);
-    if (index < 0 || index >= VISIBLE_TOASTS) {
-      return false;
-    }
-    return isExpanded() || index === 0;
-  }
-
-  function recordSwipeSample(press: IToastPress, x: number, now: number) {
-    press.samples.push({ x, t: now });
-    while (
-      press.samples.length > 1 &&
-      now - press.samples[0]!.t > SWIPE_VELOCITY_WINDOW_MS
-    ) {
-      press.samples.shift();
-    }
-  }
-
-  function swipeVelocity(press: IToastPress, x: number, now: number): number {
-    const oldest = press.samples.find(
-      (sample) => now - sample.t <= SWIPE_VELOCITY_WINDOW_MS
-    );
-    if (!oldest) {
-      return 0;
-    }
-    const dt = Math.max(1, now - oldest.t);
-    return (x - oldest.x) / dt;
+  function swipeAmount(node: IToastNode, deltaY: number): number {
+    return node.position.startsWith('top')
+      ? Math.min(0, deltaY)
+      : Math.max(0, deltaY);
   }
 
   function onGlobalPointerMove(event: PointerEvent) {
@@ -506,32 +377,27 @@ export function createToastDomRenderer(
       return;
     }
     const { node } = press;
-    const dx = event.clientX - press.x;
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(event.clientY - press.y);
+    const dx = Math.abs(event.clientX - press.x);
+    const dy = event.clientY - press.y;
     const threshold =
       event.pointerType === 'touch'
         ? TOUCH_START_THRESHOLD
         : POINTER_START_THRESHOLD;
-    press.moved ||= Math.max(absDx, absDy) > threshold;
+    press.moved ||= Math.max(dx, Math.abs(dy)) > threshold;
     if (node.swipePointerId !== event.pointerId) {
       return;
     }
-    if (!canSwipeNode(node)) {
-      clearSwipe(node, event.pointerId);
-      return;
-    }
-    recordSwipeSample(press, event.clientX, event.timeStamp);
+    const amount = swipeAmount(node, dy);
     if (!node.swiping) {
-      if (absDx <= threshold || absDx <= absDy) {
+      if (Math.abs(amount) <= threshold || Math.abs(amount) < dx) {
         return;
       }
+      // Preserve the descendant's native click until an actual swipe starts.
       node.li.setPointerCapture?.(event.pointerId);
       node.swiping = true;
       node.li.setAttribute('data-swiping', 'true');
     }
-    node.li.style.setProperty('--swipe-amount', `${dx}px`);
-    node.li.style.setProperty('--swipe-opacity', String(swipeOpacityFor(dx)));
+    node.li.style.setProperty('--swipe-amount', `${amount}px`);
   }
 
   function onGlobalPointerEnd(event: PointerEvent) {
@@ -542,39 +408,17 @@ export function createToastDomRenderer(
     }
     const { node } = press;
     const released = event.type === 'pointerup';
-    const threshold =
-      pointerType === 'touch' ? TOUCH_START_THRESHOLD : POINTER_START_THRESHOLD;
-    const moved =
-      press.moved ||
-      Math.max(
-        Math.abs(event.clientX - press.x),
-        Math.abs(event.clientY - press.y)
-      ) > threshold;
-    const rawDx = event.clientX - press.x;
-    const swiped =
-      released && node.swipePointerId === pointerId && node.swiping;
-    const amount = swiped ? rawDx : 0;
-    const absAmount = Math.abs(amount);
-    const velocity = swiped
-      ? swipeVelocity(press, event.clientX, event.timeStamp) * Math.sign(amount)
-      : 0;
+    const amount =
+      released && node.swipePointerId === pointerId && node.swiping
+        ? swipeAmount(node, event.clientY - press.y)
+        : 0;
+    const velocity =
+      Math.abs(amount) / Math.max(1, Date.now() - press.startedAt);
     const dismissed =
-      swiped &&
-      (absAmount >= SWIPE_DISTANCE ||
-        (absAmount >= SWIPE_FLICK_DISTANCE &&
-          velocity >= SWIPE_FLICK_VELOCITY));
+      Math.abs(amount) >= SWIPE_THRESHOLD || velocity > SWIPE_VELOCITY;
     clearPress(pointerId, press);
-    if (released && moved && !dismissed) {
-      node.suppressNotificationClick = true;
-      if (node.suppressClickTimer !== undefined) {
-        clearTimeout(node.suppressClickTimer);
-      }
-      node.suppressClickTimer = setTimeout(() => {
-        node.suppressClickTimer = undefined;
-        node.suppressNotificationClick = false;
-      }, 0);
-    }
 
+    // The swipe pseudo-element must be gone before checking where we landed.
     const hit = released ? groupContaining(pointerHit(event)) : undefined;
     if (pointerType === 'touch') {
       if (
@@ -598,16 +442,6 @@ export function createToastDomRenderer(
     if (dismissed) {
       node.swipeOut = true;
       node.li.style.setProperty('--swipe-amount', `${amount}px`);
-      node.li.style.setProperty(
-        '--swipe-opacity',
-        String(swipeOpacityFor(amount))
-      );
-      const { left, right } = node.li.getBoundingClientRect();
-      const exitX =
-        amount >= 0
-          ? amount + Math.max(0, globalThis.innerWidth - left) + 48
-          : amount - Math.max(0, right) - 48;
-      node.li.style.setProperty('--swipe-exit-x', `${exitX}px`);
       deleteToast(node, 'swipe', true);
     } else {
       update();
@@ -619,45 +453,13 @@ export function createToastDomRenderer(
     li.addEventListener('dragstart', (event) => {
       event.preventDefault();
     });
-    li.addEventListener(
-      'click',
-      (event) => {
-        if (!node.suppressNotificationClick) {
-          return;
-        }
-        node.suppressNotificationClick = false;
-        if (node.suppressClickTimer !== undefined) {
-          clearTimeout(node.suppressClickTimer);
-          node.suppressClickTimer = undefined;
-        }
-        const target = event.target as HTMLElement | null;
-        if (target?.closest?.('button, [data-okt-link]')) {
-          return;
-        }
-        if (target?.closest?.('[data-okt-pressable]')) {
-          event.stopPropagation();
-          event.preventDefault();
-        }
-      },
-      true
-    );
     li.addEventListener('pointerdown', (event) => {
-      if (li.inert || event.button !== 0) {
+      if (node.removed || event.button !== 0) {
         return;
       }
-      node.suppressNotificationClick = false;
-      if (node.suppressClickTimer !== undefined) {
-        clearTimeout(node.suppressClickTimer);
-        node.suppressClickTimer = undefined;
-      }
       const target = event.target as HTMLElement | null;
-      const selectableMousePress =
-        event.pointerType === 'mouse' &&
-        Boolean(target?.closest?.('[data-okt-selectable]'));
       if (
         node.swipePointerId === undefined &&
-        canSwipeNode(node) &&
-        !selectableMousePress &&
         !target?.closest?.('button, [data-okt-link]')
       ) {
         node.swipePointerId = event.pointerId;
@@ -666,12 +468,13 @@ export function createToastDomRenderer(
         node,
         x: event.clientX,
         y: event.clientY,
+        startedAt: Date.now(),
         moved: false,
-        samples: [{ x: event.clientX, t: event.timeStamp }],
       });
       update();
     });
     li.addEventListener('lostpointercapture', (event) => {
+      // A touch's implicit capture may move from a descendant to the card.
       if (
         event.target === li &&
         node.swipePointerId === event.pointerId &&
@@ -682,29 +485,22 @@ export function createToastDomRenderer(
     });
   }
 
-  function renderContent(node: IToastNode, statusMotion?: 'enter' | 'settle') {
-    const next = buildToastContent(
-      node.spec,
-      (event) => {
-        if (!node.removed) {
-          onEvent({
-            ...event,
-            id: node.id,
-            generation: node.generation,
-          } as IOverlayToastEvent);
-        }
-      },
-      node.content,
-      reduceMotion() ? undefined : statusMotion
-    );
-    if (node.content !== next) {
-      if (node.content.parentElement === node.body) {
-        node.content.replaceWith(next);
-      } else {
-        node.body.append(next);
+  function renderContent(node: IToastNode) {
+    const next = buildToastContent(node.spec, (event) => {
+      if (!node.removed) {
+        onEvent({
+          ...event,
+          id: node.id,
+          generation: node.generation,
+        } as IOverlayToastEvent);
       }
-      node.content = next;
+    });
+    if (node.content.parentElement === node.li) {
+      node.content.replaceWith(next);
+    } else {
+      node.li.append(next);
     }
+    node.content = next;
     if (node.spec.testID) {
       node.li.setAttribute('data-testid', node.spec.testID);
     } else {
@@ -722,21 +518,10 @@ export function createToastDomRenderer(
     li.setAttribute('data-styled', 'true');
     li.setAttribute('data-dismissible', 'true');
     li.setAttribute('data-invert', 'false');
-
-    const shell = document.createElement('div');
-    shell.setAttribute('data-okt-shell', '');
-    const surface = document.createElement('div');
-    surface.setAttribute('data-okt-surface', '');
-    const body = document.createElement('div');
-    body.setAttribute('data-okt-body', '');
-    surface.append(body);
-
     const closeButton = createCloseButton(
       config.closeButtonLabel ?? 'Close toast'
     );
-    shell.append(surface, closeButton);
-    li.append(shell);
-
+    li.append(closeButton);
     const node: IToastNode = {
       id: item.spec.id,
       spec: item.spec,
@@ -744,36 +529,20 @@ export function createToastDomRenderer(
       generation: item.generation,
       position: positionOf(item.spec),
       li,
-      shell,
-      surface,
-      body,
       content: document.createElement('div'),
       mounted: false,
       removed: false,
       swiping: false,
       swipeOut: false,
+      offsetBeforeRemove: 0,
       initialHeight: 0,
     };
-    const revealClose = (event: PointerEvent) => {
-      if (
-        event.buttons === 0 &&
-        (event.pointerType === 'mouse' || event.pointerType === 'pen')
-      ) {
-        li.setAttribute('data-okt-close-hover', '');
-      }
-    };
-    li.addEventListener('pointerenter', revealClose);
-    li.addEventListener('pointermove', revealClose);
-    li.addEventListener('pointerleave', () =>
-      li.removeAttribute('data-okt-close-hover')
-    );
     closeButton.addEventListener('click', () =>
       deleteToast(node, 'close', true)
     );
     li.addEventListener('keydown', (event) => {
       if (
         !node.removed &&
-        !node.body.inert &&
         node.spec.layout === 'notification' &&
         node.spec.pressable &&
         event.target === li &&
@@ -787,7 +556,7 @@ export function createToastDomRenderer(
         });
       }
     });
-    renderContent(node, 'enter');
+    renderContent(node);
     attachPointerHandlers(node);
     return node;
   }
@@ -798,6 +567,9 @@ export function createToastDomRenderer(
     group.ol.prepend(node.li);
     nodes.set(node.id, node);
     applyGroup(group);
+    // Measuring lays the card out in its resting-out state, so switching it
+    // to mounted right after starts the enter transition from there. No frame
+    // callback: those do not run while the page is hidden.
     measure(node);
     node.mounted = true;
     update();
@@ -813,46 +585,10 @@ export function createToastDomRenderer(
     return Math.max(0, Math.min(bottom + gap, globalThis.innerHeight - room));
   }
 
-  function getPaneScale(group: IToastGroup, expanded: boolean): number {
-    if (!splitRows?.matches || group.heights.length === 0) {
-      return 1;
-    }
-    const { ol } = group;
-    const styles = globalThis.getComputedStyle(ol);
-    const top = group.position.startsWith('top');
-    const hinge = Number.parseFloat(
-      styles.getPropertyValue(
-        top ? '--toast-segment-bottom' : '--toast-segment-top'
-      )
-    );
-    if (!Number.isFinite(hinge)) {
-      return 1;
-    }
-    const currentAnchor = ol.getBoundingClientRect().top;
-    const room = config.topObstructionRoom ?? DEFAULT_OBSTRUCTION_ROOM;
-    const anchor = top
-      ? Math.max(currentAnchor, Math.min(obstructionTop(), hinge - room))
-      : currentAnchor;
-    const visible = group.heights.slice(0, VISIBLE_TOASTS);
-    const naturalHeight = expanded
-      ? visible.reduce((sum, { height }) => sum + height, 0)
-      : visible[0]?.height ?? 0;
-    const stackHeight = naturalHeight + (visible.length - 1) * GAP;
-    return stackHeight > 0
-      ? Math.min(
-          1,
-          Math.max(
-            0,
-            ((top ? hinge - anchor : anchor - hinge) - GAP) / stackHeight
-          )
-        )
-      : 1;
-  }
-
   function applyGroup(group: IToastGroup) {
     const { ol } = group;
     const [yPosition, xPosition] = group.position.split('-');
-    ol.dir = documentDirection;
+    ol.dir = getDocumentDirection();
     ol.setAttribute('data-theme', config.theme ?? 'light');
     ol.setAttribute('data-y-position', yPosition ?? 'bottom');
     ol.setAttribute('data-x-position', xPosition ?? 'right');
@@ -863,16 +599,6 @@ export function createToastDomRenderer(
     ol.style.setProperty('--offset', `${VIEWPORT_OFFSET}px`);
     ol.style.setProperty('--width', `${TOAST_WIDTH}px`);
     ol.style.setProperty('--gap', `${GAP}px`);
-    if (config.cardColor) {
-      ol.style.setProperty('--okt-card-bg', config.cardColor);
-    } else {
-      ol.style.removeProperty('--okt-card-bg');
-    }
-    if (config.cardBorderColor) {
-      ol.style.setProperty('--okt-card-border', config.cardBorderColor);
-    } else {
-      ol.style.removeProperty('--okt-card-border');
-    }
     if (config.webContentMaxHeight !== undefined) {
       ol.style.setProperty(
         '--okt-max-height',
@@ -881,67 +607,36 @@ export function createToastDomRenderer(
     } else {
       ol.style.removeProperty('--okt-max-height');
     }
+    // Top toasts rest under whatever hangs from the top of the window. An
+    // inline `top`: the narrow-window rule pins the toaster otherwise.
     const top = yPosition === 'top' ? obstructionTop() : 0;
-    ol.setAttribute(
-      'data-okt-respect-reduced-motion',
-      String(config.respectReducedMotion !== false)
-    );
-    ol.style.transition = reduceMotion()
+    const reducedMotion =
+      config.respectReducedMotion !== false &&
+      globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    ol.style.transition = reducedMotion
       ? ''
       : `top ${OBSTRUCTION_SHIFT_MS}ms ease`;
-    ol.style.setProperty('--toast-obstruction-top', top > 0 ? `${top}px` : '');
-    ol.style.setProperty(
-      '--toast-obstruction-room',
-      `${config.topObstructionRoom ?? DEFAULT_OBSTRUCTION_ROOM}px`
-    );
+    ol.style.top = top > 0 ? `${top}px` : '';
 
-    const expanded = isExpanded();
-    group.paneScale = getPaneScale(group, expanded);
-    let activeIndex = 0;
-    group.toasts.forEach((node, stackIndex) => {
-      const { li, body, exitLayout } = node;
-      const index = exitLayout?.index ?? activeIndex++;
-      const cardExpanded = exitLayout?.expanded ?? expanded;
-      const paneScale = exitLayout?.paneScale ?? group.paneScale;
-      const visible = index < VISIBLE_TOASTS && paneScale > 0;
-      const front = index === 0;
-      const bodyHidden = !front && !cardExpanded;
-      if (paneScale === 0) {
-        clearNodePresses(node);
-      }
-      li.inert = !visible || node.removed;
-      const lastFocus = document.activeElement;
-      const needsFocusHandoff =
-        bodyHidden && !body.inert && !li.inert && body.contains(lastFocus);
-      body.inert = bodyHidden;
-      if (needsFocusHandoff) {
-        const currentFocus = document.activeElement;
-        if (currentFocus === lastFocus || currentFocus === document.body) {
-          focusAfterLayout(li, currentFocus, () => body.inert);
-        }
-      }
+    group.toasts.forEach((node, index) => {
+      const { li } = node;
       li.setAttribute('data-mounted', String(node.mounted));
       li.setAttribute('data-removed', String(node.removed));
-      li.setAttribute('data-visible', String(visible));
+      li.setAttribute('data-visible', String(index + 1 <= VISIBLE_TOASTS));
       li.setAttribute('data-y-position', yPosition ?? 'bottom');
       li.setAttribute('data-x-position', xPosition ?? 'right');
       li.setAttribute('data-index', String(index));
-      li.setAttribute('data-front', String(front));
+      li.setAttribute('data-front', String(index === 0));
       li.setAttribute('data-swiping', String(node.swiping));
       li.setAttribute('data-swipe-out', String(node.swipeOut));
-      li.setAttribute('data-expanded', String(cardExpanded));
+      li.setAttribute('data-expanded', String(isExpanded()));
       li.style.setProperty('--index', String(index));
       li.style.setProperty('--toasts-before', String(index));
-      li.style.setProperty(
-        '--z-index',
-        String(group.toasts.length - stackIndex)
-      );
+      li.style.setProperty('--z-index', String(group.toasts.length - index));
       li.style.setProperty(
         '--offset',
-        `${exitLayout?.offset ?? offsetOf(group, node) * paneScale}px`
+        `${node.removed ? node.offsetBeforeRemove : offsetOf(group, node)}px`
       );
-      li.style.setProperty('--toast-pane-scale', String(paneScale));
-      li.toggleAttribute('data-pane-constrained', paneScale < 1);
       li.style.setProperty('--initial-height', `${node.initialHeight}px`);
     });
   }
@@ -949,11 +644,6 @@ export function createToastDomRenderer(
   function update() {
     if (destroyed) {
       return;
-    }
-    const nextDirection = getDocumentDirection();
-    if (nextDirection !== documentDirection) {
-      documentDirection = nextDirection;
-      reconcilePositions();
     }
     groups.forEach((group, position) => {
       if (group.toasts.length === 0) {
@@ -965,7 +655,6 @@ export function createToastDomRenderer(
         if (touchExpandedGroup === group) {
           touchExpandedGroup = undefined;
         }
-        groupResizeObserver?.unobserve(group.ol);
         group.ol.remove();
         groups.delete(position);
       }
@@ -974,11 +663,6 @@ export function createToastDomRenderer(
       keyboardExpanded = false;
       touchExpandedGroup = undefined;
     }
-    presses.forEach(({ node }, pointerId) => {
-      if (node.swiping && !canSwipeNode(node)) {
-        clearSwipe(node, pointerId);
-      }
-    });
     groups.forEach((group) => {
       applyGroup(group);
     });
@@ -1003,29 +687,10 @@ export function createToastDomRenderer(
     node.position = position;
     const group = ensureGroup(position);
     group.toasts.push(node);
-    const focused = document.activeElement;
-    const restoreFocus =
-      focused instanceof HTMLElement && node.li.contains(focused);
     group.ol.append(node.li);
-    if (
-      touchExpandedGroup === previous &&
-      previous &&
-      previous.toasts.length === 0
-    ) {
-      touchExpandedGroup = group;
+    if (!node.removed) {
+      group.heights.push({ id: node.id, height: node.initialHeight });
     }
-    if (restoreFocus && document.activeElement === document.body) {
-      focusAfterLayout(focused, document.body);
-    }
-    if (previous && focused === previous.ol && previous.heights.length === 0) {
-      focusAfterLayout(
-        group.ol,
-        previous.toasts.length > 0 ? previous.ol : document.body,
-        () => previous.heights.length === 0
-      );
-    }
-    applyGroup(group);
-    measure(node);
     return group;
   }
 
@@ -1036,12 +701,7 @@ export function createToastDomRenderer(
     group.toasts.sort(
       (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)
     );
-    group.toasts.forEach((node, index) => {
-      const child = group.ol.children.item(index);
-      if (node.li !== child) {
-        group.ol.insertBefore(node.li, child);
-      }
-    });
+    group.toasts.forEach((node) => group.ol.append(node.li));
     group.heights.sort(
       (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)
     );
@@ -1071,31 +731,13 @@ export function createToastDomRenderer(
     }
   }
 
-  function reconcilePositions() {
-    const moved = new Set<IToastGroup>();
-    nodes.forEach((node) => {
-      if (!node.removed) {
-        const position = positionOf(node.spec);
-        if (position !== node.position) {
-          moved.add(moveNode(node, position));
-        } else {
-          measure(node);
-        }
-      }
-    });
-    moved.forEach((group) => reconcileGroupOrder(group, itemOrder));
-  }
-
   function onResize() {
-    documentDirection = getDocumentDirection();
-    reconcilePositions();
-    update();
+    if ((config.topObstruction ?? 0) > 0) {
+      update();
+    }
   }
 
   function onGlobalPointerDown(event: PointerEvent) {
-    if (event.pointerType === 'touch') {
-      nodes.forEach(({ li }) => li.removeAttribute('data-okt-close-hover'));
-    }
     if (
       (touchExpandedGroup || keyboardExpanded) &&
       !groupContaining(event.target as Node | null)
@@ -1114,51 +756,11 @@ export function createToastDomRenderer(
     update();
   }
 
-  function finalizeReducedMotion() {
-    if (!reduceMotion()) {
-      return;
-    }
-    for (const node of [...nodes.values()]) {
-      if (nodes.get(node.id) !== node) {
-        continue;
-      }
-      if (node.exitReason !== undefined) {
-        unmount(node, node.exitReason);
-        continue;
-      }
-      const { content } = node;
-      content
-        .querySelectorAll<HTMLElement>('[data-okt-status-motion]')
-        .forEach(stopStatusTile);
-      content
-        .querySelector('[data-okt-content-swap]')
-        ?.removeAttribute('data-okt-content-swap');
-    }
-  }
-
-  function onMotionPreferenceChange() {
-    finalizeReducedMotion();
-    update();
-  }
-
-  motionPreference?.addEventListener?.('change', onMotionPreferenceChange);
   document.addEventListener('keydown', onKeyDown);
   document.addEventListener('pointerdown', onGlobalPointerDown, true);
   document.addEventListener('pointermove', onGlobalPointerMove, true);
   document.addEventListener('pointerup', onGlobalPointerEnd, true);
   document.addEventListener('pointercancel', onGlobalPointerEnd, true);
-  const layoutQueries = [narrowViewport, splitColumns, splitRows];
-  const directionObserver = new MutationObserver(() => {
-    if (getDocumentDirection() !== documentDirection) {
-      update();
-    }
-  });
-  directionObserver.observe(document.documentElement, {
-    attributes: true,
-  });
-  layoutQueries.forEach((query) =>
-    query?.addEventListener?.('change', onResize)
-  );
   globalThis.addEventListener('resize', onResize);
   globalThis.addEventListener('blur', onWindowBlur);
 
@@ -1168,25 +770,20 @@ export function createToastDomRenderer(
         return;
       }
       syncing = true;
-      const shouldReduceBeforeSync = reduceMotion();
-      const heightCapChanged =
-        config.webContentMaxHeight !== nextConfig.webContentMaxHeight;
       config = nextConfig;
-      documentDirection = getDocumentDirection();
-      if (heightCapChanged) {
-        groups.forEach(applyGroup);
-      }
-      itemOrder = new Map(items.map((item, index) => [item.spec.id, index]));
       const present = new Set(items.map((item) => item.spec.id));
+      // Cards the list no longer knows leave without ceremony.
       [...nodes.values()].forEach((node) => {
         if (!present.has(node.id)) {
           unmount(node, 'programmatic');
         }
       });
       const movedGroups = new Set<IToastGroup>();
+      // Oldest first, so each new card lands in front of the previous one.
       [...items].reverse().forEach((item) => {
         let node = nodes.get(item.spec.id);
         if (node?.removed && item.visible) {
+          // Shown again while the previous card was leaving.
           unmount(node, 'programmatic');
           node = undefined;
         }
@@ -1203,39 +800,31 @@ export function createToastDomRenderer(
           }
           return;
         }
-        const needsRedraw = node.revision !== item.revision;
-        if (needsRedraw) {
-          const nextIcon =
-            item.spec.layout === 'message'
-              ? item.spec.statusIcon ?? item.spec.icon
-              : undefined;
-          const settling =
-            item.visible &&
-            node.generation !== item.generation &&
-            nextIcon?.kind === 'status' &&
-            nextIcon.status !== 'loading';
+        if (node.revision !== item.revision) {
           node.revision = item.revision;
           node.spec = item.spec;
-          renderContent(node, settling ? 'settle' : undefined);
+          renderContent(node);
+          measure(node);
         }
         if (node.generation !== item.generation) {
+          // Shown again: the toast starts its lifetime over.
           clearNodePresses(node);
           node.generation = item.generation;
           clearCloseTimer(node);
         }
         const position = positionOf(node.spec);
-        if (!node.removed && position !== node.position) {
+        if (position !== node.position) {
           movedGroups.add(moveNode(node, position));
-        } else if (needsRedraw || heightCapChanged) {
-          measure(node);
         }
         if (!item.visible) {
           deleteToast(node, 'programmatic', false);
         }
       });
-      movedGroups.forEach((group) => reconcileGroupOrder(group, itemOrder));
-      if (!shouldReduceBeforeSync && reduceMotion()) {
-        finalizeReducedMotion();
+      if (movedGroups.size > 0) {
+        const order = new Map(
+          items.map((item, index) => [item.spec.id, index])
+        );
+        movedGroups.forEach((group) => reconcileGroupOrder(group, order));
       }
       update();
       syncing = false;
@@ -1243,20 +832,11 @@ export function createToastDomRenderer(
     },
     destroy() {
       destroyed = true;
-      groupResizeObserver?.disconnect();
-      directionObserver.disconnect();
-      motionPreference?.removeEventListener?.(
-        'change',
-        onMotionPreferenceChange
-      );
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('pointerdown', onGlobalPointerDown, true);
       document.removeEventListener('pointermove', onGlobalPointerMove, true);
       document.removeEventListener('pointerup', onGlobalPointerEnd, true);
       document.removeEventListener('pointercancel', onGlobalPointerEnd, true);
-      layoutQueries.forEach((query) =>
-        query?.removeEventListener?.('change', onResize)
-      );
       globalThis.removeEventListener('resize', onResize);
       globalThis.removeEventListener('blur', onWindowBlur);
       presses.forEach((press, pointerId) => clearPress(pointerId, press));

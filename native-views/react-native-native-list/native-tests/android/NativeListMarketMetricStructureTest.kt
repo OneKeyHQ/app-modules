@@ -1,8 +1,21 @@
 package com.margelo.nitro.nativelist
 
+import android.app.Activity
+import android.app.Dialog
 import android.content.Intent
+import android.graphics.Point
+import android.graphics.Rect
+import android.os.SystemClock
+import android.provider.Settings
 import android.test.InstrumentationTestCase
+import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
+import android.widget.EditText
+import android.widget.LinearLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.facebook.react.bridge.BridgeReactContext
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.react.uimanager.ThemedReactContext
@@ -10,6 +23,9 @@ import com.facebook.soloader.SoLoader
 import com.margelo.nitro.nativelogger.OneKeyLog
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
 
 @Suppress("DEPRECATION")
 class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
@@ -193,6 +209,201 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     row.dispose()
   }
 
+  private fun actionColumn(): JSONObject {
+    fun icon(key: String, name: String) = JSONObject().put("actionKey", key)
+      .put("name", name).put("accessibilityLabel", key)
+    return JSONObject().put("key", "address").put("text", "Address").put("actions",
+      JSONArray().put(icon("copy", "Copy3Outline")).put(icon("open", "OpenOutline")))
+  }
+
+  private fun NativeListBoundedTableView.bindColumn(column: JSONObject, disabled: Boolean = false, theme: JSONObject? = null) {
+    val columns = JSONArray().put(column).put(JSONObject().put("key", "value").put("text", "42"))
+    val model = NativeListItem.parse(item().json.put("tableColumns", columns).put("disabled", disabled))
+    bind(model, theme, "linear", "vertical", null, false, { _, _, fallback -> fallback })
+    val density = resources.displayMetrics.density
+    measure(View.MeasureSpec.makeMeasureSpec((320 * density).toInt(), View.MeasureSpec.EXACTLY),
+      View.MeasureSpec.makeMeasureSpec((72 * density).toInt(), View.MeasureSpec.EXACTLY))
+    layout(0, 0, measuredWidth, measuredHeight)
+  }
+
+  private fun withTableRow(test: (NativeListBoundedTableView) -> Unit) = withMarketRow { host ->
+    val row = NativeListBoundedTableView(host.context as ThemedReactContext, NativeListFonts())
+    try { test(row) } finally { row.dispose() }
+  }
+
+  fun testTableIconPlacementAndExpandedTargets() = withTableRow { row ->
+    val column = actionColumn()
+    for (placement in listOf("inline", "below")) {
+      row.bindColumn(column.put("actionPlacement", placement))
+      val cell = row.getChildAt(0) as NativeListBoundedTableView.Cell
+      fun bounds(view: View) = Rect(0, 0, view.width, view.height).also { cell.offsetDescendantRectToMyCoords(view, it) }
+      val copy = cell.findViewWithTag<View>("copy")
+      val open = cell.findViewWithTag<View>("open")
+      val left = bounds(copy)
+      val right = bounds(open)
+      val label = bounds(cell.labels.getChildAt(0))
+      if (placement == "below") assertTrue(left.top >= label.bottom) else assertTrue(left.left >= label.right)
+      assertSame(copy, cell.actionAt(left.right + 1, left.centerY(), Rect()))
+      assertSame(open, cell.actionAt(right.left - 1, right.centerY(), Rect()))
+      val slop = NativeListScale.dp(row.resources, 8)
+      assertSame(copy, cell.actionAt(left.centerX(), left.top - slop, Rect()))
+      assertNull(cell.actionAt(left.centerX(), left.top - slop - 1, Rect()))
+    }
+  }
+
+  fun testTableActionsFollowReplacementDisabledStateAndRemoval() = withTableRow { row ->
+    val column = actionColumn()
+    val received = mutableListOf<String>()
+    row.onAction = { _, key, _, _ -> received.add(key) }
+    row.bindColumn(column)
+    val previous = row.findViewWithTag<View>("copy")
+    column.getJSONArray("actions").getJSONObject(0).put("actionKey", "explorer")
+    row.bindColumn(column)
+    previous.performClick()
+    val replacement = row.findViewWithTag<View>("explorer")
+    replacement.performClick()
+    row.bindColumn(column, disabled = true)
+    assertFalse(replacement.isEnabled)
+    replacement.performClick()
+    column.remove("actions")
+    row.bindColumn(column)
+    assertNull(replacement.parent)
+    replacement.performClick()
+    assertEquals(listOf("explorer"), received)
+  }
+
+  fun testInvalidTableIconColorUsesSubduedTint() = withTableRow { row ->
+    row.bindColumn(actionColumn(), theme = JSONObject().put("iconSubdued", "#123"))
+    assertEquals(0x72000000, row.findViewWithTag<OneKeyIconView>("copy").tintColor)
+  }
+
+  fun testExpandedTablePressSurvivesRebind() = withMarketActivity { activity, context ->
+    val column = actionColumn()
+    val received = mutableListOf<String>()
+    lateinit var row: NativeListBoundedTableView
+    instrumentation.runOnMainSync {
+      row = NativeListBoundedTableView(context, NativeListFonts())
+      row.onAction = { _, key, _, _ -> received.add(key) }
+      activity.setContentView(row)
+      row.bindColumn(column)
+    }
+    try {
+      instrumentation.waitForIdleSync()
+      instrumentation.runOnMainSync {
+        val copy = row.findViewWithTag<View>("copy")
+        val bounds = Rect(0, 0, copy.width, copy.height)
+        row.offsetDescendantRectToMyCoords(copy, bounds)
+        val down = SystemClock.uptimeMillis()
+        fun dispatch(action: Int) {
+          val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action,
+            bounds.right + 1f, bounds.exactCenterY(), 0)
+          try { row.dispatchTouchEvent(event) } finally { event.recycle() }
+        }
+        dispatch(MotionEvent.ACTION_DOWN)
+        row.bindColumn(column.put("text", "Update"))
+        dispatch(MotionEvent.ACTION_UP)
+      }
+      instrumentation.waitForIdleSync()
+      assertEquals(listOf("copy"), received)
+    } finally {
+      instrumentation.runOnMainSync { row.dispose() }
+    }
+  }
+
+  fun testHandledTapFindsTableIconInOffsetWindow() = withMarketActivity { activity, context ->
+    assertEquals("Enable the on-screen keyboard in the emulator fixture (see README.md)", 1,
+      Settings.Secure.getInt(activity.contentResolver, "show_ime_with_hard_keyboard", 0))
+    lateinit var dialog: Dialog
+    lateinit var list: NativeListView
+    lateinit var editor: EditText
+    val shown = CountDownLatch(1)
+    val hiddenAfterShow = CountDownLatch(1)
+    val actions = mutableListOf<String>()
+    fun screenPoint(target: View, x: Int): Point {
+      val origin = IntArray(2)
+      target.getLocationOnScreen(origin)
+      return Point(origin[0] + x, origin[1] + target.height / 2)
+    }
+    fun tap(capturePoint: () -> Point) {
+      val pointTask = FutureTask(capturePoint)
+      instrumentation.runOnMainSync(pointTask)
+      val point = pointTask.get()
+      val down = SystemClock.uptimeMillis()
+      for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+        val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action,
+          point.x.toFloat(), point.y.toFloat(), 0)
+        try { instrumentation.sendPointerSync(event) } finally { event.recycle() }
+      }
+      instrumentation.waitForIdleSync()
+    }
+    try {
+      instrumentation.runOnMainSync {
+        dialog = Dialog(activity)
+        editor = EditText(activity)
+        list = NativeListView(context)
+        list.keyboardShouldPersistTaps = NativeListKeyboardShouldPersistTaps.HANDLED
+        list.onRowAction = { actions.add(JSONObject(it).getString("actionKey")) }
+        val content = LinearLayout(activity).apply {
+          orientation = LinearLayout.VERTICAL
+          isFocusableInTouchMode = true
+          addView(editor)
+          addView(list, -1, NativeListScale.dp(resources, 72))
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(content) { _, insets ->
+          if (insets.isVisible(WindowInsetsCompat.Type.ime())) shown.countDown()
+          else if (shown.count == 0L) hiddenAfterShow.countDown()
+          insets
+        }
+        dialog.setContentView(content)
+        val window = requireNotNull(dialog.window)
+        window.setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+          WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        editor.requestFocus()
+        window.attributes = window.attributes.apply { y = NativeListScale.dp(list.resources, 160) }
+        dialog.show()
+        window.setLayout(NativeListScale.dp(list.resources, 280), -2)
+        val columns = JSONArray().put(actionColumn()).put(JSONObject().put("key", "value").put("text", "42"))
+        val row = item().json.put("pressDisabled", true).put("tableColumns", columns)
+        list.applySnapshot(JSONObject().put("schemaVersion", 1).put("generation", 1)
+          .put("layout", JSONObject().put("kind", "linear")).put("rows", JSONArray().put(row)).toString())
+      }
+      instrumentation.waitForIdleSync()
+      assertTrue("The emulator must use an input method that displays a soft keyboard (see README.md)",
+        shown.await(5, TimeUnit.SECONDS))
+      instrumentation.waitForIdleSync()
+      tap {
+        val copy = requireNotNull(list.findViewWithTag<View>("copy"))
+        val cell = generateSequence(copy.parent as? View) { it.parent as? View }
+          .filterIsInstance<NativeListBoundedTableView.Cell>().first()
+        val point = screenPoint(copy, copy.width + 1)
+        val origin = IntArray(2)
+        cell.getLocationOnScreen(origin)
+        val x = point.x - origin[0]
+        val y = point.y - origin[1]
+        val bounds = Rect()
+        assertTrue(cell.getLocalVisibleRect(bounds) && bounds.contains(x, y))
+        assertSame("The tap must hit the expanded Copy target", copy, cell.actionAt(x, y, bounds))
+        assertTrue(cell.getGlobalVisibleRect(bounds))
+        assertFalse("The old root-relative bounds check must reject this screen point",
+          bounds.contains(point.x, point.y))
+        point
+      }
+      assertEquals(listOf("copy"), actions)
+      val editorState = FutureTask {
+        editor.hasFocus() && ViewCompat.getRootWindowInsets(editor)
+          ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+      }
+      instrumentation.runOnMainSync(editorState)
+      assertTrue("Copy must keep the keyboard open", editorState.get())
+      tap { screenPoint(list, list.width * 3 / 4) }
+      assertTrue("Blank tap did not dismiss IME", hiddenAfterShow.await(5, TimeUnit.SECONDS))
+      assertEquals(listOf("copy"), actions)
+    } finally {
+      instrumentation.runOnMainSync { dialog.dismiss(); list.dispose() }
+    }
+  }
+
   fun testBoundedStyledTextFitsFixedAndFlexibleCells() = withMarketRow { host ->
     val row = NativeListBoundedTableView(host.context as ThemedReactContext, NativeListFonts())
     val width = (240 * row.resources.displayMetrics.density).toInt()
@@ -223,22 +434,34 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     row.bind(item, null, "linear", "vertical", null, false, { _, _, fallback -> fallback }, true)
   }
 
-  private fun withMarketRow(action: (NativeListMarketRowView) -> Unit) {
-    val activity = instrumentation.startActivitySync(
-      Intent(instrumentation.context, NativeListReorderTestActivity::class.java)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    )
+  private fun withMarketRow(action: (NativeListMarketRowView) -> Unit) = withMarketActivity { activity, context ->
     instrumentation.runOnMainSync {
-      SoLoader.init(activity, OpenSourceMergedSoMapping)
-      OneKeyLog.init(activity)
-      val context = ThemedReactContext(BridgeReactContext(activity), activity, "MarketMetricsTest", 1)
       val row = NativeListMarketRowView(context, NativeListFonts())
       try {
         activity.setContentView(row)
         action(row)
       } finally {
-        activity.setContentView(View(activity))
         row.dispose()
+      }
+    }
+  }
+
+  private fun withMarketActivity(action: (Activity, ThemedReactContext) -> Unit) {
+    val activity = instrumentation.startActivitySync(
+      Intent(instrumentation.context, NativeListReorderTestActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
+    try {
+      lateinit var context: ThemedReactContext
+      instrumentation.runOnMainSync {
+        SoLoader.init(activity, OpenSourceMergedSoMapping)
+        OneKeyLog.init(activity)
+        context = ThemedReactContext(BridgeReactContext(activity), activity, "MarketMetricsTest", 1)
+      }
+      action(activity, context)
+    } finally {
+      instrumentation.runOnMainSync {
+        activity.setContentView(View(activity))
         activity.finish()
       }
     }
