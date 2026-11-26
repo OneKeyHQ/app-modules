@@ -203,14 +203,15 @@ export interface ReactNativeDeviceUtils
   getAppleAdsAttributionToken(): Promise<string | undefined>;
 
   /**
-   * ORs `bits` (0-63) into the stored SKAdNetwork fine conversion value and
-   * submits it to SKAdNetwork on every call on iOS 16.1+, even if the values
-   * are unchanged. Call during each conversion window that needs an update.
-   * The fine value accumulates bits from successful submissions. The coarse
+   * ORs `bits` (0-63) with pending bits and the last accepted fine conversion
+   * value. Submits even unchanged values on iOS 16.1+. Call during each
+   * conversion window that needs an update. The coarse
    * value is `high` when the merged value shares a bit with
    * `coarseRule.highMask`, else `medium` for `coarseRule.mediumMask`, else
    * `low`. Rejects on invalid input, a StoreKit error, a timeout, or while a
-   * timed-out submission is still pending. Android and older iOS resolve to undefined.
+   * timed-out submission is still pending. Valid bits are kept for the next
+   * submission until StoreKit accepts them. Android and older iOS resolve to
+   * undefined.
    */
   markSkanMilestones(
     bits: number,

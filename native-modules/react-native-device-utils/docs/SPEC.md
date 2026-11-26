@@ -616,8 +616,8 @@ token issuance requires an on-device check.
 ## Scope and platform contract
 
 `markSkanMilestones(bits, coarseRule): Promise<SkanUpdateResult | undefined>`
-ORs `bits` (an integer from 0 to 63) into the stored SKAdNetwork fine
-conversion value. On iOS 16.1 and later it then calls
+ORs `bits` (an integer from 0 to 63), pending bits, and the last accepted
+SKAdNetwork fine conversion value. On iOS 16.1 and later it then calls
 `SKAdNetwork.updatePostbackConversionValue(_:coarseValue:lockWindow:completionHandler:)`
 with `lockWindow: false`. Android and older iOS resolve to `undefined`.
 
@@ -649,27 +649,32 @@ runtime are applied in arrival order, and the fine value includes every bit
 from prior accepted submissions. The queue waits for the SKAdNetwork
 completion handler for up to 30 seconds. A timed-out submission remains in
 flight until StoreKit completes it. While it is pending, subsequent valid
-calls reject without making another submission. A late success persists the
-accepted fine value before submissions resume. A late failure releases the
-queue for new submissions with the previous stored value. If StoreKit never
-completes a timed-out submission, only a process restart resets this guard.
+calls retain their new bits and reject without making another submission.
+A late success persists the accepted fine value and clears the bits it
+reports from pending storage before submissions resume. A late failure
+leaves all unreported bits pending. If StoreKit never completes a timed-out
+submission, only a process restart resets this guard.
 
 ## Data and retention
 
 The last accepted fine value lives in `UserDefaults.standard` under
 `so.onekey.deviceutils.skan.fineValue`. It is written only after SKAdNetwork
-accepts the update. The coarse value is derived on every call from the merged
-fine value and the caller's masks. Deleting the app clears the stored value,
-which matches a new install's fresh attribution. The value is not logged and
-holds no user or wallet identifiers.
+accepts the update. Valid milestone bits are retained separately under
+`so.onekey.deviceutils.skan.pendingBits` before submission. An accepted value
+is written before its bits are cleared from pending storage. Reports merge
+the two values with bitwise OR, so replaying any leftover bits is safe.
+Pending bits survive a process restart. The coarse value is derived on every
+call from the merged fine value and the caller's current masks. Deleting the
+app clears both stored values. The values hold no user or wallet identifiers
+and are not logged.
 
 ## Failure
 
 The Promise rejects for invalid inputs, StoreKit errors, a 30-second timeout,
 or a pending timed-out submission. The last accepted fine value stays in
 storage until StoreKit confirms a successful update, including a late
-success. The caller can retry with the same bits and masks when submissions
-resume.
+success. The next submission includes the pending bits, even when the caller
+passes `bits: 0`. Invalid calls leave storage unchanged.
 
 ## Conformance and acceptance
 
@@ -678,7 +683,7 @@ in `ios/SkanConversionStore.swift`, `ios/ReactNativeDeviceUtils.swift` and
 `ReactNativeDeviceUtils.kt`. The iOS pod's XCTest suite injects a reporter and
 an isolated `UserDefaults` suite. It covers bit merging, coarse mapping, the
 same fine and coarse values submitted in consecutive simulated windows, zero
-values, a coarse rule change, rejected reports and retries, input validation,
-a timeout with late completion, and concurrent callers. Android native CI
-builds the Kotlin stub. Confirming real postbacks across windows requires an
-eligible ad attribution on a test device.
+values, a coarse rule change, retry after a rejected report and store
+recreation, input validation, a timeout with late completion, and concurrent
+callers. Android native CI builds the Kotlin stub. Confirming real postbacks
+across windows requires an eligible ad attribution on a test device.

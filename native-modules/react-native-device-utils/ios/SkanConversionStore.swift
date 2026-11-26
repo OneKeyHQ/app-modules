@@ -39,8 +39,8 @@ enum SkanConversionError: Error, Equatable, LocalizedError {
 ///
 /// Main and background React runtimes each create their own HybridObject, so
 /// the shared instance and its serial queue are process-wide. The queue keeps
-/// read, merge, report and persist in order so each call includes the bits
-/// from prior successful reports.
+/// read, merge, report and persist in order so each submission includes
+/// accepted and pending milestone bits.
 final class SkanConversionStore {
     typealias Reporter = (
         _ fineValue: Int,
@@ -49,6 +49,7 @@ final class SkanConversionStore {
     ) -> Void
 
     static let fineValueKey = "so.onekey.deviceutils.skan.fineValue"
+    static let pendingBitsKey = "so.onekey.deviceutils.skan.pendingBits"
     static let maxValue = 63
 
     static let shared = SkanConversionStore(
@@ -106,12 +107,18 @@ final class SkanConversionStore {
         let highMask = try Self.validated(highMask, name: "coarseRule.highMask")
         let mediumMask = try Self.validated(mediumMask, name: "coarseRule.mediumMask")
 
+        let previous = defaults.integer(forKey: Self.fineValueKey) & Self.maxValue
+        let pending = defaults.integer(forKey: Self.pendingBitsKey) & Self.maxValue
+        let mergedPending = (pending | bits) & ~previous
+        if mergedPending != pending {
+            defaults.set(mergedPending, forKey: Self.pendingBitsKey)
+        }
+
         guard timedOutReport == nil else {
             throw SkanConversionError.reportInProgress
         }
 
-        let previous = defaults.integer(forKey: Self.fineValueKey) & Self.maxValue
-        let fineValue = previous | bits
+        let fineValue = previous | mergedPending
         let coarse = Self.coarse(for: fineValue, highMask: highMask, mediumMask: mediumMask)
 
         // An unchanged value can be the first update in a later StoreKit window.
@@ -125,7 +132,7 @@ final class SkanConversionStore {
             self?.queue.async { [weak self] in
                 guard let self, self.timedOutReport === semaphore else { return }
                 if error == nil {
-                    self.defaults.set(fineValue, forKey: Self.fineValueKey)
+                    self.recordAccepted(fineValue)
                 }
                 self.timedOutReport = nil
             }
@@ -143,8 +150,17 @@ final class SkanConversionStore {
             throw SkanConversionError.reportFailed(reportError.localizedDescription)
         }
 
-        defaults.set(fineValue, forKey: Self.fineValueKey)
+        recordAccepted(fineValue)
         return SkanMergeOutcome(fineValue: fineValue, coarse: coarse)
+    }
+
+    private func recordAccepted(_ fineValue: Int) {
+        defaults.set(fineValue, forKey: Self.fineValueKey)
+        let pending = defaults.integer(forKey: Self.pendingBitsKey)
+        let remaining = pending & ~fineValue
+        if remaining != pending {
+            defaults.set(remaining, forKey: Self.pendingBitsKey)
+        }
     }
 
     private static let systemReporter: Reporter = { fineValue, coarse, completion in

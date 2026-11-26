@@ -110,10 +110,11 @@ final class SkanConversionTests: XCTestCase {
         XCTAssertEqual(reporter.recorded.count, 2)
     }
 
-    func testFailedReportIsNotPersistedAndRetries() async throws {
+    func testPendingBitsSurviveARejectedReportAndStoreRecreation() async throws {
+        _ = try await mark(1)
         reporter.failNext = ReporterError.windowClosed
         do {
-            _ = try await mark(4)
+            _ = try await mark(2)
             XCTFail("Expected the reporter error to reject")
         } catch {
             XCTAssertEqual(
@@ -121,12 +122,17 @@ final class SkanConversionTests: XCTestCase {
                 "SKAdNetwork rejected the conversion value update: window closed"
             )
         }
-        XCTAssertNil(defaults.object(forKey: SkanConversionStore.fineValueKey))
+        XCTAssertEqual(defaults.integer(forKey: SkanConversionStore.fineValueKey), 1)
+        XCTAssertEqual(defaults.integer(forKey: SkanConversionStore.pendingBitsKey), 2)
 
+        let reporter = reporter!
+        let reopenedDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        store = SkanConversionStore(defaults: reopenedDefaults, reporter: reporter.report)
         let retried = try await mark(4)
-        XCTAssertEqual(retried?.fineValue, 4)
+        XCTAssertEqual(retried?.fineValue, 7)
         XCTAssertEqual(retried?.updated, true)
-        XCTAssertEqual(reporter.recorded.map(\.0), [4, 4])
+        XCTAssertEqual(reporter.recorded.map(\.0), [1, 3, 7])
+        XCTAssertEqual(defaults.integer(forKey: SkanConversionStore.pendingBitsKey), 0)
     }
 
     func testRejectsInvalidInput() async {
@@ -145,9 +151,10 @@ final class SkanConversionTests: XCTestCase {
             XCTAssertEqual(error as? SkanConversionError, .invalidValue("coarseRule.highMask"))
         }
         XCTAssertTrue(reporter.recorded.isEmpty)
+        XCTAssertNil(defaults.object(forKey: SkanConversionStore.pendingBitsKey))
     }
 
-    func testTimesOutWithoutPersisting() async {
+    func testTimeoutRetainsPendingBitsWithoutAdvancingTheAcceptedValue() async {
         let silent = SkanConversionStore(
             defaults: defaults,
             reporter: { _, _, _ in },
@@ -162,33 +169,35 @@ final class SkanConversionTests: XCTestCase {
             XCTAssertEqual(error as? SkanConversionError, .timedOut)
         }
         XCTAssertNil(defaults.object(forKey: SkanConversionStore.fineValueKey))
+        XCTAssertEqual(defaults.integer(forKey: SkanConversionStore.pendingBitsKey), 1)
     }
 
     func testLateSuccessPersistsBeforeSubmissionsResume() async throws {
-        try await checkLateCompletion(error: nil, expectedStoredValue: 8, expectedNextValue: 9)
+        try await checkLateCompletion(error: nil, expectedAcceptedValue: 8)
     }
 
     func testLateFailureAllowsRetryWithoutPersisting() async throws {
         try await checkLateCompletion(
             error: ReporterError.windowClosed,
-            expectedStoredValue: 0,
-            expectedNextValue: 1
+            expectedAcceptedValue: 0
         )
     }
 
     private func checkLateCompletion(
         error: Error?,
-        expectedStoredValue: Int,
-        expectedNextValue: Double
+        expectedAcceptedValue: Int
     ) async throws {
         var finishFirstReport: ((Error?) -> Void)?
+        var acceptedBeforeRetry: Int?
         let reporter = reporter!
+        let defaults = defaults!
         store = SkanConversionStore(
             defaults: defaults,
             reporter: { fineValue, coarse, completion in
                 if finishFirstReport == nil {
                     finishFirstReport = completion
                 } else {
+                    acceptedBeforeRetry = defaults.integer(forKey: SkanConversionStore.fineValueKey)
                     reporter.report(fineValue, coarse, completion)
                 }
             },
@@ -207,14 +216,15 @@ final class SkanConversionTests: XCTestCase {
             XCTAssertEqual(error as? SkanConversionError, .reportInProgress)
         }
         XCTAssertNil(defaults.object(forKey: SkanConversionStore.fineValueKey))
+        XCTAssertEqual(defaults.integer(forKey: SkanConversionStore.pendingBitsKey), 9)
 
         let finish = try XCTUnwrap(finishFirstReport)
         finish(error)
-        let stored = try await mark(0)
-        let next = try await mark(1)
-        XCTAssertEqual(stored?.fineValue, Double(expectedStoredValue))
-        XCTAssertEqual(next?.fineValue, expectedNextValue)
-        XCTAssertEqual(reporter.recorded.map(\.0), [expectedStoredValue, Int(expectedNextValue)])
+        let retry = try await mark(0)
+        XCTAssertEqual(acceptedBeforeRetry, expectedAcceptedValue)
+        XCTAssertEqual(retry?.fineValue, 9)
+        XCTAssertEqual(reporter.recorded.map(\.0), [9])
+        XCTAssertEqual(defaults.integer(forKey: SkanConversionStore.pendingBitsKey), 0)
     }
 
     func testConcurrentCallersNeverReportASmallerValue() async throws {
