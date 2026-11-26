@@ -14,19 +14,17 @@ export interface FirstLaunchInitOptions {
   legacyAppVersion?: string;
 }
 
-interface PersistedFirstLaunchState {
-  hasLaunched: boolean;
-  highestAppVersion: string | null;
-  highestBundleVersion: string | null;
-}
+export const FIRST_LAUNCH_KEYS = {
+  launched: '1k_fl_launched',
+  appVersion: '1k_fl_app_ver',
+  bundleVersion: '1k_fl_bundle_ver',
+} as const;
 
-export const FIRST_LAUNCH_STORAGE_KEY = 'onekey:device-utils:first-launch';
 const validVersionPattern =
   /^[0-9]+(?:\.[0-9]+)*(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const digitsOnly = /^[0-9]+$/;
 
 let initialized = false;
-let storageAvailable = false;
 let cachedFirstLaunch = false;
 let startupAppVersion: string | undefined;
 let startupBundleVersion: string | undefined;
@@ -135,79 +133,49 @@ function getStorage(): Storage | null {
   }
 }
 
-function parseOptionalVersionField(
-  value: unknown
-): { ok: true; value: string | null } | { ok: false } {
-  if (value === undefined || value === null) {
-    return { ok: true, value: null };
-  }
-  if (isValidVersion(value)) {
-    return { ok: true, value };
-  }
-  return { ok: false };
-}
-
-function readState(
-  storage: Storage,
-  legacyAppVersion?: string
-): {
-  state: PersistedFirstLaunchState;
-  existed: boolean;
-} | null {
+function safeGet(storage: Storage, key: string): { ok: true; value: string | null } | { ok: false } {
   try {
-    const raw = storage.getItem(FIRST_LAUNCH_STORAGE_KEY);
-    if (raw === null) {
-      return {
-        state: {
-          hasLaunched: false,
-          highestAppVersion: isValidVersion(legacyAppVersion)
-            ? legacyAppVersion
-            : null,
-          highestBundleVersion: null,
-        },
-        existed: false,
-      };
-    }
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
-      return null;
-    }
-    const record = parsed as Record<string, unknown>;
-    if (typeof record.hasLaunched !== 'boolean') {
-      return null;
-    }
-    const appField = parseOptionalVersionField(record.highestAppVersion);
-    const bundleField = parseOptionalVersionField(record.highestBundleVersion);
-    if (!appField.ok || !bundleField.ok) {
-      return null;
-    }
-    return {
-      state: {
-        hasLaunched: record.hasLaunched,
-        highestAppVersion: appField.value,
-        highestBundleVersion: bundleField.value,
-      },
-      existed: true,
-    };
+    return { ok: true, value: storage.getItem(key) };
   } catch {
-    return null;
+    return { ok: false };
   }
 }
 
-function writeState(
-  storage: Storage,
-  state: PersistedFirstLaunchState
-): boolean {
+function safeSet(storage: Storage, key: string, value: string): boolean {
   try {
-    storage.setItem(FIRST_LAUNCH_STORAGE_KEY, JSON.stringify(state));
+    storage.setItem(key, value);
     return true;
   } catch {
     return false;
   }
+}
+
+function evaluateVersionKey(
+  storage: Storage,
+  key: string,
+  currentVersion: string,
+  legacyBaseline?: string
+): boolean {
+  const existing = safeGet(storage, key);
+  if (!existing.ok) {
+    return false;
+  }
+  if (existing.value !== null && !isValidVersion(existing.value)) {
+    // Corrupted stored value: fail closed without overwriting.
+    return false;
+  }
+  const baseline =
+    existing.value ?? (isValidVersion(legacyBaseline) ? legacyBaseline : null);
+  const isHigher =
+    baseline === null || compareVersions(currentVersion, baseline) > 0;
+  if (isHigher) {
+    return safeSet(storage, key, currentVersion);
+  }
+  if (existing.value === null && baseline !== null) {
+    // Persist the legacy baseline so future launches don't need legacy input.
+    safeSet(storage, key, baseline);
+  }
+  return false;
 }
 
 export function initFirstLaunch(options?: FirstLaunchInitOptions): void {
@@ -225,8 +193,8 @@ export function initFirstLaunch(options?: FirstLaunchInitOptions): void {
   startupAppVersion = validAppVersion;
   startupBundleVersion = validBundleVersion;
 
-  const failClosed = () => {
-    storageAvailable = false;
+  const storage = getStorage();
+  if (!storage) {
     cachedFirstLaunch = false;
     if (validAppVersion !== undefined) {
       cachedAppResults.set(validAppVersion, false);
@@ -234,65 +202,46 @@ export function initFirstLaunch(options?: FirstLaunchInitOptions): void {
     if (validBundleVersion !== undefined) {
       cachedBundleResults.set(validBundleVersion, false);
     }
-  };
-
-  const storage = getStorage();
-  if (!storage) {
-    failClosed();
     return;
   }
 
   const isLegacyInstall = options?.isLegacyInstall === true;
-  const loaded = readState(storage, options?.legacyAppVersion);
-  if (!loaded) {
-    failClosed();
-    return;
+  const launchedRead = safeGet(storage, FIRST_LAUNCH_KEYS.launched);
+  const isFreshStorage = launchedRead.ok && launchedRead.value === null;
+
+  if (!launchedRead.ok) {
+    cachedFirstLaunch = false;
+  } else if (launchedRead.value === null) {
+    const wrote = safeSet(storage, FIRST_LAUNCH_KEYS.launched, '1');
+    cachedFirstLaunch = wrote && !isLegacyInstall;
+  } else {
+    // Present ("1" or corrupted): not a first launch, do not overwrite.
+    cachedFirstLaunch = false;
   }
 
-  const { state, existed } = loaded;
-  const nextState: PersistedFirstLaunchState = { ...state };
-  let needsWrite = !existed;
+  const legacyBaseline = isFreshStorage ? options?.legacyAppVersion : undefined;
 
-  const computedFirstLaunch = !state.hasLaunched && !isLegacyInstall;
-  if (!state.hasLaunched) {
-    nextState.hasLaunched = true;
-    needsWrite = true;
-  }
-
-  let computedAppVersion = false;
   if (validAppVersion !== undefined) {
-    computedAppVersion =
-      nextState.highestAppVersion === null ||
-      compareVersions(validAppVersion, nextState.highestAppVersion) > 0;
-    if (computedAppVersion) {
-      nextState.highestAppVersion = validAppVersion;
-      needsWrite = true;
-    }
+    cachedAppResults.set(
+      validAppVersion,
+      evaluateVersionKey(
+        storage,
+        FIRST_LAUNCH_KEYS.appVersion,
+        validAppVersion,
+        legacyBaseline
+      )
+    );
   }
 
-  let computedBundleVersion = false;
   if (validBundleVersion !== undefined) {
-    computedBundleVersion =
-      nextState.highestBundleVersion === null ||
-      compareVersions(validBundleVersion, nextState.highestBundleVersion) > 0;
-    if (computedBundleVersion) {
-      nextState.highestBundleVersion = validBundleVersion;
-      needsWrite = true;
-    }
-  }
-
-  if (needsWrite && !writeState(storage, nextState)) {
-    failClosed();
-    return;
-  }
-
-  storageAvailable = true;
-  cachedFirstLaunch = computedFirstLaunch;
-  if (validAppVersion !== undefined) {
-    cachedAppResults.set(validAppVersion, computedAppVersion);
-  }
-  if (validBundleVersion !== undefined) {
-    cachedBundleResults.set(validBundleVersion, computedBundleVersion);
+    cachedBundleResults.set(
+      validBundleVersion,
+      evaluateVersionKey(
+        storage,
+        FIRST_LAUNCH_KEYS.bundleVersion,
+        validBundleVersion
+      )
+    );
   }
 }
 
@@ -321,38 +270,12 @@ export function isFirstLaunchForCurrentAppVersion(
   if (cached !== undefined) {
     return cached;
   }
-  if (!storageAvailable) {
-    cachedAppResults.set(appVersion, false);
-    return false;
-  }
   const storage = getStorage();
-  if (!storage) {
-    cachedAppResults.set(appVersion, false);
-    return false;
-  }
-  const loaded = readState(storage);
-  if (!loaded) {
-    storageAvailable = false;
-    cachedAppResults.set(appVersion, false);
-    return false;
-  }
-  const { state } = loaded;
-  const isHigher =
-    state.highestAppVersion === null ||
-    compareVersions(appVersion, state.highestAppVersion) > 0;
-  if (isHigher) {
-    const nextState: PersistedFirstLaunchState = {
-      ...state,
-      hasLaunched: true,
-      highestAppVersion: appVersion,
-    };
-    if (!writeState(storage, nextState)) {
-      cachedAppResults.set(appVersion, false);
-      return false;
-    }
-  }
-  cachedAppResults.set(appVersion, isHigher);
-  return isHigher;
+  const result = storage
+    ? evaluateVersionKey(storage, FIRST_LAUNCH_KEYS.appVersion, appVersion)
+    : false;
+  cachedAppResults.set(appVersion, result);
+  return result;
 }
 
 export function isFirstLaunchForCurrentBundle(
@@ -373,36 +296,29 @@ export function isFirstLaunchForCurrentBundle(
   if (cached !== undefined) {
     return cached;
   }
-  if (!storageAvailable) {
-    cachedBundleResults.set(bundleVersion, false);
-    return false;
-  }
   const storage = getStorage();
-  if (!storage) {
-    cachedBundleResults.set(bundleVersion, false);
-    return false;
-  }
-  const loaded = readState(storage);
-  if (!loaded) {
-    storageAvailable = false;
-    cachedBundleResults.set(bundleVersion, false);
-    return false;
-  }
-  const { state } = loaded;
-  const isHigher =
-    state.highestBundleVersion === null ||
-    compareVersions(bundleVersion, state.highestBundleVersion) > 0;
-  if (isHigher) {
-    const nextState: PersistedFirstLaunchState = {
-      ...state,
-      hasLaunched: true,
-      highestBundleVersion: bundleVersion,
-    };
-    if (!writeState(storage, nextState)) {
-      cachedBundleResults.set(bundleVersion, false);
-      return false;
+  const result = storage
+    ? evaluateVersionKey(storage, FIRST_LAUNCH_KEYS.bundleVersion, bundleVersion)
+    : false;
+  cachedBundleResults.set(bundleVersion, result);
+  return result;
+}
+
+export function resetFirstLaunch(): void {
+  const storage = getStorage();
+  if (storage) {
+    try {
+      storage.removeItem(FIRST_LAUNCH_KEYS.launched);
+      storage.removeItem(FIRST_LAUNCH_KEYS.appVersion);
+      storage.removeItem(FIRST_LAUNCH_KEYS.bundleVersion);
+    } catch {
+      // Ignore storage errors during reset.
     }
   }
-  cachedBundleResults.set(bundleVersion, isHigher);
-  return isHigher;
+  initialized = false;
+  cachedFirstLaunch = false;
+  startupAppVersion = undefined;
+  startupBundleVersion = undefined;
+  cachedAppResults.clear();
+  cachedBundleResults.clear();
 }

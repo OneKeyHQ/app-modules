@@ -136,7 +136,7 @@ func testFirstLaunchHistory() throws {
 
     func launch(_ version: String, previous: String? = nil) -> FirstLaunchHistory {
         FirstLaunchHistory(
-            directory: directory,
+            baseDirectory: directory,
             appVersion: version,
             previousAppVersion: previous,
             hasPreviousLaunch: previous != nil
@@ -177,7 +177,7 @@ func testFirstLaunchHistory() throws {
     precondition(!downgrade.isFirstLaunchForBundle("1001"))
 
     let legacySameVersion = FirstLaunchHistory(
-        directory: directory.appendingPathComponent("legacy-same"),
+        baseDirectory: directory.appendingPathComponent("legacy-same"),
         appVersion: "6.5.0",
         previousAppVersion: "6.5.0",
         hasPreviousLaunch: true
@@ -185,28 +185,32 @@ func testFirstLaunchHistory() throws {
     precondition(!legacySameVersion.isFirstLaunch && !legacySameVersion.isFirstLaunchForCurrentAppVersion)
 
     let legacyUpgraded = FirstLaunchHistory(
-        directory: directory.appendingPathComponent("legacy-upgraded"),
+        baseDirectory: directory.appendingPathComponent("legacy-upgraded"),
         appVersion: "6.6.0",
         previousAppVersion: "6.5.0",
         hasPreviousLaunch: true
     )
     precondition(!legacyUpgraded.isFirstLaunch && legacyUpgraded.isFirstLaunchForCurrentAppVersion)
 
-    // Corrupted files (empty, invalid JSON, invalid version string) must fail closed without overwriting.
-    for (idx, bad) in ["", "not-json", "{}", "{\"hasLaunched\":true,\"highestAppVersion\":\"6.6.0!\"}"].enumerated() {
-        let corruptDir = directory.appendingPathComponent("corrupt-\(idx)")
-        try FileManager.default.createDirectory(at: corruptDir, withIntermediateDirectories: true)
-        let corruptFile = corruptDir.appendingPathComponent(FirstLaunchHistory.fileName)
-        try bad.data(using: .utf8)!.write(to: corruptFile)
-        let corrupted = FirstLaunchHistory(directory: corruptDir, appVersion: "6.5.0", previousAppVersion: nil, hasPreviousLaunch: false)
-        precondition(!corrupted.isFirstLaunch && !corrupted.isFirstLaunchForCurrentAppVersion && !corrupted.isFirstLaunchForBundle("1000"))
-        let remaining = try String(contentsOf: corruptFile, encoding: .utf8)
+    // Corrupted individual files must fail closed without overwriting or breaking healthy files.
+    for (idx, bad) in ["", "6.6.0!", "v1000"].enumerated() {
+        let corruptBase = directory.appendingPathComponent("corrupt-\(idx)")
+        let corruptStore = corruptBase.appendingPathComponent(FirstLaunchHistory.directoryName, isDirectory: true)
+        try FileManager.default.createDirectory(at: corruptStore, withIntermediateDirectories: true)
+        try Data("1".utf8).write(to: corruptStore.appendingPathComponent(FirstLaunchHistory.launchedFileName))
+        let badAppFile = corruptStore.appendingPathComponent(FirstLaunchHistory.appVersionFileName)
+        try Data(bad.utf8).write(to: badAppFile)
+        let corrupted = FirstLaunchHistory(baseDirectory: corruptBase, appVersion: "6.5.0", previousAppVersion: nil, hasPreviousLaunch: false)
+        precondition(!corrupted.isFirstLaunch && !corrupted.isFirstLaunchForCurrentAppVersion)
+        let remaining = try String(contentsOf: badAppFile, encoding: .utf8)
         precondition(remaining == bad)
+        // Healthy bundle file still works independently.
+        precondition(corrupted.isFirstLaunchForBundle("1000"))
     }
 
     let file = directory.appendingPathComponent("file")
     try Data().write(to: file)
-    let failed = FirstLaunchHistory(directory: file, appVersion: "6.5.0", previousAppVersion: nil, hasPreviousLaunch: false)
+    let failed = FirstLaunchHistory(baseDirectory: file, appVersion: "6.5.0", previousAppVersion: nil, hasPreviousLaunch: false)
     precondition(!failed.isFirstLaunch && !failed.isFirstLaunchForCurrentAppVersion && !failed.isFirstLaunchForBundle("1000"))
 }
 

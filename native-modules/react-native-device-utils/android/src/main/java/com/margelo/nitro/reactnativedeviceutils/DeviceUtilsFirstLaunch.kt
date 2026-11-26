@@ -15,13 +15,18 @@ object DeviceUtilsFirstLaunch {
   @Volatile
   private var history: FirstLaunchHistory? = null
 
+  private fun baseDirectory(context: Context): File? {
+    val appContext = context.applicationContext ?: context
+    return appContext.noBackupFilesDir ?: appContext.filesDir
+  }
+
   /**
-   * Returns true if the persisted first-launch state file already exists on disk.
+   * Returns true if the persisted launched marker already exists on disk.
    */
   @JvmStatic
   fun hasPersistedState(context: Context): Boolean {
-    val filesDir = context.applicationContext?.filesDir ?: context.filesDir ?: return false
-    return File(filesDir, FirstLaunchHistory.FILE_NAME).exists()
+    val base = baseDirectory(context) ?: return false
+    return File(File(base, FirstLaunchHistory.DIRECTORY_NAME), FirstLaunchHistory.LAUNCHED_FILE_NAME).exists()
   }
 
   /**
@@ -43,7 +48,7 @@ object DeviceUtilsFirstLaunch {
 
   /**
    * Kotlin-friendly initializer whose legacy-detection lambdas are only evaluated
-   * when no persisted state file exists yet.
+   * when no persisted launched marker exists yet.
    */
   fun initialize(
     context: Context,
@@ -54,7 +59,7 @@ object DeviceUtilsFirstLaunch {
     synchronized(lock) {
       if (history != null) return
       val appContext = context.applicationContext ?: context
-      val filesDirectory = appContext.filesDir ?: return
+      val base = baseDirectory(appContext) ?: return
       val versionName = try {
         @Suppress("DEPRECATION")
         appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName
@@ -63,15 +68,32 @@ object DeviceUtilsFirstLaunch {
       } catch (_: SecurityException) {
         null
       }
-      val persistedExists = File(filesDirectory, FirstLaunchHistory.FILE_NAME).exists()
+      val persistedExists =
+        File(File(base, FirstLaunchHistory.DIRECTORY_NAME), FirstLaunchHistory.LAUNCHED_FILE_NAME).exists()
       val hasPreviousLaunch = if (persistedExists) false else runCatching(isLegacyInstall).getOrDefault(false)
       val previousVersion = if (persistedExists) null else runCatching(legacyAppVersion).getOrNull()
       history = FirstLaunchHistory(
-        directory = filesDirectory,
+        baseDirectory = base,
         appVersion = versionName,
         previousAppVersion = previousVersion,
         hasPreviousLaunch = hasPreviousLaunch,
       )
+    }
+  }
+
+  /**
+   * Deletes persisted first-launch files and clears in-memory state so a subsequent
+   * JS restart within the same native process observes a fresh launch.
+   */
+  @JvmStatic
+  fun reset(context: Context? = null) {
+    synchronized(lock) {
+      if (context != null) {
+        baseDirectory(context)?.let { base ->
+          runCatching { File(base, FirstLaunchHistory.DIRECTORY_NAME).deleteRecursively() }
+        }
+      }
+      history = null
     }
   }
 

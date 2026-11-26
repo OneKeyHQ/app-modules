@@ -91,6 +91,7 @@ import {
   isFirstLaunch,
   isFirstLaunchForCurrentAppVersion,
   isFirstLaunchForCurrentBundle,
+  resetFirstLaunch,
 } from '@onekeyfe/react-native-device-utils/first-launch';
 
 // Call once at app startup. On Web/Desktop/Extension, pass host-sampled
@@ -105,6 +106,9 @@ initFirstLaunch({
 const firstLaunch = isFirstLaunch();
 const firstAppVersionLaunch = isFirstLaunchForCurrentAppVersion();
 const firstBundleLaunch = isFirstLaunchForCurrentBundle();
+
+// Optional: clear persisted files/keys AND in-memory cache (e.g. on Reset App before JS restart).
+resetFirstLaunch();
 ```
 
 On iOS and Android, initialize the pure native singleton early in
@@ -113,12 +117,12 @@ On iOS and Android, initialize the pure native singleton early in
 (`DeviceUtilsFirstLaunch.initialize(context, isLegacyInstall = { ... })`) so
 host-specific legacy upgrade detection stays in the app and runs before React Native starts.
 
-Persisted state is a fixed 3-field record (`hasLaunched`, `highestAppVersion`,
-`highestBundleVersion`), so storage never grows and requires no cleanup.
-Rolling back to a version lower than the recorded highest version returns `false`.
-Outside React Native, the record is stored in `localStorage` under
-`onekey:device-utils:first-launch`. Call from an extension-owned UI page; an MV3
-service worker returns `false`.
+Persisted state is stored as 3 independent plain-text entries (`launched`,
+`app_ver`, `bundle_ver` under `1k_first_launch/` on native; `1k_fl_launched`,
+`1k_fl_app_ver`, `1k_fl_bundle_ver` in `localStorage` on Web/Desktop/Extension),
+so storage never grows and requires no cleanup. Rolling back to a version lower
+than the recorded highest version returns `false`. Call from an extension-owned
+UI page; an MV3 service worker returns `false`.
 
 ## API
 
@@ -130,6 +134,7 @@ service worker returns `false`.
 | `isFirstLaunch()` | `boolean` | iOS, Android | Synchronous first launch of the local installation, with a stable result for the native process. |
 | `isFirstLaunchForCurrentAppVersion()` | `boolean` | iOS, Android | First launch of a native release version higher than any previously launched version. |
 | `isFirstLaunchForCurrentBundle(bundleVersion?)` | `boolean` | iOS, Android | First launch of a bundle version higher than any previously launched bundle. |
+| `resetFirstLaunch()` | `void` | iOS, Android | Clears persisted `1k_first_launch/` files and in-memory launch state. |
 | `getDeviceToken()` / `saveDeviceToken(token)` / `registerDeviceToken()` | `Promise<string>` / `Promise<void>` / `Promise<boolean>` | iOS, Android | Push-token plumbing; host setup still owns registration. |
 | `getInMemoryValue(key)` / `setInMemoryValue(key, value)` / `removeInMemoryValue(key)` / `setInMemoryValueIfAbsent(key, value)` | `InMemoryValue \| undefined` / `void` / `boolean` / `boolean` | iOS, Android | Synchronous bounded primitive store. |
 | `getAndClearColdStartLocalNotification()` | `Promise<string>` | iOS, Android | Returns local-notification JSON once; Android returns `""`. |

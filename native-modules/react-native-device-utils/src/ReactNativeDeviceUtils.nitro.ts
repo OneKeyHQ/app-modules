@@ -135,6 +135,8 @@ export interface ReactNativeDeviceUtils
   isFirstLaunchForCurrentAppVersion(): boolean;
   /** First launch of a bundle version higher than any previously launched bundle. */
   isFirstLaunchForCurrentBundle(bundleVersion?: string): boolean;
+  /** Clears persisted first-launch files and in-memory state (e.g. on Reset App). */
+  resetFirstLaunch(): void;
   // Process-owned primitive Map, shared by all runtimes and never persisted.
   getInMemoryValue(key: string): InMemoryValue | undefined;
   setInMemoryValue(key: string, value: InMemoryValue): void;

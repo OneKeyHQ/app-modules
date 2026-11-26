@@ -184,22 +184,17 @@ fun main() {
         val legacyUpgraded = FirstLaunchHistory(directory.resolve("legacy-upgraded"), "6.6.0", "6.5.0", hasPreviousLaunch = true)
         check(!legacyUpgraded.isFirstLaunch && legacyUpgraded.isFirstLaunchForCurrentAppVersion)
 
-        // Corrupted files (empty, invalid JSON, wrong types, invalid version string) must fail closed without overwriting.
-        val corruptPayloads = listOf(
-            "",
-            "not-json",
-            "{}",
-            """{"hasLaunched":"true"}""",
-            """{"hasLaunched":true,"highestAppVersion":23}""",
-            """{"hasLaunched":true,"highestAppVersion":"6.6.0!"}""",
-            """{"hasLaunched":true,"highestBundleVersion":"v1000"}""",
-        )
+        // Corrupted individual files must fail closed without overwriting or breaking healthy files.
+        val corruptPayloads = listOf("", "6.6.0!", "v1000")
         corruptPayloads.forEachIndexed { idx, bad ->
-            val corruptDir = directory.resolve("corrupt-$idx").apply { mkdirs() }
-            val corruptFile = corruptDir.resolve(FirstLaunchHistory.FILE_NAME).apply { writeText(bad) }
-            val corrupted = FirstLaunchHistory(corruptDir, "6.5.0", null, hasPreviousLaunch = false)
-            check(!corrupted.isFirstLaunch && !corrupted.isFirstLaunchForCurrentAppVersion && !corrupted.isFirstLaunchForBundle("1000"))
-            check(corruptFile.readText() == bad)
+            val corruptBase = directory.resolve("corrupt-$idx")
+            val corruptStore = corruptBase.resolve(FirstLaunchHistory.DIRECTORY_NAME).apply { mkdirs() }
+            corruptStore.resolve(FirstLaunchHistory.LAUNCHED_FILE_NAME).writeText("1")
+            val badAppFile = corruptStore.resolve(FirstLaunchHistory.APP_VERSION_FILE_NAME).apply { writeText(bad) }
+            val corrupted = FirstLaunchHistory(corruptBase, "6.5.0", null, hasPreviousLaunch = false)
+            check(!corrupted.isFirstLaunch && !corrupted.isFirstLaunchForCurrentAppVersion)
+            check(badAppFile.readText() == bad)
+            check(corrupted.isFirstLaunchForBundle("1000"))
         }
 
         val file = directory.resolve("file").apply { writeText("") }

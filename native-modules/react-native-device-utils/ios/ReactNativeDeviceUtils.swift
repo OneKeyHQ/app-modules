@@ -86,6 +86,10 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         DeviceUtilsFirstLaunch.forBundle(bundleVersion)
     }
 
+    func resetFirstLaunch() throws {
+        DeviceUtilsFirstLaunch.reset()
+    }
+
     override init() {
         super.init()
         restoreUserInterfaceStyle()

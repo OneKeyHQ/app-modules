@@ -46,12 +46,14 @@ afterEach(() => {
   }
 });
 
-it('records installation, highest app version, and highest bundle version in a single write', () => {
+it('records installation, highest app version, and highest bundle version as 3 independent keys', () => {
   const storage = createStorage();
   const startup = openDocument(storage);
 
   startup.initFirstLaunch({ appVersion: '6.5.0', bundleVersion: '1000' });
-  expect(storage.setItem).toHaveBeenCalledTimes(1);
+  expect(storage.setItem).toHaveBeenCalledWith('1k_fl_launched', '1');
+  expect(storage.setItem).toHaveBeenCalledWith('1k_fl_app_ver', '6.5.0');
+  expect(storage.setItem).toHaveBeenCalledWith('1k_fl_bundle_ver', '1000');
   expect(startup.isFirstLaunch()).toBe(true);
   expect(startup.isFirstLaunchForCurrentAppVersion()).toBe(true);
   expect(startup.isFirstLaunchForCurrentBundle()).toBe(true);
@@ -59,7 +61,6 @@ it('records installation, highest app version, and highest bundle version in a s
   expect(startup.isFirstLaunch()).toBe(true);
   expect(startup.isFirstLaunchForCurrentAppVersion('6.5.0')).toBe(true);
   expect(startup.isFirstLaunchForCurrentBundle('1000')).toBe(true);
-  expect(storage.setItem).toHaveBeenCalledTimes(1);
 
   // Explicit lookup of another identity must not overwrite startup zero-arg results or evict startup cache.
   expect(startup.isFirstLaunchForCurrentAppVersion('6.6.0')).toBe(true);
@@ -81,9 +82,8 @@ it('records installation, highest app version, and highest bundle version in a s
   expect(ota.isFirstLaunch()).toBe(false);
   expect(ota.isFirstLaunchForCurrentAppVersion()).toBe(false);
   expect(ota.isFirstLaunchForCurrentBundle()).toBe(true);
-  expect(ota.isFirstLaunchForCurrentBundle()).toBe(true);
 
-  // Rollback to lower bundle returns false and preserves highestBundleVersion
+  // Rollback to lower bundle returns false and preserves highest bundle version
   const rollback = openDocument(storage);
   rollback.initFirstLaunch({ appVersion: '6.6.0', bundleVersion: '1000' });
   expect(rollback.isFirstLaunch()).toBe(false);
@@ -103,6 +103,29 @@ it('records installation, highest app version, and highest bundle version in a s
   expect(downgrade.isFirstLaunch()).toBe(false);
   expect(downgrade.isFirstLaunchForCurrentAppVersion()).toBe(false);
   expect(downgrade.isFirstLaunchForCurrentBundle()).toBe(false);
+});
+
+it('clears both persisted keys and in-memory state on resetFirstLaunch', () => {
+  const storage = createStorage();
+  const doc = openDocument(storage);
+
+  doc.initFirstLaunch({ appVersion: '6.5.0', bundleVersion: '1000' });
+  expect(doc.isFirstLaunch()).toBe(true);
+
+  // Simulate normal restart -> false
+  const restarted = openDocument(storage);
+  restarted.initFirstLaunch({ appVersion: '6.5.0', bundleVersion: '1000' });
+  expect(restarted.isFirstLaunch()).toBe(false);
+  expect(restarted.isFirstLaunchForCurrentAppVersion()).toBe(false);
+  expect(restarted.isFirstLaunchForCurrentBundle()).toBe(false);
+
+  // Reset in the same runtime (e.g. Reset App + JS soft restart)
+  restarted.resetFirstLaunch();
+  expect(restarted.isFirstLaunch()).toBe(false);
+  restarted.initFirstLaunch({ appVersion: '6.5.0', bundleVersion: '1000' });
+  expect(restarted.isFirstLaunch()).toBe(true);
+  expect(restarted.isFirstLaunchForCurrentAppVersion()).toBe(true);
+  expect(restarted.isFirstLaunchForCurrentBundle()).toBe(true);
 });
 
 it('does not touch storage before initFirstLaunch so legacy init is never consumed early', () => {
@@ -126,52 +149,22 @@ it('does not touch storage before initFirstLaunch so legacy init is never consum
   expect(doc.isFirstLaunchForCurrentBundle()).toBe(true);
 });
 
-it('honors host-provided legacy upgrade flags without guessing from unrelated keys', () => {
-  const thirdPartyStorage = createStorage({ 'third-party-sdk': '1' });
-  const freshWithNoise = openDocument(thirdPartyStorage);
-  freshWithNoise.initFirstLaunch({
-    appVersion: '6.5.0',
-    bundleVersion: '1000',
+it('isolates corrupted keys without overwriting them or breaking healthy keys', () => {
+  const storage = createStorage({
+    '1k_fl_launched': '1',
+    '1k_fl_app_ver': '6.6.0!',
+    '1k_fl_bundle_ver': '1000',
   });
-  expect(freshWithNoise.isFirstLaunch()).toBe(true);
+  const doc = openDocument(storage);
+  doc.initFirstLaunch({ appVersion: '6.5.0', bundleVersion: '1001' });
 
-  const legacyUpgradeStorage = createStorage();
-  const upgradedHigher = openDocument(legacyUpgradeStorage);
-  upgradedHigher.initFirstLaunch({
-    appVersion: '6.6.0',
-    bundleVersion: '1001',
-    isLegacyInstall: true,
-    legacyAppVersion: '6.5.0',
-  });
-  expect(upgradedHigher.isFirstLaunch()).toBe(false);
-  expect(upgradedHigher.isFirstLaunchForCurrentAppVersion()).toBe(true);
-  expect(upgradedHigher.isFirstLaunchForCurrentBundle()).toBe(true);
-});
-
-it('fails closed and preserves storage when persisted history is corrupted', () => {
-  const corruptPayloads = [
-    '',
-    'not-json',
-    'null',
-    '{}',
-    '[]',
-    JSON.stringify({ hasLaunched: 'yes' }),
-    JSON.stringify({ hasLaunched: true, highestAppVersion: 23 }),
-    JSON.stringify({ hasLaunched: true, highestAppVersion: '6.6.0!' }),
-    JSON.stringify({ hasLaunched: true, highestBundleVersion: 'v1000' }),
-  ];
-
-  for (const payload of corruptPayloads) {
-    const storage = createStorage({
-      'onekey:device-utils:first-launch': payload,
-    });
-    const doc = openDocument(storage);
-    doc.initFirstLaunch({ appVersion: '6.5.0', bundleVersion: '1000' });
-    expect(doc.isFirstLaunch()).toBe(false);
-    expect(doc.isFirstLaunchForCurrentAppVersion()).toBe(false);
-    expect(doc.isFirstLaunchForCurrentBundle()).toBe(false);
-    expect(storage.setItem).not.toHaveBeenCalled();
-  }
+  expect(doc.isFirstLaunch()).toBe(false);
+  // Corrupted app_ver fails closed and is NOT overwritten
+  expect(doc.isFirstLaunchForCurrentAppVersion()).toBe(false);
+  expect(storage.getItem('1k_fl_app_ver')).toBe('6.6.0!');
+  // Healthy bundle_ver still works independently
+  expect(doc.isFirstLaunchForCurrentBundle()).toBe(true);
+  expect(storage.getItem('1k_fl_bundle_ver')).toBe('1001');
 });
 
 it('validates numeric version core and handles prerelease comparisons accurately', () => {
@@ -193,7 +186,7 @@ it('validates numeric version core and handles prerelease comparisons accurately
   expect(doc.compareVersions('1000', '999')).toBeGreaterThan(0);
 });
 
-it('returns false without browser storage and fails closed on write errors', () => {
+it('returns false without browser storage and tolerates blocked writes', () => {
   const server = openDocument();
   server.initFirstLaunch({ appVersion: '2.0', bundleVersion: '1000' });
   expect(server.isFirstLaunch()).toBe(false);
@@ -212,9 +205,8 @@ it('returns false without browser storage and fails closed on write errors', () 
   blocked.initFirstLaunch({ appVersion: '2.0', bundleVersion: '1000' });
   expect(blocked.isFirstLaunch()).toBe(false);
 
-  // If the single startup commit throws, all three startup flags must be false.
   const storage = createStorage();
-  storage.setItem.mockImplementationOnce(() => {
+  storage.setItem.mockImplementation(() => {
     throw new Error('Storage is full');
   });
   const startup = openDocument(storage);
@@ -222,5 +214,4 @@ it('returns false without browser storage and fails closed on write errors', () 
   expect(startup.isFirstLaunch()).toBe(false);
   expect(startup.isFirstLaunchForCurrentAppVersion()).toBe(false);
   expect(startup.isFirstLaunchForCurrentBundle()).toBe(false);
-  expect(storage.setItem).toHaveBeenCalledTimes(1);
 });

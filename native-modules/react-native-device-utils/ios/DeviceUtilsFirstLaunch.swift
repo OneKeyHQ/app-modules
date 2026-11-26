@@ -5,11 +5,13 @@ public final class DeviceUtilsFirstLaunch: NSObject {
     private static let lock = NSLock()
     private static var history: FirstLaunchHistory?
 
-    /// Returns true if the persisted first-launch state file already exists on disk.
+    /// Returns true if the persisted launched marker already exists on disk.
     public static func hasPersistedState() -> Bool {
         guard let directory = defaultDirectory() else { return false }
-        let fileURL = directory.appendingPathComponent(FirstLaunchHistory.fileName)
-        return FileManager.default.fileExists(atPath: fileURL.path)
+        let launchedURL = directory
+            .appendingPathComponent(FirstLaunchHistory.directoryName, isDirectory: true)
+            .appendingPathComponent(FirstLaunchHistory.launchedFileName)
+        return FileManager.default.fileExists(atPath: launchedURL.path)
     }
 
     /// Object-returning variant of `hasPersistedState()` safe for dynamic invocation
@@ -42,11 +44,23 @@ public final class DeviceUtilsFirstLaunch: NSObject {
         guard history == nil else { return }
         guard let directory = defaultDirectory() else { return }
         history = FirstLaunchHistory(
-            directory: directory,
+            baseDirectory: directory,
             appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
             previousAppVersion: legacyAppVersion,
             hasPreviousLaunch: isLegacyInstall
         )
+    }
+
+    /// Deletes persisted first-launch files and clears in-memory state so a subsequent
+    /// JS restart within the same native process observes a fresh launch.
+    @objc public static func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        if let directory = defaultDirectory() {
+            let storeDir = directory.appendingPathComponent(FirstLaunchHistory.directoryName, isDirectory: true)
+            try? FileManager.default.removeItem(at: storeDir)
+        }
+        history = nil
     }
 
     static var value: Bool {
@@ -75,7 +89,7 @@ public final class DeviceUtilsFirstLaunch: NSObject {
             return fallback
         }
         let created = FirstLaunchHistory(
-            directory: directory,
+            baseDirectory: directory,
             appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
             previousAppVersion: nil,
             hasPreviousLaunch: false
@@ -86,79 +100,40 @@ public final class DeviceUtilsFirstLaunch: NSObject {
 }
 
 final class FirstLaunchHistory {
-    static let fileName = "onekey-device-utils-first-launch.json"
-
-    private struct PersistedState: Codable {
-        var hasLaunched: Bool
-        var highestAppVersion: String?
-        var highestBundleVersion: String?
-    }
+    static let directoryName = "1k_first_launch"
+    static let launchedFileName = "launched"
+    static let appVersionFileName = "app_ver"
+    static let bundleVersionFileName = "bundle_ver"
 
     let isFirstLaunch: Bool
     let isFirstLaunchForCurrentAppVersion: Bool
-    private let fileURL: URL
-    private var persisted: PersistedState
-    private var storageAvailable: Bool
+    private let storeDirectory: URL
     private var bundleResults: [String: Bool] = [:]
     private var initialBundleVersion: String?
 
-    init(directory: URL, appVersion: String?, previousAppVersion: String?, hasPreviousLaunch: Bool) {
-        fileURL = directory.appendingPathComponent(Self.fileName)
-        let validPrevious = Self.validatedVersion(previousAppVersion)
-        let validCurrent = Self.validatedVersion(appVersion)
+    init(baseDirectory: URL, appVersion: String?, previousAppVersion: String?, hasPreviousLaunch: Bool) {
+        let dir = baseDirectory.appendingPathComponent(Self.directoryName, isDirectory: true)
+        storeDirectory = dir
 
-        let fileExists = FileManager.default.fileExists(atPath: fileURL.path)
-        let loaded = Self.readState(from: fileURL)
-        if fileExists && loaded == nil {
-            storageAvailable = false
-            persisted = PersistedState(hasLaunched: true, highestAppVersion: validPrevious, highestBundleVersion: nil)
+        let launchedURL = dir.appendingPathComponent(Self.launchedFileName)
+        let launchedExists = FileManager.default.fileExists(atPath: launchedURL.path)
+        if launchedExists {
             isFirstLaunch = false
+        } else {
+            let wrote = Self.writeString("1", to: launchedURL, directory: dir)
+            isFirstLaunch = wrote && !hasPreviousLaunch
+        }
+
+        let legacyBaseline = launchedExists ? nil : Self.validatedVersion(previousAppVersion)
+        if let validCurrent = Self.validatedVersion(appVersion) {
+            isFirstLaunchForCurrentAppVersion = Self.evaluateVersionFile(
+                at: dir.appendingPathComponent(Self.appVersionFileName),
+                directory: dir,
+                currentVersion: validCurrent,
+                legacyBaseline: legacyBaseline
+            )
+        } else {
             isFirstLaunchForCurrentAppVersion = false
-            return
-        }
-        var state = loaded ?? PersistedState(
-            hasLaunched: false,
-            highestAppVersion: validPrevious,
-            highestBundleVersion: nil
-        )
-        var needsWrite = loaded == nil
-
-        let computedFirstLaunch = !state.hasLaunched && !hasPreviousLaunch
-        if !state.hasLaunched {
-            state.hasLaunched = true
-            needsWrite = true
-        }
-
-        let computedFirstAppVersion: Bool
-        if let validCurrent {
-            let baseline = state.highestAppVersion
-            let isHigher = baseline == nil || Self.compareVersions(validCurrent, baseline!) > 0
-            computedFirstAppVersion = isHigher
-            if isHigher {
-                state.highestAppVersion = validCurrent
-                needsWrite = true
-            }
-        } else {
-            computedFirstAppVersion = false
-        }
-
-        if needsWrite {
-            if Self.writeState(state, to: fileURL, directory: directory) {
-                storageAvailable = true
-                persisted = state
-                isFirstLaunch = computedFirstLaunch
-                isFirstLaunchForCurrentAppVersion = computedFirstAppVersion
-            } else {
-                storageAvailable = false
-                persisted = state
-                isFirstLaunch = false
-                isFirstLaunchForCurrentAppVersion = false
-            }
-        } else {
-            storageAvailable = true
-            persisted = state
-            isFirstLaunch = computedFirstLaunch
-            isFirstLaunchForCurrentAppVersion = computedFirstAppVersion
         }
     }
 
@@ -175,23 +150,58 @@ final class FirstLaunchHistory {
         if let cached = bundleResults[validBundle] {
             return cached
         }
-        guard storageAvailable else {
-            bundleResults[validBundle] = false
-            return false
-        }
-        let baseline = persisted.highestBundleVersion
-        let isHigher = baseline == nil || Self.compareVersions(validBundle, baseline!) > 0
-        if isHigher {
-            var next = persisted
-            next.highestBundleVersion = validBundle
-            guard Self.writeState(next, to: fileURL, directory: fileURL.deletingLastPathComponent()) else {
-                bundleResults[validBundle] = false
+        let result = Self.evaluateVersionFile(
+            at: storeDirectory.appendingPathComponent(Self.bundleVersionFileName),
+            directory: storeDirectory,
+            currentVersion: validBundle,
+            legacyBaseline: nil
+        )
+        bundleResults[validBundle] = result
+        return result
+    }
+
+    private static func evaluateVersionFile(
+        at fileURL: URL,
+        directory: URL,
+        currentVersion: String,
+        legacyBaseline: String?
+    ) -> Bool {
+        let exists = FileManager.default.fileExists(atPath: fileURL.path)
+        let existing: String?
+        if exists {
+            guard let raw = try? String(contentsOf: fileURL, encoding: .utf8),
+                  let valid = validatedVersion(raw) else {
+                // Corrupted file: fail closed without overwriting.
                 return false
             }
-            persisted = next
+            existing = valid
+        } else {
+            existing = nil
         }
-        bundleResults[validBundle] = isHigher
-        return isHigher
+
+        let baseline = existing ?? legacyBaseline
+        let isHigher = baseline == nil || compareVersions(currentVersion, baseline!) > 0
+        if isHigher {
+            return writeString(currentVersion, to: fileURL, directory: directory)
+        }
+        if existing == nil, let baseline {
+            _ = writeString(baseline, to: fileURL, directory: directory)
+        }
+        return false
+    }
+
+    private static func writeString(_ value: String, to url: URL, directory: URL) -> Bool {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            var dirURL = directory
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? dirURL.setResourceValues(values)
+            try Data(value.utf8).write(to: url, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
     }
 
     static func compareVersions(_ a: String, _ b: String) -> Int {
@@ -280,29 +290,4 @@ final class FirstLaunchHistory {
         let pattern = "^[0-9]+(?:\\.[0-9]+)*(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
         return try! NSRegularExpression(pattern: pattern, options: [])
     }()
-
-    private static func readState(from url: URL) -> PersistedState? {
-        guard let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode(PersistedState.self, from: data) else {
-            return nil
-        }
-        if let app = decoded.highestAppVersion, validatedVersion(app) == nil {
-            return nil
-        }
-        if let bundle = decoded.highestBundleVersion, validatedVersion(bundle) == nil {
-            return nil
-        }
-        return decoded
-    }
-
-    private static func writeState(_ state: PersistedState, to url: URL, directory: URL) -> Bool {
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let data = try JSONEncoder().encode(state)
-            try data.write(to: url, options: .atomic)
-            return true
-        } catch {
-            return false
-        }
-    }
 }

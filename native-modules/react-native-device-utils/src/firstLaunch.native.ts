@@ -38,3 +38,7 @@ export function isFirstLaunchForCurrentBundle(
 ): boolean {
   return ReactNativeDeviceUtils.isFirstLaunchForCurrentBundle(bundleVersion);
 }
+
+export function resetFirstLaunch(): void {
+  ReactNativeDeviceUtils.resetFirstLaunch();
+}

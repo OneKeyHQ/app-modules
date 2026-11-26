@@ -15,38 +15,37 @@ Background process starts that run the normal native app bootstrap also count.
 
 ## Lifecycle, persistence, and platform behavior
 
-Persisted state is stored as a fixed 3-field JSON object:
+Persisted state is stored as **three independent plain-text entries** (no JSON container), so storage size is constant, no cleanup API is needed, and updating one dimension never clobbers or corrupts the others:
 
-```json
-{
-  "hasLaunched": true,
-  "highestAppVersion": "6.5.0",
-  "highestBundleVersion": "1000"
-}
-```
+| Dimension | Native file (inside `1k_first_launch/`) | Web `localStorage` key | Value |
+| --- | --- | --- | --- |
+| Installation launched | `launched` | `1k_fl_launched` | `"1"` |
+| Highest app version | `app_ver` | `1k_fl_app_ver` | e.g. `"6.5.0"` |
+| Highest bundle version | `bundle_ver` | `1k_fl_bundle_ver` | e.g. `"1000"` |
 
-Because only these three fields are persisted, storage size is constant and no cleanup or history pruning API is needed.
-
-On each launch, the startup path performs a single **read persisted state → compute and freeze current-launch booleans in memory → advance persisted fields if needed** cycle. All getters during that launch return the frozen in-memory booleans and never re-evaluate against the updated disk values.
+On each launch, startup reads the persisted entries, computes and freezes the current-launch booleans in memory, and atomically writes any newly established or higher value. All getters during that launch return the frozen in-memory booleans and never re-evaluate against the updated disk values.
 
 | Platform | Initialization | Storage | Legacy-install evidence |
 | --- | --- | --- | --- |
-| iOS | Host calls `DeviceUtilsFirstLaunch.initialize(options:)` (or dynamically via `NSClassFromString("OneKeyDeviceUtilsFirstLaunch")` + `initializeWithOptions:`) in `AppDelegate.didFinishLaunchingWithOptions` before initializing app storage. Lazy fallback initializes with `isLegacyInstall = false`. | `onekey-device-utils-first-launch.json` in Application Support | Owned by the host app. Use `hasPersistedState()` (or `hasPersistedStateNumber` returning `NSNumber` for `perform(_:)`) to skip legacy checks once persisted state exists. |
-| Android | Host calls `DeviceUtilsFirstLaunch.initialize(context, isLegacyInstall = { ... }, legacyAppVersion = { ... })` in `Application.onCreate()`. Lazy fallback initializes with `isLegacyInstall = false`. | `onekey-device-utils-first-launch.json` in `context.filesDir` | Owned by the host app (lambdas are only invoked when no persisted file exists yet). |
-| Web / Desktop / Extension | Host calls `initFirstLaunch({ appVersion, bundleVersion, isLegacyInstall, legacyAppVersion })` once at UI startup before reading getters. | `localStorage` key `onekey:device-utils:first-launch` | Owned by the host app (e.g. sampled in an HTML `<head>` script or Electron preload before app JS writes to storage). |
+| iOS | Host calls `DeviceUtilsFirstLaunch.initialize(options:)` (or dynamically via `NSClassFromString("OneKeyDeviceUtilsFirstLaunch")` + `initializeWithOptions:`) in `AppDelegate.didFinishLaunchingWithOptions` before initializing app storage. Lazy fallback initializes with `isLegacyInstall = false`. | `Library/Application Support/1k_first_launch/` (`isExcludedFromBackup = true`) | Owned by the host app. Use `hasPersistedState()` (or `hasPersistedStateNumber` returning `NSNumber` for `perform(_:)`) to skip legacy checks once `launched` exists. |
+| Android | Host calls `DeviceUtilsFirstLaunch.initialize(context, isLegacyInstall = { ... }, legacyAppVersion = { ... })` in `Application.onCreate()`. Lazy fallback initializes with `isLegacyInstall = false`. | `context.noBackupFilesDir/1k_first_launch/` (immune to Clear Cache and Auto Backup) | Owned by the host app (lambdas are only invoked when `launched` does not exist yet). |
+| Web / Desktop / Extension | Host calls `initFirstLaunch({ appVersion, bundleVersion, isLegacyInstall, legacyAppVersion })` once at UI startup before reading getters. | `localStorage` keys `1k_fl_launched`, `1k_fl_app_ver`, `1k_fl_bundle_ver` | Owned by the host app (e.g. sampled in an HTML `<head>` script or Electron preload before app JS writes to storage). |
 
-Version strings must have a numeric dot-separated core with optional SemVer pre-release (`-...`) and build metadata (`+...`) suffixes (1–120 ASCII chars, e.g. `6.5.0`, `6.5.0-beta.1`, `1000`). Non-numeric cores such as `v6.5.0` are rejected. Version comparison compares numeric dot-separated segments by integer value (e.g. `6.10.0 > 6.5.0`, `1000 > 999`) with SemVer pre-release ordering (`6.5.0 > 6.5.0-beta.1`). A version strictly higher than the persisted highest version returns `true` for the current launch and advances the persisted field. Rolling back to or running any version lower than or equal to the persisted highest version returns `false` and keeps the higher value persisted.
+`resetFirstLaunch()` (and native `DeviceUtilsFirstLaunch.reset()`) removes the `1k_first_launch/` directory (or the 3 `localStorage` keys) **and clears the in-memory launch cache**, so a Reset App flow followed by a JS soft restart in the same native process observes a fresh launch.
 
-Missing startup initialization, unavailable or corrupted storage (malformed JSON, wrong field types, or invalid stored version strings), invalid identifiers, and write failures fail closed and return `false` without overwriting the damaged record. Zero-argument getters remain bound to the startup identities and are unaffected by later explicit version lookups. On Web/Desktop/Extension, `initFirstLaunch(...)` commits the startup snapshot in a single synchronous `localStorage.setItem`; getters called before `initFirstLaunch(...)` return `false` without touching storage. Because synchronous Web Storage has no cross-document lock, simultaneous first loads across two separate tabs may both observe an absent key.
+Version strings must have a numeric dot-separated core with optional SemVer pre-release (`-...`) and build metadata (`+...`) suffixes (1–120 ASCII chars, e.g. `6.5.0`, `6.5.0-beta.1`, `1000`). Non-numeric cores such as `v6.5.0` are rejected. Version comparison compares numeric dot-separated segments by integer value (e.g. `6.10.0 > 6.5.0`, `1000 > 999`) with SemVer pre-release ordering (`6.5.0 > 6.5.0-beta.1`). A version strictly higher than the persisted highest version returns `true` for the current launch and advances the persisted entry. Rolling back to or running any version lower than or equal to the persisted highest version returns `false` and keeps the higher value persisted.
+
+Missing startup initialization, unavailable or corrupted entries (empty or invalid stored version strings), invalid identifiers, and write failures fail closed for the affected entry and return `false` without overwriting the damaged entry. Zero-argument getters remain bound to the startup identities and are unaffected by later explicit version lookups. On Web/Desktop/Extension, getters called before `initFirstLaunch(...)` return `false` without touching storage. Because synchronous Web Storage has no cross-document lock, simultaneous first loads across two separate tabs may both observe an absent key.
 
 ## Web, desktop renderer, and extension pages
 
 The `@onekeyfe/react-native-device-utils/first-launch` entry point exposes:
 
-- `initFirstLaunch(options?: { appVersion?: string; bundleVersion?: string }): void`
+- `initFirstLaunch(options?: { appVersion?: string; bundleVersion?: string; isLegacyInstall?: boolean; legacyAppVersion?: string }): void`
 - `isFirstLaunch(): boolean`
 - `isFirstLaunchForCurrentAppVersion(appVersion?: string): boolean`
 - `isFirstLaunchForCurrentBundle(bundleVersion?: string): boolean`
+- `resetFirstLaunch(): void`
 
 React Native delegates to `ReactNativeDeviceUtils`. Web documents, Electron renderers, and extension-owned pages share `src/firstLaunch.web.ts` backed by `window.localStorage`. After `initFirstLaunch(...)` runs at startup, getters can be called with zero arguments to read the cached launch results. Server runtimes and MV3 service workers have no `window.localStorage` and return `false`.
 
