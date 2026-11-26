@@ -75,20 +75,31 @@ final class SkanConversionTests: XCTestCase {
         XCTAssertEqual(reporter.recorded.map(\.1), [.low, .medium, .high])
     }
 
-    func testSkipsUnchangedValue() async throws {
-        _ = try await mark(3)
-        let repeated = try await mark(1)
+    func testReportsUnchangedValuesInNextWindow() async throws {
+        let first = try await mark(3)
+        XCTAssertEqual(first?.updated, true)
+        XCTAssertEqual(reporter.recorded.map(\.0), [3])
+        XCTAssertEqual(reporter.recorded.map(\.1), [.medium])
+
+        // Simulate a later window after relaunch, using the same stored bits
+        // with a fresh store and reporter for the new window.
+        let nextWindowReporter = RecordingReporter()
+        store = SkanConversionStore(defaults: defaults, reporter: nextWindowReporter.report)
+        let repeated = try await mark(0)
         XCTAssertEqual(repeated?.fineValue, 3)
-        XCTAssertEqual(repeated?.updated, false)
-        XCTAssertEqual(reporter.recorded.count, 1)
+        XCTAssertEqual(repeated?.coarseValue, .medium)
+        XCTAssertEqual(repeated?.updated, true)
+        XCTAssertEqual(nextWindowReporter.recorded.map(\.0), [3])
+        XCTAssertEqual(nextWindowReporter.recorded.map(\.1), [.medium])
     }
 
-    func testReportsZeroOnceOnFirstCall() async throws {
+    func testReportsZeroOnEveryCall() async throws {
         let first = try await mark(0)
         XCTAssertEqual(first?.updated, true)
         let second = try await mark(0)
-        XCTAssertEqual(second?.updated, false)
-        XCTAssertEqual(reporter.recorded.count, 1)
+        XCTAssertEqual(second?.updated, true)
+        XCTAssertEqual(reporter.recorded.map(\.0), [0, 0])
+        XCTAssertEqual(reporter.recorded.map(\.1), [.low, .low])
     }
 
     func testReportsAgainWhenCoarseRuleChanges() async throws {
@@ -151,6 +162,59 @@ final class SkanConversionTests: XCTestCase {
             XCTAssertEqual(error as? SkanConversionError, .timedOut)
         }
         XCTAssertNil(defaults.object(forKey: SkanConversionStore.fineValueKey))
+    }
+
+    func testLateSuccessPersistsBeforeSubmissionsResume() async throws {
+        try await checkLateCompletion(error: nil, expectedStoredValue: 8, expectedNextValue: 9)
+    }
+
+    func testLateFailureAllowsRetryWithoutPersisting() async throws {
+        try await checkLateCompletion(
+            error: ReporterError.windowClosed,
+            expectedStoredValue: 0,
+            expectedNextValue: 1
+        )
+    }
+
+    private func checkLateCompletion(
+        error: Error?,
+        expectedStoredValue: Int,
+        expectedNextValue: Double
+    ) async throws {
+        var finishFirstReport: ((Error?) -> Void)?
+        let reporter = reporter!
+        store = SkanConversionStore(
+            defaults: defaults,
+            reporter: { fineValue, coarse, completion in
+                if finishFirstReport == nil {
+                    finishFirstReport = completion
+                } else {
+                    reporter.report(fineValue, coarse, completion)
+                }
+            },
+            reportTimeout: .milliseconds(50)
+        )
+        do {
+            _ = try await mark(8)
+            XCTFail("Expected a timeout")
+        } catch {
+            XCTAssertEqual(error as? SkanConversionError, .timedOut)
+        }
+        do {
+            _ = try await mark(1)
+            XCTFail("Expected the timed-out report to block submissions")
+        } catch {
+            XCTAssertEqual(error as? SkanConversionError, .reportInProgress)
+        }
+        XCTAssertNil(defaults.object(forKey: SkanConversionStore.fineValueKey))
+
+        let finish = try XCTUnwrap(finishFirstReport)
+        finish(error)
+        let stored = try await mark(0)
+        let next = try await mark(1)
+        XCTAssertEqual(stored?.fineValue, Double(expectedStoredValue))
+        XCTAssertEqual(next?.fineValue, expectedNextValue)
+        XCTAssertEqual(reporter.recorded.map(\.0), [expectedStoredValue, Int(expectedNextValue)])
     }
 
     func testConcurrentCallersNeverReportASmallerValue() async throws {

@@ -96,10 +96,13 @@ export interface SkanCoarseRule {
 }
 
 export interface SkanUpdateResult {
-  /** Merged fine conversion value now held by SKAdNetwork (0-63). */
+  /**
+   * Merged fine conversion value submitted to SKAdNetwork (0-63).
+   * Only the first SKAdNetwork 4 conversion window uses fine values.
+   */
   fineValue: number;
   coarseValue: SkanCoarseValue;
-  /** False when the merged value was unchanged and SKAdNetwork was not called. */
+  /** True when StoreKit reports a successful submission. */
   updated: boolean;
 }
 
@@ -201,11 +204,13 @@ export interface ReactNativeDeviceUtils
 
   /**
    * ORs `bits` (0-63) into the stored SKAdNetwork fine conversion value and
-   * reports it to SKAdNetwork on iOS 16.1+. The value only grows. The coarse
+   * submits it to SKAdNetwork on every call on iOS 16.1+, even if the values
+   * are unchanged. Call during each conversion window that needs an update.
+   * The fine value accumulates bits from successful submissions. The coarse
    * value is `high` when the merged value shares a bit with
    * `coarseRule.highMask`, else `medium` for `coarseRule.mediumMask`, else
-   * `low`. Rejects on invalid input or a SKAdNetwork error, keeping the stored
-   * value so a later call retries. Android and older iOS resolve to undefined.
+   * `low`. Rejects on invalid input, a StoreKit error, a timeout, or while a
+   * timed-out submission is still pending. Android and older iOS resolve to undefined.
    */
   markSkanMilestones(
     bits: number,

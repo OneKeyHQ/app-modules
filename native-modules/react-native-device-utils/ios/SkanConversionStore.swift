@@ -1,22 +1,22 @@
 import Foundation
 import StoreKit
 
-enum SkanCoarse: String {
+enum SkanCoarse {
     case low
     case medium
     case high
 }
 
-struct SkanMergeOutcome: Equatable {
+struct SkanMergeOutcome {
     let fineValue: Int
     let coarse: SkanCoarse
-    let updated: Bool
 }
 
 enum SkanConversionError: Error, Equatable, LocalizedError {
     case invalidValue(String)
     case unsupported
     case timedOut
+    case reportInProgress
     case reportFailed(String)
 
     var errorDescription: String? {
@@ -27,6 +27,8 @@ enum SkanConversionError: Error, Equatable, LocalizedError {
             return "SKAdNetwork conversion values need iOS 16.1 or later"
         case .timedOut:
             return "SKAdNetwork did not answer the conversion value update"
+        case .reportInProgress:
+            return "SKAdNetwork has not completed the previous conversion value update"
         case .reportFailed(let message):
             return "SKAdNetwork rejected the conversion value update: \(message)"
         }
@@ -36,10 +38,9 @@ enum SkanConversionError: Error, Equatable, LocalizedError {
 /// Merges milestone bits into the SKAdNetwork fine conversion value.
 ///
 /// Main and background React runtimes each create their own HybridObject, so
-/// the shared instance and its serial queue are process-wide. That queue makes
-/// read, merge, report and persist one step: two runtimes can never report a
-/// smaller value after a larger one. The value is persisted only after
-/// SKAdNetwork accepts it, so a failed update is retried by the next call.
+/// the shared instance and its serial queue are process-wide. The queue keeps
+/// read, merge, report and persist in order so each call includes the bits
+/// from prior successful reports.
 final class SkanConversionStore {
     typealias Reporter = (
         _ fineValue: Int,
@@ -48,7 +49,6 @@ final class SkanConversionStore {
     ) -> Void
 
     static let fineValueKey = "so.onekey.deviceutils.skan.fineValue"
-    static let coarseValueKey = "so.onekey.deviceutils.skan.coarseValue"
     static let maxValue = 63
 
     static let shared = SkanConversionStore(
@@ -60,6 +60,7 @@ final class SkanConversionStore {
     private let reporter: Reporter
     private let reportTimeout: DispatchTimeInterval
     private let queue = DispatchQueue(label: "so.onekey.deviceutils.skan", qos: .utility)
+    private var timedOutReport: DispatchSemaphore?
 
     init(
         defaults: UserDefaults,
@@ -105,24 +106,34 @@ final class SkanConversionStore {
         let highMask = try Self.validated(highMask, name: "coarseRule.highMask")
         let mediumMask = try Self.validated(mediumMask, name: "coarseRule.mediumMask")
 
-        let hasReported = defaults.object(forKey: Self.fineValueKey) != nil
+        guard timedOutReport == nil else {
+            throw SkanConversionError.reportInProgress
+        }
+
         let previous = defaults.integer(forKey: Self.fineValueKey) & Self.maxValue
         let fineValue = previous | bits
         let coarse = Self.coarse(for: fineValue, highMask: highMask, mediumMask: mediumMask)
-        let previousCoarse = defaults.string(forKey: Self.coarseValueKey)
-        if hasReported && fineValue == previous && previousCoarse == coarse.rawValue {
-            return SkanMergeOutcome(fineValue: fineValue, coarse: coarse, updated: false)
-        }
 
+        // An unchanged value can be the first update in a later StoreKit window.
         // The completion handler arrives on a StoreKit queue, never this one,
         // so waiting here keeps later calls ordered behind this report.
         let semaphore = DispatchSemaphore(value: 0)
         var reportError: Error?
-        reporter(fineValue, coarse) { error in
+        reporter(fineValue, coarse) { [weak self] error in
             reportError = error
             semaphore.signal()
+            self?.queue.async { [weak self] in
+                guard let self, self.timedOutReport === semaphore else { return }
+                if error == nil {
+                    self.defaults.set(fineValue, forKey: Self.fineValueKey)
+                }
+                self.timedOutReport = nil
+            }
         }
         guard semaphore.wait(timeout: .now() + reportTimeout) == .success else {
+            // StoreKit has no cancellation API. Keep subsequent reports gated
+            // until the callback reconciles the accepted value on this queue.
+            timedOutReport = semaphore
             throw SkanConversionError.timedOut
         }
         if let reportError {
@@ -133,8 +144,7 @@ final class SkanConversionStore {
         }
 
         defaults.set(fineValue, forKey: Self.fineValueKey)
-        defaults.set(coarse.rawValue, forKey: Self.coarseValueKey)
-        return SkanMergeOutcome(fineValue: fineValue, coarse: coarse, updated: true)
+        return SkanMergeOutcome(fineValue: fineValue, coarse: coarse)
     }
 
     private static let systemReporter: Reporter = { fineValue, coarse, completion in

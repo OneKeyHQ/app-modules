@@ -454,7 +454,7 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
                 promise.resolve(withResult: SkanUpdateResult(
                     fineValue: Double(outcome.fineValue),
                     coarseValue: coarseValue,
-                    updated: outcome.updated
+                    updated: true
                 ))
             case .failure(let error):
                 promise.reject(withError: error)
