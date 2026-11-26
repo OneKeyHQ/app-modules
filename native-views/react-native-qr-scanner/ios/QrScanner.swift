@@ -287,7 +287,8 @@ class HybridQrScanner: HybridQrScannerSpec {
     return frameRevision
   }
   // Main queue owns the requested activity and the state applied to the preview.
-  private var isActiveMain = false
+  private var previewDeactivation: UUID? = UUID()
+  private var isActiveMain: Bool { previewDeactivation == nil }
   private var isFrozenMain = false
   private var disposed = false
   private var permissionPending = false
@@ -342,9 +343,10 @@ class HybridQrScanner: HybridQrScannerSpec {
     let cameraId = cameraId
     let focusRequest = focusRequest
     let focusCapture = currentReadyCapture()
+    let deactivation = props.active ? nil : UUID()
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      self.isActiveMain = props.active
+      self.previewDeactivation = deactivation
       if props.active {
         self.isFrozenMain = props.frozen
         self.previewView.setFrozen(props.frozen)
@@ -366,9 +368,9 @@ class HybridQrScanner: HybridQrScannerSpec {
       let canFocus = self.running && props.active && !props.frozen && cameraId == previousCamera
       self.captureProps = props
       self.requestedCameraId = cameraId
-      if !props.active {
+      if let deactivation {
         self.stop()
-        self.resetInactivePreview()
+        self.resetInactivePreview(for: deactivation)
       } else if self.running {
         let generation = self.currentGeneration()
         self.switchCameraIfNeeded()
@@ -398,16 +400,17 @@ class HybridQrScanner: HybridQrScannerSpec {
   func onDropView() { dispose() }
 
   func dispose() {
-    DispatchQueue.main.async { [weak self] in
-      self?.isActiveMain = false
-    }
     // Retain the scanner until its queue has released the session and observers.
     sessionQueue.async {
       guard !self.disposed else { return }
       self.disposed = true
       self.captureProps = CaptureProps()
       self.stop()
-      self.resetInactivePreview()
+      DispatchQueue.main.async { [weak self] in
+        self?.previewDeactivation = UUID()
+        self?.isFrozenMain = false
+        self?.previewView.setFrozen(false)
+      }
       self.removeObservers()
     }
   }
@@ -608,9 +611,10 @@ class HybridQrScanner: HybridQrScannerSpec {
     captureProps.ready?(Double(generation), target.uniqueID)
   }
 
-  private func resetInactivePreview() {
+  private func resetInactivePreview(for deactivation: UUID) {
     DispatchQueue.main.async { [weak self] in
-      guard let self, !self.isActiveMain else { return }
+      // An earlier stop may finish while a later deactivation is still pending.
+      guard let self, self.previewDeactivation == deactivation else { return }
       self.isFrozenMain = false
       self.previewView.setFrozen(false)
     }
