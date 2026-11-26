@@ -3,8 +3,10 @@ package com.margelo.nitro.nativelist
 import android.app.Activity
 import android.app.Dialog
 import android.content.Intent
+import android.graphics.Point
 import android.graphics.Rect
 import android.os.SystemClock
+import android.provider.Settings
 import android.test.InstrumentationTestCase
 import android.view.Gravity
 import android.view.MotionEvent
@@ -22,6 +24,7 @@ import com.margelo.nitro.nativelogger.OneKeyLog
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
 
 @Suppress("DEPRECATION")
@@ -308,19 +311,27 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
   }
 
   fun testHandledTapFindsTableIconInOffsetWindow() = withMarketActivity { activity, context ->
+    assertEquals("Enable the on-screen keyboard in the emulator fixture (see README.md)", 1,
+      Settings.Secure.getInt(activity.contentResolver, "show_ime_with_hard_keyboard", 0))
     lateinit var dialog: Dialog
     lateinit var list: NativeListView
     lateinit var editor: EditText
     val shown = CountDownLatch(1)
     val hiddenAfterShow = CountDownLatch(1)
     val actions = mutableListOf<String>()
-    fun tap(target: View, x: Int) {
+    fun screenPoint(target: View, x: Int): Point {
       val origin = IntArray(2)
       target.getLocationOnScreen(origin)
+      return Point(origin[0] + x, origin[1] + target.height / 2)
+    }
+    fun tap(capturePoint: () -> Point) {
+      val pointTask = FutureTask(capturePoint)
+      instrumentation.runOnMainSync(pointTask)
+      val point = pointTask.get()
       val down = SystemClock.uptimeMillis()
       for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
         val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action,
-          (origin[0] + x).toFloat(), origin[1] + target.height / 2f, 0)
+          point.x.toFloat(), point.y.toFloat(), 0)
         try { instrumentation.sendPointerSync(event) } finally { event.recycle() }
       }
       instrumentation.waitForIdleSync()
@@ -344,28 +355,48 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
           insets
         }
         dialog.setContentView(content)
-        dialog.window!!.setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL)
-        dialog.window!!.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        val window = requireNotNull(dialog.window)
+        window.setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+          WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        editor.requestFocus()
+        window.attributes = window.attributes.apply { y = NativeListScale.dp(list.resources, 160) }
         dialog.show()
-        dialog.window!!.setLayout(NativeListScale.dp(list.resources, 280), -2)
+        window.setLayout(NativeListScale.dp(list.resources, 280), -2)
         val columns = JSONArray().put(actionColumn()).put(JSONObject().put("key", "value").put("text", "42"))
         val row = item().json.put("pressDisabled", true).put("tableColumns", columns)
         list.applySnapshot(JSONObject().put("schemaVersion", 1).put("generation", 1)
           .put("layout", JSONObject().put("kind", "linear")).put("rows", JSONArray().put(row)).toString())
       }
       instrumentation.waitForIdleSync()
-      tap(editor, editor.width / 2)
-      assertTrue("IME did not open", shown.await(5, TimeUnit.SECONDS))
+      assertTrue("The emulator must use an input method that displays a soft keyboard (see README.md)",
+        shown.await(5, TimeUnit.SECONDS))
       instrumentation.waitForIdleSync()
-      val copy = list.findViewWithTag<View>("copy")
-      val origin = IntArray(2)
-      list.rootView.getLocationOnScreen(origin)
-      assertTrue("Expected an offset window", origin[0] > 0 || origin[1] > 0)
-      tap(copy, copy.width + 1)
+      tap {
+        val copy = requireNotNull(list.findViewWithTag<View>("copy"))
+        val cell = generateSequence(copy.parent as? View) { it.parent as? View }
+          .filterIsInstance<NativeListBoundedTableView.Cell>().first()
+        val point = screenPoint(copy, copy.width + 1)
+        val origin = IntArray(2)
+        cell.getLocationOnScreen(origin)
+        val x = point.x - origin[0]
+        val y = point.y - origin[1]
+        val bounds = Rect()
+        assertTrue(cell.getLocalVisibleRect(bounds) && bounds.contains(x, y))
+        assertSame("The tap must hit the expanded Copy target", copy, cell.actionAt(x, y, bounds))
+        assertTrue(cell.getGlobalVisibleRect(bounds))
+        assertFalse("The old root-relative bounds check must reject this screen point",
+          bounds.contains(point.x, point.y))
+        point
+      }
       assertEquals(listOf("copy"), actions)
-      assertTrue(editor.hasFocus())
-      assertTrue(ViewCompat.getRootWindowInsets(editor)!!.isVisible(WindowInsetsCompat.Type.ime()))
-      tap(list, list.width * 3 / 4)
+      val editorState = FutureTask {
+        editor.hasFocus() && ViewCompat.getRootWindowInsets(editor)
+          ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+      }
+      instrumentation.runOnMainSync(editorState)
+      assertTrue("Copy must keep the keyboard open", editorState.get())
+      tap { screenPoint(list, list.width * 3 / 4) }
       assertTrue("Blank tap did not dismiss IME", hiddenAfterShow.await(5, TimeUnit.SECONDS))
       assertEquals(listOf("copy"), actions)
     } finally {
