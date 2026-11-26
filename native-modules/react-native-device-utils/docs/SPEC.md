@@ -397,8 +397,9 @@ forced rotation starts from a portrait device and `landscapeLeft` when the
 device is already turned the other way; turning the device 180 degrees in
 landscape notifies `landscapeLeft` and back `landscapeRight`. In the same app,
 `expo-screen-orientation` reported `unknown` for the forced rotation, because
-its root view controller does not take part in it. Unverified: hardware, iOS
-15 returning `unknown`, Android builds, and multiple scenes.
+its root view controller does not take part in it. The Android stubs compile
+in the OneKey app (`compileDebugKotlin`). Unverified: hardware, iOS 15
+returning `unknown`, and multiple scenes.
 
 Non-goals: device (physical) orientation, orientation locks, and layout. The
 consumer decides what each orientation means for its content.
@@ -486,8 +487,7 @@ listener table.
   host a UIKit window scene. Runtime verified: the value after a presented
   controller forces landscape from a portrait-locked root, from either device
   side, and 180-degree rotations while in landscape. Remaining acceptance: the
-  return to portrait on hardware, iOS 15 returning `unknown`, and an Android
-  build of the listener stubs.
+  return to portrait on hardware and iOS 15 returning `unknown`.
 
 # DeviceUtils: main menu
 
