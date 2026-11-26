@@ -3267,7 +3267,7 @@ final class NativeListLifecycleTests: XCTestCase {
     XCTAssertGreaterThan(heightBeforePatch, 1500)
     let retiring = try XCTUnwrap(list.cellForItem(at: IndexPath(item: 25, section: 0)) as? NativeListRowHost)
     XCTAssertEqual(retiring.bounds.height, 60, accuracy: 1)
-    func storedContent(_ key: String) throws -> String {
+    func storedContent(_ key: String) throws -> Data {
       let items = try XCTUnwrap(Mirror(reflecting: view).descendant("itemsByKey")
         as? [String: NativeListItem])
       return try XCTUnwrap(items[key]).content

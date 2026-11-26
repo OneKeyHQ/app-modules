@@ -140,6 +140,57 @@ final class NativeListMarketMetricsTests: XCTestCase {
     XCTAssertFalse(cell.root.arrangedSubviews.first!.subviews[0].subviews.contains { $0 is NativeListIconButton })
   }
 
+  func testVisibleTableActionEmitsReplacementKeyAfterPatchAndSnapshot() throws {
+    func columns(_ key: String) -> [[String: Any]] {
+      [["key": "address", "text": "Address", "actions": [
+        ["name": "Copy3Outline", "actionKey": key, "accessibilityLabel": "Copy"],
+      ]], ["key": "value", "text": "42"]]
+    }
+    func json(_ value: Any) throws -> String {
+      String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+    }
+    func snapshot(_ key: String, generation: Int) throws -> String {
+      var row = try item().data
+      row["tableColumns"] = columns(key)
+      return try json(["schemaVersion": 1, "generation": generation,
+        "layout": ["kind": "linear"], "rows": [row]])
+    }
+
+    let original = "\u{e9}"
+    let replacement = "e\u{301}"
+    for usePatch in [true, false] {
+      let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 200))
+      defer { view.dispose() }
+      let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+      var emitted: [[UInt16]] = []
+      view.onRowAction = { payload in
+        if let event = (try? JSONSerialization.jsonObject(with: Data(payload.utf8))) as? [String: Any],
+           let key = event["actionKey"] as? String { emitted.append(Array(key.utf16)) }
+      }
+      func tapVisibleButton() throws {
+        view.layoutIfNeeded()
+        collection.layoutIfNeeded()
+        let cell = try XCTUnwrap(collection.cellForItem(at: IndexPath(item: 0, section: 0)) as? NativeListBoundedTableCell)
+        let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
+        let button = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListIconButton }.first)
+        let target = try XCTUnwrap(button.allTargets.first as? NSObject)
+        let action = try XCTUnwrap(button.actions(forTarget: target, forControlEvent: .touchUpInside)?.first)
+        _ = target.perform(NSSelectorFromString(action), with: button)
+      }
+
+      view.applySnapshotJson(try snapshot(original, generation: 1))
+      try tapVisibleButton()
+      if usePatch {
+        view.applyPatchesJson(try json([["key": "market-eth", "type": "market",
+          "changes": ["tableColumns": columns(replacement)]]]))
+      } else {
+        view.applySnapshotJson(try snapshot(replacement, generation: 2))
+      }
+      try tapVisibleButton()
+      XCTAssertEqual(emitted, [Array(original.utf16), Array(replacement.utf16)], usePatch ? "patch" : "snapshot")
+    }
+  }
+
   func testDefaultTableHeightContainsBelowActionsAndWrappedLabels() throws {
     var data = try item().data
     data.removeValue(forKey: "height")
