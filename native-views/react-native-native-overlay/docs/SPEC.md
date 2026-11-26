@@ -1481,7 +1481,7 @@ non-interactive exit `190 ms` `cubic-bezier(0.2, 0, 0, 1)`).
 | Top obstruction | Top groups animate the inset in 220 ms | Cards translate within the full-window touch stage, 220 ms |
 | Reduced motion | Transitions off (media query) | Every animation is instant |
 
-#### Stack gestures (Implemented; iOS runtime verified; Android and Web touch device runs pending)
+#### Stack gestures (Implemented; iOS and Android runtime verified; Web touch device run pending)
 
 A banner moves off toward the edge it is anchored to, and a list item moves
 off sideways. A collapsed stack, including a single toast, is handled as one
@@ -1612,10 +1612,13 @@ Divergences from the renderers replaced:
   the expanded stack up collapsed it without closing any card; a slow 30 pt
   push settled back; an upward swipe on a collapsed stack closed every card
   together; a toast shown 0.8 s into that swipe entered after release and
-  stayed. Web touch cases are covered by `overlayToast.web.test.ts`; Android
-  axis locking by `NativeOverlayToastCardLayoutTest`. Not exercised yet: an
-  Android device or emulator, a touch browser, VoiceOver/TalkBack, reduced
-  motion, iPad and the top obstruction shift.
+  stayed. The same seven cases passed in app-monorepo on a Pixel 7 emulator
+  (Android API 35, 420 dpi) with `adb shell input swipe`; the APK's dex was
+  checked for the new drag classes first. Web touch cases are covered by
+  `overlayToast.web.test.ts`; Android axis locking by
+  `NativeOverlayToastCardLayoutTest`. Not exercised yet: a touch browser,
+  physical devices, VoiceOver/TalkBack, reduced motion, iPad, tablets and
+  foldables, and the top obstruction shift.
 - The shared toast geometry was checked with the same specs in Chromium,
   in a UIKit harness on iPhone 16 (iOS 26.0), and through the Fabric toaster
   host on Pixel 7 (Android API 35). The cases cover light and dark card
