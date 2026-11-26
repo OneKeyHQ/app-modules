@@ -211,6 +211,7 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   let active = false;
   let multiSymbol = options.multiSymbol === true;
   let frozen = false;
+  let freezeRevision = 0;
   let acquisition: { deviceId?: string; cancelPreview?: () => void } | undefined;
   let mediaAcquisitions = 0;
   let staleMediaSettlements = 0;
@@ -277,13 +278,16 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     return { data: context.getImageData(0, 0, width, height).data, width, height };
   }
 
-  async function analyse(runGeneration: number) {
+  async function analyse(runGeneration: number, runFreezeRevision: number) {
     if (frozen) return;
     const image = readFrame();
     if (!image) return;
     const frameSession = session;
     const isCurrent = () =>
-      runGeneration === generation && frameSession === session && !frozen;
+      runGeneration === generation &&
+      runFreezeRevision === freezeRevision &&
+      frameSession === session &&
+      !frozen;
     const wantMulti = multiSymbol;
     frameIndex += 1;
     let failed: { error: unknown } | undefined;
@@ -359,10 +363,11 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
   function schedule(runGeneration: number) {
     if (runGeneration !== generation || disposed || frozen) return;
     if (frameHandle !== undefined || timer !== undefined) return;
+    const runFreezeRevision = freezeRevision;
     const tick = () => {
+      if (runGeneration !== generation || runFreezeRevision !== freezeRevision || disposed) return;
       frameHandle = undefined;
       timer = undefined;
-      if (runGeneration !== generation || disposed) return;
       // One frame in analysis at a time; skip frames that arrive meanwhile.
       if (analysing || video.currentTime === lastTime) {
         schedule(runGeneration);
@@ -370,9 +375,9 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
       }
       lastTime = video.currentTime;
       analysing = true;
-      analyse(runGeneration)
+      analyse(runGeneration, runFreezeRevision)
         .catch((error: unknown) => {
-          if (runGeneration === generation) {
+          if (runGeneration === generation && runFreezeRevision === freezeRevision) {
             fail(
               error instanceof QrScannerError ? error.code : 'decoder-unavailable',
               error instanceof Error ? error.message : String(error)
@@ -644,14 +649,15 @@ export function createWebQrScanner(options: WebQrScannerOptions): WebQrScanner {
     setFrozen(nextFrozen: boolean) {
       if (disposed || frozen === nextFrozen) return;
       frozen = nextFrozen;
+      freezeRevision += 1;
       if (frozen) {
         cancelSchedule();
         video.pause();
         return;
       }
       if (active) {
-        lastTime = -1;
         void video.play().catch(() => {});
+        // Keep lastTime so the timer fallback waits for a new video frame.
         // Always schedule current generation: `schedule` is idempotent via
         // frameHandle/timer, and an in-flight decode from a previous camera
         // generation will not schedule the new generation when it settles.

@@ -38,6 +38,18 @@ export interface WindowControlsInsets {
   right: number;
 }
 
+/**
+ * Orientation of the app's window scene, named as UIKit names it.
+ * `landscapeRight` turns the top of the device, and an iPhone's sensor
+ * housing, to the left edge of the screen; `landscapeLeft` to the right edge.
+ */
+export type InterfaceOrientation =
+  | 'portrait'
+  | 'portraitUpsideDown'
+  | 'landscapeLeft'
+  | 'landscapeRight'
+  | 'unknown';
+
 /** App commands in the iPadOS menu bar that JS performs. */
 export type MainMenuCommand = 'about' | 'preferences' | 'lockNow';
 
@@ -111,6 +123,17 @@ export interface ReactNativeDeviceUtils
     callback: (insets: WindowControlsInsets) => void
   ): number;
   removeWindowControlsInsetsChangedListener(id: number): void;
+  /**
+   * Interface orientation of the key window's scene. iOS 16+ reads the
+   * scene's geometry, so the value follows rotations that a presented view
+   * controller forces; iOS before 16 and Android return `unknown`. Listeners
+   * fire on the main thread when the value changes.
+   */
+  getInterfaceOrientation(): InterfaceOrientation;
+  addInterfaceOrientationChangedListener(
+    callback: (orientation: InterfaceOrientation) => void
+  ): number;
+  removeInterfaceOrientationChangedListener(id: number): void;
   /**
    * Replaces the custom main menu content and rebuilds the menu bar. The menu
    * only shows on iPadOS (and in windows with a menu bar); Android ignores it.

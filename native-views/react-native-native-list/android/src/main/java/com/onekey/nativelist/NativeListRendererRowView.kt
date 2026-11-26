@@ -156,7 +156,7 @@ internal abstract class NativeListRendererRowView(protected val reactContext: Th
 
   protected fun stylePx(value: Double) = (value * resources.displayMetrics.density).roundToInt()
 
-  private fun color(value: String, fallback: Int = Color.TRANSPARENT) =
+  protected fun color(value: String, fallback: Int = Color.TRANSPARENT) =
     runCatching { parseNativeListColor(value) }.getOrDefault(fallback)
 
   init {

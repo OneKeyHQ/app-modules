@@ -794,6 +794,22 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
 
   override fun removeWindowControlsInsetsChangedListener(id: Double) {}
 
+  // Android window insets report a display cutout only on the side that has
+  // it, so no consumer needs the interface orientation: the value is always
+  // unknown, and listeners are accepted but never called.
+  override fun getInterfaceOrientation(): InterfaceOrientation =
+    InterfaceOrientation.UNKNOWN
+
+  override fun addInterfaceOrientationChangedListener(
+    callback: (orientation: InterfaceOrientation) -> Unit
+  ): Double = synchronized(this) {
+    val id = nextListenerId
+    nextListenerId++
+    return@synchronized id
+  }
+
+  override fun removeInterfaceOrientationChangedListener(id: Double) {}
+
   // Android has no app-owned main menu bar: the config is ignored, and
   // listeners are accepted but never called.
   override fun setMainMenuConfig(config: MainMenuConfig) {}

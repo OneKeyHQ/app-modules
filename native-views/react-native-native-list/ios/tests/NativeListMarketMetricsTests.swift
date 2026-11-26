@@ -72,6 +72,116 @@ final class NativeListMarketMetricsTests: XCTestCase {
     XCTAssertEqual(actions, ["favorite"])
   }
 
+  func testBoundedTableInlineActionsAndReuse() throws {
+    let cell = NativeListBoundedTableCell(frame: CGRect(x: 0, y: 0, width: 320, height: 56))
+    var data = try item().data
+    let actions = [["name": "Copy3Outline", "actionKey": "copy", "accessibilityLabel": "Copy"],
+                   ["name": "OpenOutline", "actionKey": "open", "accessibilityLabel": "Explorer"]]
+    var received: [String] = []
+    cell.onAction = { _, key, _, _ in received.append(key) }
+    func bind(_ placement: String, _ actions: [[String: String]]) throws {
+      data["tableColumns"] = [["key":"address", "text":"Address", "actions": actions, "actionPlacement":placement], ["key":"value","text":"42"]]
+      cell.bind(item: try NativeListItem(data: data), theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: NativeListFontFamilies())
+      cell.layoutIfNeeded()
+    }
+    for placement in ["inline", "below"] {
+      try bind(placement, actions)
+      let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
+      column.layoutIfNeeded()
+      let labels = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListTableColumnView }.first)
+      let buttons = column.subviews.compactMap { $0 as? NativeListIconButton }
+      XCTAssertEqual(buttons.compactMap { $0.accessibilityLabel }, ["Copy","Explorer"])
+      let first = try XCTUnwrap(buttons.first)
+      if placement == "below" { XCTAssertGreaterThan(first.frame.minY, labels.frame.maxY) }
+      else { XCTAssertGreaterThan(first.frame.minX, labels.frame.maxX) }
+      let second = try XCTUnwrap(buttons.last)
+      let nearCopy = CGPoint(x: first.frame.maxX + 1, y: first.frame.midY)
+      let nearOpen = CGPoint(x: second.frame.minX - 1, y: second.frame.midY)
+      XCTAssertTrue(column.hitTest(nearCopy, with: nil) === first)
+      XCTAssertTrue(column.hitTest(nearOpen, with: nil) === second)
+      XCTAssertTrue(column.hitTest(CGPoint(x: first.center.x, y: first.frame.minY - 3), with: nil) === first)
+      for button in buttons {
+        let target = try XCTUnwrap(button.allTargets.first as? NSObject)
+        let selector = try XCTUnwrap(button.actions(forTarget: target, forControlEvent: .touchUpInside)?.first)
+        _ = target.perform(NSSelectorFromString(selector), with: button)
+      }
+    }
+    XCTAssertEqual(received, ["copy","open","copy","open"])
+    let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
+    let pressed = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListIconButton }.first)
+    let target = try XCTUnwrap(pressed.allTargets.first as? NSObject)
+    let name = try XCTUnwrap(pressed.actions(forTarget: target, forControlEvent: .touchUpInside)?.first)
+    let release = NSSelectorFromString(name)
+    received.removeAll()
+    data["price"] = "$43"
+    try bind("below", actions)
+    XCTAssertTrue(pressed.superview === column)
+    _ = target.perform(release, with: pressed)
+    XCTAssertEqual(received, ["copy"])
+    let originalX = pressed.frame.midX
+    try bind("below", Array(actions.reversed()))
+    XCTAssertGreaterThan(pressed.frame.midX, originalX)
+    XCTAssertTrue(column.hitTest(pressed.center, with: nil) === pressed)
+    _ = target.perform(release, with: pressed)
+    XCTAssertEqual(received, ["copy", "copy"])
+    var replaced = actions
+    replaced[0]["actionKey"] = "explorer"
+    try bind("below", replaced)
+    XCTAssertNil(pressed.superview)
+    _ = target.perform(release, with: pressed)
+    XCTAssertEqual(received, ["copy", "copy"])
+    try bind("inline", [])
+    XCTAssertFalse(cell.root.arrangedSubviews.first!.subviews[0].subviews.contains { $0 is NativeListIconButton })
+  }
+
+  func testDefaultTableHeightContainsBelowActionsAndWrappedLabels() throws {
+    var data = try item().data
+    data.removeValue(forKey: "height")
+    data["style"] = ["verticalPadding": 12, "price": ["lines": 2],
+                     "container": ["contentVerticalAlignment": "top"]]
+    var address: [String: Any] = ["key": "address", "width": 80, "text": "One two three four five",
+      "secondaryText": "Holder", "actions": [["name": "Copy3Outline", "actionKey": "copy", "accessibilityLabel": "Copy"]]]
+    let view = NativeListView(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+    defer { view.dispose() }
+    let collection = try XCTUnwrap(view.subviews.compactMap { $0 as? UICollectionView }.first)
+    data["size"] = "small"
+    for (index, placement) in ["inline", "below"].enumerated() {
+      address["actionPlacement"] = placement
+      data["tableColumns"] = [address, ["key": "value", "text": "42"]]
+      let model = try NativeListItem(data: data)
+      let fonts = NativeListFontFamilies()
+      let snapshot: [String: Any] = ["schemaVersion": 1, "generation": index + 1,
+        "layout": ["kind": "linear"], "rows": [data]]
+      view.applySnapshotJson(String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self))
+      view.layoutIfNeeded()
+      let height = view.collectionView(collection, layout: collection.collectionViewLayout,
+        sizeForItemAt: IndexPath(item: 0, section: 0)).height
+      if placement == "inline" {
+        XCTAssertEqual(height, 48)
+        continue
+      }
+      let cell = NativeListBoundedTableCell(frame: CGRect(x: 0, y: 0, width: 320, height: height))
+      cell.bind(item: model, theme: nil, layout: "linear", selected: false,
+        checkboxState: { _, _, fallback in fallback }, fonts: fonts)
+      cell.layoutIfNeeded()
+      let column = try XCTUnwrap(cell.root.arrangedSubviews.first?.subviews.first)
+      let icon = try XCTUnwrap(column.subviews.compactMap { $0 as? NativeListIconButton }.first)
+      XCTAssertGreaterThan(height, 56)
+      XCTAssertEqual(column.bounds.height, height - 24, accuracy: 1)
+      XCTAssertTrue(column.bounds.contains(icon.frame))
+      XCTAssertTrue(column.hitTest(icon.center, with: nil) === icon)
+
+      var paddedStyle = try XCTUnwrap(data["style"] as? [String: Any])
+      paddedStyle["verticalPadding"] = 20
+      let patch: [String: Any] = ["key": model.key, "type": model.type, "changes": ["style": paddedStyle]]
+      view.applyPatchesJson(String(decoding: try JSONSerialization.data(withJSONObject: [patch]), as: UTF8.self))
+      let paddedHeight = view.collectionView(collection, layout: collection.collectionViewLayout,
+        sizeForItemAt: IndexPath(item: 0, section: 0)).height
+      XCTAssertEqual(paddedHeight, height + 16, accuracy: 1)
+    }
+  }
+
   func testBoundedTableAnnouncesCompleteSubscriptAmountsAndExplicitLabel() throws {
     var data = try item().data
     data["tableColumns"] = [

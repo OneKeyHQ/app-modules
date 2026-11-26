@@ -735,8 +735,16 @@ matching the current attached generation may bind an image. Reattachment starts
 the current identity again. On Android a Fabric drop of a still-attached view
 that is drawing an icon (an outgoing screen transition) keeps that frame and its
 bounds until the view detaches, then clears; it invalidates pending work at drop
-time. The Android view therefore does not opt into Fabric view recycling, whose
-pool zeroes the bounds of dropped views. Before queuing, the view probes the decoded-raster
+time. The Android view opts out of Fabric view recycling even when the host
+enables the pool globally, because the pool zeroes the bounds of dropped views.
+An explicit Android `prepareForRecycle()` on the UI thread immediately cancels
+pending work and clears props, render identity, drawable and tint, including
+during a deferred drop. A native owner can bind fresh props on the same attached
+host as soon as the reset returns. Explicit `dispose()` marks the icon disposed
+on the calling thread. Subsequent prop and host updates and pending render
+completions are ignored. The clear and host callback removal run immediately
+when called on the UI thread and are posted to the main looper otherwise.
+Before queuing, the view probes the decoded-raster
 LRU synchronously on the UI thread; a hit binds in the same frame (no blank frame
 on remount or recycle). The probe never reads assets or loads the manifest, so
 a cold process still takes the asynchronous path. Decoding runs off the UI thread with at most two
@@ -1190,7 +1198,7 @@ All App resource URLs remain reachable in the generated registry and emit as
 external files; unused artwork remains packaged, while browsers request only
 referenced files. Extension background stubs do not import the provider.
 
-SDK examples and native tests share 63 checked-in samples under
+SDK examples and native tests share 64 checked-in samples under
 `example/react-native/icon-fixtures`, with independent native and Web packaging.
 Only example targets, explicitly named XCTest target phases and opt-in Android test runners include
 these fixtures; the production Image pod and AAR have no fixture resource input.

@@ -1,0 +1,49 @@
+name: desktop-qr-scanner-check
+
+on:
+  pull_request:
+    paths:
+      - desktop/win/electron-qr-scanner/**
+      - desktop/mac/electron-qr-scanner/index.cjs
+      - desktop/mac/electron-qr-scanner/test/fixtures/**
+      - native-views/react-native-qr-scanner/ios/tests/fixtures/**
+      - desktop/scripts/qr-scanner-pause.test.mjs
+      - .github/workflows/desktop-qr-scanner-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-2025, arch: x64, target: x86_64-pc-windows-msvc }
+          - { runner: windows-11-arm, arch: arm64, target: aarch64-pc-windows-msvc }
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop/win/electron-qr-scanner
+    env:
+      BUILD_TARGET: ${{ matrix.target }}
+      RUST_TOOLCHAIN: 1.99.0
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+          architecture: ${{ matrix.arch }}
+      - name: Compile the Windows scanner
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --target "$BUILD_TARGET"
+          rustup override set "$RUST_TOOLCHAIN"
+          npm run build -- "$BUILD_TARGET"
+      - name: Verify capture, decode and pause/resume behavior
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm test
+          node --test ../../scripts/qr-scanner-pause.test.mjs
