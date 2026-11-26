@@ -166,6 +166,9 @@ func testFirstLaunchHistory() throws {
     // In-process OTA reload calls initForBundle with the new executing bundle and updates zero-arg getter.
     restart.initForBundle("1001")
     precondition(restart.isFirstLaunchForBundle(nil))
+    // Invalid startup bundle clears the active bundle identity so zero-arg getter returns false.
+    restart.initForBundle("v1002")
+    precondition(!restart.isFirstLaunchForBundle(nil))
 
     let rollback = launch("6.5.0")
     precondition(!rollback.isFirstLaunch && !rollback.isFirstLaunchForCurrentAppVersion)

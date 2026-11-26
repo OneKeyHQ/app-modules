@@ -65,9 +65,10 @@ const { launchType, deepLink } =
 const startupTime = await ReactNativeDeviceUtils.getStartupTime();
 const isFirstLaunch = ReactNativeDeviceUtils.isFirstLaunch();
 const isFirstAppVersionLaunch = ReactNativeDeviceUtils.isFirstLaunchForCurrentAppVersion();
-const isFirstBundleLaunch = ReactNativeDeviceUtils.isFirstLaunchForCurrentBundle(
-  process.env.BUNDLE_VERSION,
-);
+if (process.env.BUNDLE_VERSION) {
+  ReactNativeDeviceUtils.initFirstLaunchForBundle(process.env.BUNDLE_VERSION);
+}
+const isFirstBundleLaunch = ReactNativeDeviceUtils.isFirstLaunchForCurrentBundle();
 
 // Claim a startup stage exactly once across runtimes.
 const claimed = ReactNativeDeviceUtils.setInMemoryValueIfAbsent(

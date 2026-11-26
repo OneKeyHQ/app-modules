@@ -156,10 +156,11 @@ final class FirstLaunchHistory {
     }
 
     func initForBundle(_ bundleVersion: String) {
-        guard let validBundle = Self.validatedVersion(bundleVersion) else {
+        let validBundle = Self.validatedVersion(bundleVersion)
+        currentBundleVersion = validBundle
+        guard let validBundle else {
             return
         }
-        currentBundleVersion = validBundle
         _ = resolveBundle(validBundle)
     }
 

@@ -48,9 +48,11 @@ internal class FirstLaunchHistory(
 
   @Synchronized
   fun initForBundle(bundleVersion: String) {
-    val validBundle = validatedVersion(bundleVersion) ?: return
+    val validBundle = validatedVersion(bundleVersion)
     currentBundleVersion = validBundle
-    resolveBundle(validBundle)
+    if (validBundle != null) {
+      resolveBundle(validBundle)
+    }
   }
 
   @Synchronized

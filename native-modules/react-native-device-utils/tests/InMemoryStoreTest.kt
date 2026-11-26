@@ -168,6 +168,9 @@ fun main() {
         // In-process OTA reload calls initForBundle with the new executing bundle and updates zero-arg getter.
         restart.initForBundle("1001")
         check(restart.isFirstLaunchForBundle(null))
+        // Invalid startup bundle clears the active bundle identity so zero-arg getter returns false.
+        restart.initForBundle("v1002")
+        check(!restart.isFirstLaunchForBundle(null))
 
         val rollback = launch("6.5.0")
         check(!rollback.isFirstLaunch && !rollback.isFirstLaunchForCurrentAppVersion)

@@ -11,7 +11,8 @@ Background process starts that run the normal native app bootstrap also count.
 | --- | --- |
 | `isFirstLaunch()` | The local app installation. |
 | `isFirstLaunchForCurrentAppVersion()` | The native app's release version (`CFBundleShortVersionString` on iOS, `versionName` on Android). Build number changes alone keep the same identity. |
-| `isFirstLaunchForCurrentBundle(bundleVersion?: string)` | The unique version embedded in the executing JS bundle. Call at JS startup with that version for built-in and OTA bundles. |
+| `initFirstLaunchForBundle(bundleVersion: string)` | Activates and records the executing JS bundle version at JS startup and after an OTA reload. Passing an invalid version clears the active bundle identity without writing disk state. Assumes all live JS runtimes in the process are version-locked and restarted together on OTA bundle switches. |
+| `isFirstLaunchForCurrentBundle(bundleVersion?: string)` | Returns whether the active bundle (when omitted) or explicitly supplied bundle version is higher than any previously launched bundle. Does not change the active bundle identity. |
 
 ## Lifecycle, persistence, and platform behavior
 
