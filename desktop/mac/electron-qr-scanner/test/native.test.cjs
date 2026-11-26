@@ -135,13 +135,15 @@ test("stop and start begin a new generation; dispose silences events", { skip: !
 });
 
 test("a non-looping playback can restart after EOF", { skip: !nativeMac, timeout: 15_000 }, async () => {
+  // Reuse the short playback fixture so this test reaches EOF on slower Intel runners.
+  const video = join(__dirname, "../../../win/electron-qr-scanner/test/last-frame-qr.mp4");
   const generations = [];
   let endGeneration;
   let capture;
   try {
     await new Promise((resolve, reject) => {
       capture = api.createCapture({
-        source: { kind: "file", path: join(__dirname, "fixtures/animated-ur.mp4") },
+        source: { kind: "file", path: video },
         onReady: (generation) => {
           generations.push(generation);
           if (generations.length === 2) resolve();
