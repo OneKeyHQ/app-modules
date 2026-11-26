@@ -379,6 +379,130 @@ thread. Retained state is one view, one value, and the listener table.
   host a UIKit window. Remaining acceptance: values after rapid window resizes,
   iOS 26, and an iPhone returning zero.
 
+# DeviceUtils: interface orientation
+
+## Status and scope
+
+This section covers `getInterfaceOrientation()`,
+`addInterfaceOrientationChangedListener()`, and
+`removeInterfaceOrientationChangedListener()`. They tell JS which way the app's
+window scene is turned, so landscape layout can tell the side that holds an
+iPhone's sensor housing from the side that does not. The behavior below is
+Implemented.
+
+Runtime verified on an iPhone 16 Pro simulator (iOS 26.5, app built with
+Xcode 27.1) in OneKey's native chart fullscreen, a presented screen that forces
+landscape over a portrait-locked root: the value is `landscapeRight` when the
+forced rotation starts from a portrait device and `landscapeLeft` when the
+device is already turned the other way; turning the device 180 degrees in
+landscape notifies `landscapeLeft` and back `landscapeRight`. In the same app,
+`expo-screen-orientation` reported `unknown` for the forced rotation, because
+its root view controller does not take part in it. The Android stubs compile
+in the OneKey app (`compileDebugKotlin`). Unverified: hardware, iOS 15
+returning `unknown`, and multiple scenes.
+
+Non-goals: device (physical) orientation, orientation locks, and layout. The
+consumer decides what each orientation means for its content.
+
+## Definitions and ownership
+
+- **Interface orientation:** the orientation of the key window's
+  `UIWindowScene`, as `UIWindowScene.effectiveGeometry.interfaceOrientation`
+  reports it. It follows every rotation the scene takes, including one a
+  presented view controller forces while the root view controller keeps its
+  own orientation. The device orientation cannot stand in for it: a window can
+  turn to landscape while the device lies flat or is held upright.
+- Names follow UIKit. `landscapeRight` turns the top of the device to the left
+  edge of the screen, so an iPhone's sensor housing is on the left;
+  `landscapeLeft` puts it on the right. In landscape, iPhones report equal
+  left and right safe-area insets, so the insets do not tell the sides apart.
+
+One process-wide native observer owns the value, the scene observation, and
+the listener table. The main and background JS runtimes share it through their
+DeviceUtils HybridObjects; listener IDs are unique per process. Each listener
+belongs to the HybridObject that added it: when that object is released, for
+example when its JS runtime is torn down without removing its listeners, they
+are removed with it.
+
+## Public API and defaults
+
+```ts
+type InterfaceOrientation =
+  | 'portrait'
+  | 'portraitUpsideDown'
+  | 'landscapeLeft'
+  | 'landscapeRight'
+  | 'unknown';
+
+getInterfaceOrientation(): InterfaceOrientation;
+addInterfaceOrientationChangedListener(callback: (orientation: InterfaceOrientation) => void): number;
+removeInterfaceOrientationChangedListener(id: number): void;
+```
+
+- The value is `unknown` until the observer reads a scene, on iOS before 16,
+  and on Android.
+- The getter is synchronous and returns the last observed value.
+- Removing an unknown ID is a no-op.
+
+## Lifecycle and callbacks
+
+1. The first call to any of the three methods creates the observer. On iOS
+   16+ it installs on the main thread and observes
+   `UIWindow.didBecomeKeyNotification` for the process lifetime, including when
+   no key window exists yet.
+2. It observes `effectiveGeometry` of the key window's scene with key-value
+   observing, starting with the current value. When a window of another scene
+   becomes key, observation moves to that scene; a window of the same scene
+   becoming key keeps the existing observation. Callbacks from a previously
+   observed scene are ignored. When the observed scene disconnects, observation
+   moves to the key window of another scene, because that window may stay key
+   without posting the notification again; with no such window the value
+   becomes `unknown`.
+3. Listeners fire on the main thread, once per changed value, after the stored
+   value is updated. Equal values do not notify. A rotation by 180 degrees
+   (landscape left to landscape right) notifies even though the window size
+   does not change.
+
+The observer and the observation live for the process. Listeners live until
+they are removed or their HybridObject is released. Callers must read the
+getter after subscribing, because the first reading can land before a listener
+is added.
+
+## Platform contract
+
+| Concern | iOS 16+ | iOS < 16 | Android |
+| --- | --- | --- | --- |
+| Source | `UIWindowScene.effectiveGeometry.interfaceOrientation` (KVO) | None | None |
+| Value | Observed | `unknown` | `unknown` |
+| Listeners | Fire on change | Never fire | Accepted, never fire |
+
+Android needs no equivalent today: its window insets report a display cutout
+only on the side that has it.
+
+## Performance and resource budget
+
+The work per scene geometry change is one enum mapping and a comparison on the
+main thread. Retained state is one key-value observation, one value, and the
+listener table.
+
+## Conformance and acceptance
+
+- iOS: `ios/InterfaceOrientationObserver.swift`, forwarded by
+  `ios/ReactNativeDeviceUtils.swift`.
+- Android: `ReactNativeDeviceUtils.kt` (`getInterfaceOrientation`).
+- `ios/tests/InterfaceOrientationObserverTests.swift` (pod test target) drives
+  the value through `receive(_:)`: each landscape side notifies once, a
+  repeated value does not notify, every UIKit orientation maps to its value,
+  and removed listeners and the listeners of a released owner are not called.
+  It also releases a `ReactNativeDeviceUtils` that still has a listener and
+  checks that the listener's callback is released with it. It does not cover
+  the scene observation, which needs a UIKit window scene.
+- Runtime verified: the value after a presented controller forces landscape
+  from a portrait-locked root, from either device side, and 180-degree
+  rotations while in landscape. Remaining acceptance: the return to portrait on
+  hardware, iOS 15 returning `unknown`, a scene disconnect with multiple
+  scenes, and a JS reload releasing DeviceUtils on a device.
+
 # DeviceUtils: main menu
 
 ## Status and scope
