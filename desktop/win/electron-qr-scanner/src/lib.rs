@@ -294,6 +294,7 @@ impl From<CaptureStatsSnapshot> for JsCaptureStats {
 pub struct JsCaptureEvent {
     pub kind: String,
     pub generation: i64,
+    pub analysis_revision: Option<f64>,
     pub info: Option<JsCaptureReadyInfo>,
     pub text: Option<String>,
     pub symbols: Option<Vec<JsDetectedSymbol>>,
@@ -310,6 +311,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
         CaptureEvent::Ready { generation, info } => JsCaptureEvent {
             kind: "ready".to_owned(),
             generation,
+            analysis_revision: None,
             info: Some(info.into()),
             text: None,
             symbols: None,
@@ -320,9 +322,14 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
             width: None,
             height: None,
         },
-        CaptureEvent::Text { text, generation } => JsCaptureEvent {
+        CaptureEvent::Text {
+            text,
+            generation,
+            analysis_revision,
+        } => JsCaptureEvent {
             kind: "text".to_owned(),
             generation,
+            analysis_revision: Some(analysis_revision as f64),
             info: None,
             text: Some(text),
             symbols: None,
@@ -338,9 +345,11 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
             frame_width,
             frame_height,
             generation,
+            analysis_revision,
         } => JsCaptureEvent {
             kind: "symbols".to_owned(),
             generation,
+            analysis_revision: Some(analysis_revision as f64),
             info: None,
             text: None,
             symbols: Some(symbols.into_iter().map(Into::into).collect()),
@@ -358,6 +367,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
         } => JsCaptureEvent {
             kind: "error".to_owned(),
             generation,
+            analysis_revision: None,
             info: None,
             text: None,
             symbols: None,
@@ -371,6 +381,7 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
         CaptureEvent::Ended { generation } => JsCaptureEvent {
             kind: "ended".to_owned(),
             generation,
+            analysis_revision: None,
             info: None,
             text: None,
             symbols: None,
@@ -387,9 +398,11 @@ fn to_js_event(event: CaptureEvent) -> JsCaptureEvent {
             width,
             height,
             generation,
+            analysis_revision,
         } => JsCaptureEvent {
             kind: "frame".to_owned(),
             generation,
+            analysis_revision: Some(analysis_revision as f64),
             info: None,
             text: None,
             symbols: None,
@@ -504,10 +517,10 @@ impl NativeCapture {
     }
 
     #[napi]
-    pub fn set_paused(&self, paused: bool) {
-        if let Some(ctrl) = self.controller.as_ref() {
-            ctrl.set_paused(paused);
-        }
+    pub fn set_paused(&self, paused: bool) -> f64 {
+        self.controller
+            .as_ref()
+            .map_or(0.0, |ctrl| ctrl.set_paused(paused) as f64)
     }
 
     #[napi]

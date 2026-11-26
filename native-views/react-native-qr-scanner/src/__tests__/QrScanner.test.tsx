@@ -4,12 +4,14 @@ import { act, create } from 'react-test-renderer';
 import { QrScanner } from '../QrScanner';
 
 import type { QrScannerComponentProps } from '../QrScanner';
+import type { QrDetectedSymbol } from '../symbols';
 
 type Wrapped<T> = { f: T };
 interface NativeProps {
   active: boolean;
   onReady: Wrapped<(generation: number, cameraId: string) => void>;
   onFrameText: Wrapped<(text: string, generation: number) => void>;
+  onFrameSymbols?: Wrapped<(symbols: QrDetectedSymbol[], generation: number) => void>;
   onError: Wrapped<(code: string, message: string, generation: number) => void>;
 }
 
@@ -96,6 +98,50 @@ describe('QrScanner', () => {
     expect(native().onReady).toBe(previous.onReady);
     expect(handlers.onResult.mock.calls).toEqual([[{ kind: 'text', text: 'current QR' }]]);
     expect(handlers.onError).not.toHaveBeenCalled();
+  });
+
+  it('retires queued symbol and text callbacks across freeze without changing capture generation', () => {
+    const onFrameSymbols = jest.fn();
+    const { handlers, renderer } = renderScanner({ mode: 'static', onFrameSymbols });
+    native().onReady.f(1, 'camera');
+    const beforeFreeze = native();
+    const oldSymbols = [{ text: 'old QR', centerX: 0.5, centerY: 0.5 }];
+
+    act(() => renderer.update(
+      <QrScanner active frozen mode="static" onFrameSymbols={onFrameSymbols} {...handlers} />
+    ));
+    beforeFreeze.onFrameSymbols?.f(oldSymbols, 1);
+    beforeFreeze.onFrameText.f('old QR', 1);
+    const frozenCallbacks = native();
+    act(() => renderer.update(
+      <QrScanner active mode="static" onFrameSymbols={onFrameSymbols} {...handlers} />
+    ));
+    beforeFreeze.onFrameSymbols?.f(oldSymbols, 1);
+    beforeFreeze.onFrameText.f('old QR', 1);
+    frozenCallbacks.onFrameText.f('old frozen QR', 1);
+    expect(onFrameSymbols).not.toHaveBeenCalled();
+    expect(handlers.onResult).not.toHaveBeenCalled();
+
+    const currentSymbols = [{ ...oldSymbols[0]!, text: 'fresh QR' }];
+    native().onFrameSymbols?.f(currentSymbols, 1);
+    native().onFrameText.f('fresh QR', 1);
+    expect(onFrameSymbols).toHaveBeenCalledWith(currentSymbols);
+    expect(handlers.onResult).toHaveBeenCalledWith({ kind: 'text', text: 'fresh QR' });
+  });
+
+  it('delivers queued frames when frozen changes from omitted to false', () => {
+    const onFrameSymbols = jest.fn();
+    const { handlers, renderer } = renderScanner({ mode: 'static', onFrameSymbols });
+    const beforeRender = native();
+    act(() => renderer.update(
+      <QrScanner active frozen={false} mode="static" onFrameSymbols={onFrameSymbols} {...handlers} />
+    ));
+
+    const symbols = [{ text: 'current QR', centerX: 0.5, centerY: 0.5 }];
+    beforeRender.onFrameSymbols?.f(symbols, 1);
+    beforeRender.onFrameText.f('current QR', 1);
+    expect(onFrameSymbols).toHaveBeenCalledWith(symbols);
+    expect(handlers.onResult).toHaveBeenCalledWith({ kind: 'text', text: 'current QR' });
   });
 
   it('drops queued readiness for a superseded camera selection', () => {

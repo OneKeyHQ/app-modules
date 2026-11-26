@@ -80,6 +80,7 @@ function createCapture(options) {
   let activeGeneration;
   let disposed = false;
   let paused = false;
+  let analysisRevision = 0;
   const native = new (binding().NativeCapture)(
     source.kind,
     source.kind === "file" ? source.path : source.deviceId,
@@ -94,7 +95,7 @@ function createCapture(options) {
           released = true;
           native.releaseFrame(event.token);
         };
-        if (disposed || event.generation !== activeGeneration) {
+        if (disposed || event.generation !== activeGeneration || event.analysisRevision !== analysisRevision) {
           release();
           return;
         }
@@ -118,10 +119,10 @@ function createCapture(options) {
           onReady?.(event.generation, event.deviceId);
           break;
         case "text":
-          if (!paused) onText?.(event.text, event.generation);
+          if (!paused && event.analysisRevision === analysisRevision) onText?.(event.text, event.generation);
           break;
         case "symbols": {
-          if (!paused && typeof onSymbols === "function" && event.text) {
+          if (!paused && event.analysisRevision === analysisRevision && typeof onSymbols === "function" && event.text) {
             const payload = JSON.parse(event.text);
             onSymbols(payload.symbols, payload.frameWidth, payload.frameHeight, event.generation);
           }
@@ -155,6 +156,7 @@ function createCapture(options) {
       if (disposed) return;
       activeGeneration = undefined;
       paused = false;
+      analysisRevision = native.setPaused(false);
       native.stop();
     },
     setMultiSymbol(enabled) {
@@ -164,7 +166,7 @@ function createCapture(options) {
     setPaused(nextPaused) {
       if (disposed) return;
       paused = Boolean(nextPaused);
-      native.setPaused(paused);
+      analysisRevision = native.setPaused(paused);
     },
     focus(x = 0.5, y = 0.5) {
       if (disposed || activeGeneration === undefined || typeof native.focus !== "function") {

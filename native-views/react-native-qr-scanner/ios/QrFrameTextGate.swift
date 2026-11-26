@@ -50,6 +50,12 @@ final class QrFrameTextGate {
     lock.unlock()
   }
 
+  func resetRepeatFilter() {
+    lock.lock()
+    lastText = nil
+    lock.unlock()
+  }
+
   /// Texts from one detection callback, in order, filtered for reporting.
   func filter(_ texts: [String], now: TimeInterval, generation origin: Int? = nil) -> [Report] {
     lock.lock()

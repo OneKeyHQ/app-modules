@@ -170,6 +170,7 @@ function createCapture(options) {
   let activeGeneration = null;
   let disposed = false;
   let paused = false;
+  let analysisRevision = 0;
   let startedAt = null;
   let native;
 
@@ -205,7 +206,7 @@ function createCapture(options) {
             released = true;
             native.releaseFrame(event.token);
           };
-          if (!accepts(event)) {
+          if (!accepts(event) || event.analysisRevision !== analysisRevision) {
             release();
             return;
           }
@@ -248,10 +249,10 @@ function createCapture(options) {
             break;
           }
           case "text":
-            if (!paused) onText?.(event.text, event.generation);
+            if (!paused && event.analysisRevision === analysisRevision) onText?.(event.text, event.generation);
             break;
           case "symbols":
-            if (!paused) {
+            if (!paused && event.analysisRevision === analysisRevision) {
               onSymbols?.(
                 event.symbols ?? [],
                 event.width ?? 0,
@@ -355,6 +356,7 @@ function createCapture(options) {
       const generation = activeGeneration;
       activeGeneration = null;
       paused = false;
+      analysisRevision = native.setPaused(false);
       native.stop();
       emitStopDiagnostic("stop", generation, native.stats(), native.lentFrames());
     },
@@ -365,7 +367,7 @@ function createCapture(options) {
     setPaused(nextPaused) {
       if (disposed) return;
       paused = Boolean(nextPaused);
-      native.setPaused(paused);
+      analysisRevision = native.setPaused(paused);
     },
     setDevice(deviceId) {
       if (disposed) throw errorWithCode("decoder-unavailable", "The capture was disposed");
