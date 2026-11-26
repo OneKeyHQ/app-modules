@@ -170,14 +170,6 @@ internal sealed class ToastIcon {
 
   data class Spinner(val color: Int, override val size: Float) : ToastIcon()
 
-  data class Status(
-    val status: String,
-    val color: Int,
-    val backgroundColor: Int,
-    override val size: Float,
-    val glyph: ToastStatusGlyph,
-  ) : ToastIcon()
-
   data class Image(val uri: String, override val size: Float, val radius: Float) : ToastIcon()
 
   companion object {
@@ -190,54 +182,9 @@ internal sealed class ToastIcon {
           Named(json.optString("name"), ToastColor.rgba(color), color, size)
         }
         "spinner" -> Spinner(ToastColor.parse(json.stringOrNull("color")) ?: Color.GRAY, size)
-        "status" -> {
-          val glyph = ToastStatusGlyph.parse(json.optJSONObject("glyph")) ?: return null
-          Status(
-            json.optString("status"),
-            ToastColor.parse(json.stringOrNull("color")) ?: Color.WHITE,
-            ToastColor.parse(json.stringOrNull("backgroundColor")) ?: Color.TRANSPARENT,
-            size,
-            glyph,
-          )
-        }
         "image" -> Image(json.optString("uri"), size, json.float("borderRadius", 0f))
         else -> null
       }
-    }
-  }
-}
-
-internal data class ToastStatusGlyph(
-  val strokeWidth: Float,
-  val contours: List<List<Pair<Float, Float>>>,
-  val dot: Dot?,
-  val ring: Ring?,
-) {
-  data class Dot(val x: Float, val y: Float, val radius: Float)
-  data class Ring(val radius: Float, val trackOpacity: Float, val arcFraction: Float)
-
-  companion object {
-    fun parse(json: JSONObject?): ToastStatusGlyph? {
-      json ?: return null
-      return runCatching {
-        val contours = json.getJSONArray("contours")
-        ToastStatusGlyph(
-          json.float("strokeWidth", 3f),
-          List(contours.length()) { i ->
-            val points = contours.getJSONArray(i)
-            List(points.length()) { j ->
-              val point = points.getJSONArray(j)
-              point.getDouble(0).toFloat() to point.getDouble(1).toFloat()
-            }
-          },
-          json.optJSONArray("dot")?.let {
-            Dot(it.getDouble(0).toFloat(), it.getDouble(1).toFloat(), it.getDouble(2).toFloat())
-          },
-          json.optJSONObject("ring")?.let {
-            Ring(it.float("radius", 8f), it.float("trackOpacity", 0.25f), it.float("arcFraction", 0.25f))
-          },
-        )
-      }.getOrNull()
     }
   }
 }
@@ -314,8 +261,7 @@ internal data class ToastSpec(
       isNotification = json.optString("layout") == "notification",
       duration = json.optDouble("duration", 5000.0),
       testID = json.stringOrNull("testID"),
-      icon = (if (json.optString("layout") == "notification") null
-        else ToastIcon.parse(json.optJSONObject("statusIcon"))) ?: ToastIcon.parse(json.optJSONObject("icon")),
+      icon = ToastIcon.parse(json.optJSONObject("icon")),
       title = ToastText.parse(json.optJSONObject("title")),
       message = ToastText.parse(json.optJSONObject("message")),
       actions = json.optJSONArray("actions").mapObjects(ToastAction::parse),
@@ -355,7 +301,6 @@ internal data class ToastItem(
 
 internal data class ToasterConfig(
   val cardColor: Int = Color.WHITE,
-  val cardBorderColor: Int? = null,
   /** Width of the card's content box in dp; null derives it from the window. */
   val contentWidth: Float? = null,
   val contentMaxHeight: Float? = null,
@@ -370,7 +315,6 @@ internal data class ToasterConfig(
       val dict = runCatching { JSONObject(json) }.getOrNull() ?: return ToasterConfig()
       return ToasterConfig(
         cardColor = ToastColor.parse(dict.stringOrNull("cardColor")) ?: Color.WHITE,
-        cardBorderColor = ToastColor.parse(dict.stringOrNull("cardBorderColor")),
         contentWidth = if (dict.has("contentWidth")) dict.float("contentWidth", 0f) else null,
         contentMaxHeight = if (dict.has("contentMaxHeight")) dict.float("contentMaxHeight", 0f) else null,
         topObstruction = dict.float("topObstruction", 0f),

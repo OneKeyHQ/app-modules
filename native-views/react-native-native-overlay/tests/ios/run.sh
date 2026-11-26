@@ -13,9 +13,6 @@ xcrun --sdk iphonesimulator swiftc -parse-as-library \
   "$package_dir/ios/NativeOverlayWindowManager.swift" \
   "$package_dir/ios/NativeOverlaySheetController.swift" \
   "$package_dir/ios/NativeOverlayAnimation.swift" \
-  "$package_dir/ios/NativeOverlayToastCardView.swift" \
-  "$package_dir/ios/NativeOverlayToastSpec.swift" \
-  "$package_dir/ios/ToastStatusTileView.swift" \
   -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
   -target arm64-apple-ios18.0-simulator -module-cache-path "$output_dir/ModuleCache" \
   -framework UIKit -o "$output_dir/OverlayWindowTests.app/OverlayWindowTests"

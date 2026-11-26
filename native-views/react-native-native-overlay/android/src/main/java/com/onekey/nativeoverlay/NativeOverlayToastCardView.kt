@@ -1,9 +1,5 @@
 package com.onekey.nativeoverlay
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
-import android.animation.TimeInterpolator
-import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.AssetManager
@@ -13,7 +9,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
-import android.graphics.Outline
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -41,9 +36,7 @@ import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewOutlineProvider
 import android.view.accessibility.AccessibilityNodeInfo
-import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.ProgressBar
@@ -64,29 +57,22 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-// RareUI-inspired concentric geometry in dp: cardRadius = tileRadius (11) + padding (10).
+// The card geometry of the layouts this replaces, in dp.
 private object ToastMetrics {
-  const val CARD_PADDING_HORIZONTAL = 10f
-  const val CARD_PADDING_VERTICAL = 10f
-  const val CARD_RADIUS = 21f
-  const val CARD_ELEVATION = 4f
-  const val MESSAGE_ICON_GAP = 12f
-  const val MESSAGE_TEXT_GAP = 2f
-  const val NO_ICON_PADDING_START = 6f
-  const val TILE_MIN_HEIGHT = 36f
-  const val INLINE_ACTION_HEIGHT = 36f
-  const val INLINE_ACTION_RADIUS = 11f
-  const val INLINE_TEXT_MIN_WIDTH = 96f
-  const val INLINE_ACTION_MAX_LABEL = 16
-  const val INLINE_ACTION_MAX_MESSAGE = 72
-  const val NOTIFICATION_GAP = 10f
+  const val CARD_PADDING_HORIZONTAL = 16f
+  const val CARD_PADDING_VERTICAL = 12f
+  const val CARD_RADIUS = 8f
+  const val CARD_ELEVATION = 7f
+  const val MESSAGE_ICON_GAP = 8f
+  /** The status icon sits this far under the top of its box. */
+  const val MESSAGE_ICON_PADDING_TOP = 2f
+  const val MESSAGE_TEXT_GAP = 4f
+  const val NOTIFICATION_GAP = 8f
   const val NOTIFICATION_TEXT_GAP = 2f
   const val ACTIONS_GAP = 8f
-  const val ACTIONS_PADDING_TOP = 10f
+  const val ACTIONS_PADDING_TOP = 12f
   const val ACTIONS_PADDING_END = 2f
   const val ACTIONS_PADDING_BOTTOM = 2f
-  const val CONTENT_SWAP_MS = 160L
-  const val BODY_FADE_MS = 240L
 }
 
 private const val IMAGE_POOL_THREADS = 4
@@ -252,10 +238,7 @@ private object ToastNamedIcon {
 }
 
 @SuppressLint("ViewConstructor")
-internal class ToastIconView(context: Context, icon: ToastIcon) : FrameLayout(context) {
-  var icon = icon
-    private set
-  val statusTile = (icon as? ToastIcon.Status)?.let { ToastStatusTileView(context, it) }
+internal class ToastIconView(context: Context, val icon: ToastIcon) : FrameLayout(context) {
   private val owner = Any()
   private val imageView = ImageView(context)
   /** The size the named icon was last drawn at; it renders at its frame. */
@@ -271,9 +254,6 @@ internal class ToastIconView(context: Context, icon: ToastIcon) : FrameLayout(co
         spinner.isIndeterminate = true
         spinner.indeterminateTintList = ColorStateList.valueOf(icon.color)
         addView(spinner, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-      }
-      is ToastIcon.Status -> {
-        addView(statusTile, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
       }
       is ToastIcon.Image -> {
         imageView.scaleType = ImageView.ScaleType.CENTER_CROP
@@ -294,16 +274,10 @@ internal class ToastIconView(context: Context, icon: ToastIcon) : FrameLayout(co
     }
   }
 
-  fun applyStatus(status: ToastIcon.Status, settle: Boolean) {
-    icon = status
-    statusTile?.apply(status, settle)
-  }
-
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
-    val currentIcon = icon
-    if (currentIcon is ToastIcon.Image && cancelled.get() && imageView.drawable == null) {
-      load(currentIcon.uri)
+    if (icon is ToastIcon.Image && cancelled.get() && imageView.drawable == null) {
+      load(icon.uri)
     }
     requestIcon()
   }
@@ -562,7 +536,6 @@ private class ToastActionButton(context: Context, val action: ToastAction) : Vie
   private val surface = ToastPillDrawable(if (action.borderWidth > 0) 0.8f else 0f)
   val label = TextView(context)
   val iconView = action.icon?.let { ToastIconView(context, it) }
-  var isInline = false
   /** Child frames in the card's coordinates; the card lays the button out. */
   var frame = Rect()
   var labelFrame = Rect()
@@ -601,14 +574,8 @@ private class ToastActionButton(context: Context, val action: ToastAction) : Vie
   override fun onTouchEvent(event: MotionEvent): Boolean {
     if (isEnabled) {
       when (event.actionMasked) {
-        MotionEvent.ACTION_DOWN -> {
-          surface.setColor(action.pressedBackgroundColor ?: action.backgroundColor)
-          animate().scaleX(0.95f).scaleY(0.95f).setDuration(120L).start()
-        }
-        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-          surface.setColor(action.backgroundColor)
-          animate().scaleX(1f).scaleY(1f).setDuration(120L).start()
-        }
+        MotionEvent.ACTION_DOWN -> surface.setColor(action.pressedBackgroundColor ?: action.backgroundColor)
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> surface.setColor(action.backgroundColor)
       }
     }
     return super.onTouchEvent(event)
@@ -619,8 +586,7 @@ private class ToastActionButton(context: Context, val action: ToastAction) : Vie
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-    val radiusDp = if (isInline) ToastMetrics.INLINE_ACTION_RADIUS else action.borderRadius
-    surface.radius = minOf(radiusDp * resources.displayMetrics.density, (bottom - top) / 2f)
+    surface.radius = minOf(action.borderRadius * resources.displayMetrics.density, (bottom - top) / 2f)
     label.layoutAt(labelFrame, frame.left, frame.top)
     iconView?.layoutAt(iconFrame, frame.left, frame.top)
   }
@@ -634,12 +600,6 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
   var onAction: ((String) -> Unit)? = null
   var onLink: ((String) -> Unit)? = null
   var onPress: (() -> Unit)? = null
-  var canExpandStack = false
-    set(value) {
-      if (field == value) return
-      field = value
-      updateAccessibilityImportance()
-    }
   /** Width of the content box in dp; the card adds its padding around it. */
   var contentWidth = 0f
   /** Tallest the content box grows, in dp; zero leaves it unbounded. */
@@ -649,8 +609,6 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
   var originY = 0.0
 
   private val surface = GradientDrawable()
-  private val contentSwapInterpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
-  private val bodyFadeInterpolator = PathInterpolator(0f, 0f, 0.58f, 1f)
   private var iconView: ToastIconView? = null
   private var badge: View? = null
   private var imageView: ToastIconView? = null
@@ -659,148 +617,34 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
   private var buttons: List<ToastActionButton> = emptyList()
   private val frames = HashMap<View, Rect>()
   private var size = Rect()
-  private var bodyHidden = false
-  private var displayHeightPx = -1
-  private var targetDisplayHeightPx = -1
-  private var heightAnimator: ValueAnimator? = null
-
-  val naturalHeightPx: Int get() = size.height()
-  val currentDisplayHeightPx: Int
-    get() = when {
-      displayHeightPx > 0 -> displayHeightPx
-      size.height() > 0 -> size.height()
-      else -> measuredHeight
-    }
 
   init {
-    setWillNotDraw(false)
     surface.cornerRadius = context.dp(ToastMetrics.CARD_RADIUS).toFloat()
+    background = surface
     elevation = context.dp(ToastMetrics.CARD_ELEVATION).toFloat()
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-      outlineAmbientShadowColor = Color.argb(46, 0, 0, 0)
-      outlineSpotShadowColor = Color.argb(56, 0, 0, 0)
-    }
-    outlineProvider = object : ViewOutlineProvider() {
-      override fun getOutline(view: View, outline: Outline) {
-        val h = if (displayHeightPx > 0) displayHeightPx else view.height
-        outline.setRoundRect(0, 0, view.width, max(h, 0), context.dp(ToastMetrics.CARD_RADIUS).toFloat())
-      }
-    }
-    clipToOutline = true
     clipChildren = true
     clipToPadding = true
   }
 
-  override fun onDraw(canvas: Canvas) {
-    val h = if (displayHeightPx > 0) displayHeightPx else height
-    surface.setBounds(0, 0, width, max(h, 0))
-    surface.draw(canvas)
-  }
-
-  override fun onDetachedFromWindow() {
-    heightAnimator?.cancel()
-    heightAnimator = null
-    super.onDetachedFromWindow()
-  }
-
   fun cancelLoads() {
-    heightAnimator?.cancel()
-    heightAnimator = null
     iconView?.cancelLoad()
     imageView?.cancelLoad()
     buttons.forEach { it.iconView?.cancelLoad() }
   }
 
-  private fun childRestAlpha(view: View): Float =
-    if (view is ToastActionButton && view.action.disabled) view.action.disabledOpacity else 1f
-
-  fun setBodyHidden(hidden: Boolean, animated: Boolean) {
-    if (hidden == bodyHidden) return
-    bodyHidden = hidden
-    for (index in 0 until childCount) {
-      val child = getChildAt(index)
-      val target = if (hidden) 0f else childRestAlpha(child)
-      if (animated) {
-        child.animate().alpha(target).setDuration(ToastMetrics.BODY_FADE_MS)
-          .setInterpolator(bodyFadeInterpolator).start()
-      } else {
-        child.animate().cancel()
-        child.alpha = target
-      }
-    }
-  }
-
-  fun setDisplayHeight(targetPx: Int, animated: Boolean, durationMs: Long, interpolator: TimeInterpolator) {
-    val clamped = max(targetPx, 0)
-    val natural = size.height()
-    if (clamped == 0 || natural == 0) return
-    val isNatural = clamped == natural
-    val current = if (displayHeightPx > 0) displayHeightPx else natural
-    if (!animated || current == clamped) {
-      heightAnimator?.cancel()
-      heightAnimator = null
-      displayHeightPx = if (isNatural) -1 else clamped
-      targetDisplayHeightPx = if (isNatural) -1 else clamped
-      if (measuredHeight < clamped || (isNatural && measuredHeight != natural)) {
-        requestLayout()
-      }
-      invalidateOutline()
-      invalidate()
-      return
-    }
-    if (targetDisplayHeightPx == clamped && heightAnimator?.isRunning == true) return
-    heightAnimator?.cancel()
-    targetDisplayHeightPx = clamped
-    if (measuredHeight < max(current, clamped)) {
-      requestLayout()
-    }
-    var cancelled = false
-    heightAnimator = ValueAnimator.ofInt(current, clamped).apply {
-      duration = durationMs
-      this.interpolator = interpolator
-      addUpdateListener { anim ->
-        displayHeightPx = anim.animatedValue as Int
-        invalidateOutline()
-        invalidate()
-      }
-      addListener(object : AnimatorListenerAdapter() {
-        override fun onAnimationCancel(animation: Animator) {
-          cancelled = true
-        }
-
-        override fun onAnimationEnd(animation: Animator) {
-          if (!cancelled && isNatural) {
-            displayHeightPx = -1
-            targetDisplayHeightPx = -1
-            if (measuredHeight != size.height()) {
-              requestLayout()
-            }
-            invalidateOutline()
-            invalidate()
-          }
-        }
-      })
-      start()
-    }
-  }
-
-  fun apply(spec: ToastSpec, cardColor: Int, cardBorderColor: Int? = null, settleStatus: Boolean = false) {
-    val nextStatus = spec.icon as? ToastIcon.Status
-    val retained = iconView?.takeIf {
-      this.spec?.isNotification == false && !spec.isNotification &&
-        nextStatus != null && it.statusTile != null
-    }
+  fun apply(spec: ToastSpec, cardColor: Int) {
     this.spec = spec
     surface.setColor(cardColor)
-    surface.setStroke(max(1, context.dp(1f)), cardBorderColor ?: Color.argb(15, 0, 0, 0))
     spec.testID?.let { tag = it }
     isClickable = spec.pressable
     isFocusable = spec.pressable
-    updateAccessibilityImportance()
-    cancelLoads()
-    for (index in childCount - 1 downTo 0) {
-      if (getChildAt(index) !== retained) removeViewAt(index)
+    importantForAccessibility = if (spec.pressable) {
+      IMPORTANT_FOR_ACCESSIBILITY_YES
+    } else {
+      IMPORTANT_FOR_ACCESSIBILITY_AUTO
     }
+    cancelLoads()
+    removeAllViews()
     val link: (String) -> Unit = { onLink?.invoke(it) }
     badge = if (spec.isNotification) {
       View(context).also { view ->
@@ -813,12 +657,7 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     } else {
       null
     }
-    iconView = if (retained != null && nextStatus != null) {
-      retained.applyStatus(nextStatus, settleStatus)
-      retained
-    } else {
-      spec.icon?.let { ToastIconView(context, it).also(::addView) }
-    }
+    iconView = spec.icon?.let { ToastIconView(context, it).also(::addView) }
     imageView = spec.image?.let { ToastIconView(context, it).also(::addView) }
     titles = spec.title?.let { text ->
       text.paragraphs.map { makeParagraph(context, text, it, link).also(::addView) }
@@ -832,60 +671,18 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
         addView(button)
       }
     }
-    if (bodyHidden) {
-      for (index in 0 until childCount) {
-        getChildAt(index).alpha = 0f
-      }
-    } else if (settleStatus && retained != null) {
-      val shiftPx = context.dp(3f).toFloat()
-      val swapped: List<View> = titles + messages + buttons
-      for (view in swapped) {
-        view.alpha = 0f
-        view.translationY = shiftPx
-        view.animate()
-          .alpha(childRestAlpha(view))
-          .translationY(0f)
-          .setDuration(ToastMetrics.CONTENT_SWAP_MS)
-          .setInterpolator(contentSwapInterpolator)
-          .start()
-      }
-    }
     requestLayout()
-    invalidate()
-  }
-
-  fun animateMessageStatusEntrance() {
-    if (spec?.isNotification == false) iconView?.statusTile?.enter()
-  }
-
-  fun animateMessageStatusRing() {
-    if (spec?.isNotification == false) iconView?.statusTile?.startRing()
-  }
-
-  fun cancelStatusMotion() {
-    iconView?.statusTile?.cancelMotion()
   }
 
   /** What TalkBack reads when the card appears. */
   val announcement: String
     get() = (titles + messages).map { it.text.toString() }.filter { it.isNotEmpty() }.joinToString(". ")
 
-  private fun updateAccessibilityImportance() {
-    importantForAccessibility = if (canExpandStack || spec?.pressable == true) {
-      IMPORTANT_FOR_ACCESSIBILITY_YES
-    } else {
-      IMPORTANT_FOR_ACCESSIBILITY_AUTO
-    }
-  }
-
   override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
     super.onInitializeAccessibilityNodeInfo(info)
-    if (canExpandStack || spec?.pressable == true) {
+    if (spec?.pressable == true) {
       info.isClickable = true
-      val click = AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK
-      info.addAction(if (canExpandStack) {
-        AccessibilityNodeInfo.AccessibilityAction(click.id, "Expand notifications")
-      } else click)
+      info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_CLICK)
       if (info.contentDescription.isNullOrEmpty()) {
         info.contentDescription = announcement
       }
@@ -893,7 +690,7 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
   }
 
   override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean {
-    if (action == AccessibilityNodeInfo.ACTION_CLICK && (canExpandStack || spec?.pressable == true)) {
+    if (action == AccessibilityNodeInfo.ACTION_CLICK && spec?.pressable == true) {
       onPress?.invoke()
       return true
     }
@@ -986,20 +783,8 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
     return paddingTop + rowHeight + px(paddingBottom)
   }
 
-  private fun shouldUseInlineAction(spec: ToastSpec): Boolean {
-    if (buttons.size != 1 || spec.actionsAlignLeft) return false
-    val action = buttons.first().action
-    if (action.label.length > ToastMetrics.INLINE_ACTION_MAX_LABEL) return false
-    if (action.marginHorizontal != 0f || action.marginVertical != 0f) return false
-    val message = spec.message ?: return true
-    if (message.paragraphs.size > 1) return false
-    val length = message.paragraphs.sumOf { runs -> runs.sumOf { it.text.length } }
-    return length <= ToastMetrics.INLINE_ACTION_MAX_MESSAGE
-  }
-
   /** Lays the content box out from [content]; returns its height in px. */
   private fun placeContent(spec: ToastSpec, content: Node, width: Double): Double {
-    buttons.forEach { it.isInline = false }
     if (spec.isNotification) {
       val badgeSize = px(spec.badgeSize)
       val badgeNode = content.child(0.0, 0.0)
@@ -1027,93 +812,30 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
       return maxOf(y, badgeSize, imageSize)
     }
     val icon = spec.icon
-    val iconSize = icon?.let { px(it.size) } ?: 0.0
-    val columnX = icon?.let { iconSize + px(ToastMetrics.MESSAGE_ICON_GAP) } ?: px(ToastMetrics.NO_ICON_PADDING_START)
+    val columnX = icon?.let { px(it.size) + px(ToastMetrics.MESSAGE_ICON_GAP) } ?: 0.0
+    iconView?.let { view ->
+      val size = px(view.icon.size)
+      frames[view] = content.child(0.0, px(ToastMetrics.MESSAGE_ICON_PADDING_TOP)).frame(size, size)
+    }
+    val columnWidth = max(width - columnX, 0.0)
+    val column = content.child(columnX, 0.0)
     val gap = px(ToastMetrics.MESSAGE_TEXT_GAP)
-    val measureColumn = content.child(columnX, 0.0)
-    val textBlocks = listOf(titles, messages).filter { it.isNotEmpty() }
-    fun measureText(columnWidth: Double): Double {
-      var height = 0.0
-      textBlocks.forEachIndexed { index, block ->
-        if (index > 0) height += gap
-        for (view in block) {
-          val node = measureColumn.child(0.0, height, text = true)
-          height += textHeight(view, node.width(columnWidth, text = true))
-        }
-      }
-      return height
-    }
-    var inlineAction = false
-    var inlineWidth = 0.0
-    var inlineHeight = 0.0
-    if (shouldUseInlineAction(spec)) {
-      val button = buttons.first()
-      val action = button.action
-      val (labelWidth, labelHeight) = button.measureLabel()
-      val actionIconSize = action.icon?.let { px(it.size) } ?: 0.0
-      val iconExtent = if (action.icon != null) actionIconSize + px(action.iconGap) else 0.0
-      val insetX = px(max(action.paddingHorizontal, 14f) + action.borderWidth)
-      val insetY = px(action.paddingVertical + action.borderWidth)
-      inlineWidth = labelWidth + iconExtent + 2 * insetX
-      val minTextWidth = if (textBlocks.isEmpty()) 0.0 else px(ToastMetrics.INLINE_TEXT_MIN_WIDTH)
-      val inlineTextWidth = width - columnX - px(ToastMetrics.MESSAGE_ICON_GAP) - inlineWidth
-      val fittedHeight = max(labelHeight.toDouble(), actionIconSize) + 2 * insetY
-      val candidateHeight = max(fittedHeight, px(ToastMetrics.INLINE_ACTION_HEIGHT))
-      inlineAction = inlineTextWidth >= minTextWidth
-      if (!inlineAction && contentMaxHeight > 0f && inlineTextWidth > 0.0) {
-        val heightCap = px(contentMaxHeight)
-        val lowerButtonBottom = measureText(max(width - columnX, 0.0)) + gap +
-          px(ToastMetrics.ACTIONS_PADDING_TOP) + fittedHeight
-        if (lowerButtonBottom > heightCap) {
-          val inlineTextHeight = measureText(inlineTextWidth)
-          inlineAction = maxOf(inlineTextHeight, candidateHeight, iconSize, px(ToastMetrics.TILE_MIN_HEIGHT)) <= heightCap
-        }
-      }
-      button.isInline = inlineAction
-      if (inlineAction) inlineHeight = candidateHeight
-    }
-    val trailing = if (inlineAction) inlineWidth + px(ToastMetrics.MESSAGE_ICON_GAP) else 0.0
-    val columnWidth = max(width - columnX - trailing, 0.0)
-    var textHeight = measureText(columnWidth)
-    var bottomActionsHeight = 0.0
-    if (buttons.isNotEmpty() && !inlineAction) {
-      if (textBlocks.isNotEmpty()) textHeight += gap
-      bottomActionsHeight = placeActions(
-        measureColumn.child(0.0, textHeight), columnWidth, ToastMetrics.ACTIONS_PADDING_END, ToastMetrics.ACTIONS_PADDING_BOTTOM,
-      )
-    }
-    val rowHeight = maxOf(textHeight + bottomActionsHeight, iconSize, inlineHeight, px(ToastMetrics.TILE_MIN_HEIGHT))
-    val textTop = if (bottomActionsHeight > 0.0) 0.0 else (rowHeight - textHeight) / 2.0
-    val textColumn = content.child(columnX, textTop)
     var y = 0.0
-    var placedBlock = false
+    var hasBlock = false
     for (block in listOf(titles, messages)) {
       if (block.isEmpty()) continue
-      if (placedBlock) y += gap
-      placedBlock = true
-      y += placeParagraphs(block, textColumn.child(0.0, y), columnWidth)
+      if (hasBlock) y += gap
+      hasBlock = true
+      y += placeParagraphs(block, column.child(0.0, y), columnWidth)
     }
-    iconView?.let { view ->
-      frames[view] = content.child(0.0, (rowHeight - iconSize) / 2.0).frame(iconSize, iconSize)
+    if (buttons.isNotEmpty()) {
+      if (hasBlock) y += gap
+      y += placeActions(
+        column.child(0.0, y), columnWidth, ToastMetrics.ACTIONS_PADDING_END, ToastMetrics.ACTIONS_PADDING_BOTTOM,
+      )
     }
-    if (inlineAction) {
-      val button = buttons.first()
-      val action = button.action
-      val node = content.child(width - inlineWidth, (rowHeight - inlineHeight) / 2.0)
-      button.frame = node.frame(inlineWidth, inlineHeight)
-      frames[button] = button.frame
-      val insetX = px(max(action.paddingHorizontal, 14f) + action.borderWidth)
-      var labelX = insetX
-      button.iconView?.let {
-        val actionIconSize = px(action.icon!!.size)
-        button.iconFrame = node.child(insetX, (inlineHeight - actionIconSize) / 2.0).frame(actionIconSize, actionIconSize)
-        labelX += actionIconSize + px(action.iconGap)
-      }
-      val labelHeight = button.label.measuredHeight.toDouble()
-      button.labelFrame = node.child(labelX, (inlineHeight - labelHeight) / 2.0, text = true)
-        .frame(button.label.measuredWidth.toDouble(), labelHeight, text = true)
-    }
-    return rowHeight
+    val iconBox = icon?.let { px(it.size + ToastMetrics.MESSAGE_ICON_PADDING_TOP) } ?: 0.0
+    return max(y, iconBox)
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -1131,8 +853,7 @@ internal class NativeOverlayToastCardView(context: Context) : ViewGroup(context)
       width + 2 * px(ToastMetrics.CARD_PADDING_HORIZONTAL),
       height + 2 * px(ToastMetrics.CARD_PADDING_VERTICAL),
     )
-    val measuredH = max(size.height(), max(displayHeightPx, targetDisplayHeightPx))
-    setMeasuredDimension(size.width(), measuredH)
+    setMeasuredDimension(size.width(), size.height())
   }
 
   override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
