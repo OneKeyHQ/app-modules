@@ -262,8 +262,6 @@ class HybridQrScanner: HybridQrScannerSpec {
   private let frameRevisionLock = NSLock()
   private var frameRevision = 0
   private var readyCapture: UUID?
-  // Owned by sessionQueue; timestamps use the capture output clock.
-  private var metadataResumeTime = CMTime.invalid
 
   private func setReadyCapture(_ isReady: Bool) {
     frameRevisionLock.lock()
@@ -275,16 +273,6 @@ class HybridQrScanner: HybridQrScannerSpec {
     frameRevisionLock.lock()
     defer { frameRevisionLock.unlock() }
     return readyCapture
-  }
-
-  private func captureTime() -> CMTime {
-    let clock: CMClock?
-    if #available(iOS 15.4, *) {
-      clock = session.synchronizationClock
-    } else {
-      clock = session.masterClock
-    }
-    return clock.map { CMClockGetTime($0) } ?? .invalid
   }
 
   private func updateFrameRevision() {
@@ -372,7 +360,6 @@ class HybridQrScanner: HybridQrScannerSpec {
       if previous.frozen != props.frozen {
         self.updateFrameRevision()
         self.gate.resetRepeatFilter()
-        if !props.frozen { self.metadataResumeTime = self.captureTime() }
       }
       let canFocus = self.running && props.active && !props.frozen && cameraId == previousCamera
       self.captureProps = props
@@ -380,7 +367,11 @@ class HybridQrScanner: HybridQrScannerSpec {
       if !props.active {
         self.stop()
       } else if self.running {
+        let generation = self.currentGeneration()
         self.switchCameraIfNeeded()
+        if previous.frozen && !props.frozen && self.currentGeneration() == generation {
+          self.replaceMetadataOutput(generation: generation)
+        }
       } else if !previous.active || cameraId != previousCamera {
         self.start()
       }
@@ -423,7 +414,6 @@ class HybridQrScanner: HybridQrScannerSpec {
   private func start() {
     guard !running, !disposed, captureProps.active, !permissionPending else { return }
     setReadyCapture(false)
-    metadataResumeTime = .invalid
     let currentGeneration = nextGeneration()
     // Check for hardware first: a device without a camera must not prompt.
     guard QrCameraControl.device(forId: requestedCameraId) != nil else {
@@ -500,8 +490,6 @@ class HybridQrScanner: HybridQrScannerSpec {
       return ("camera-busy", error.localizedDescription)
     }
 
-    let newOutput = AVCaptureMetadataOutput()
-    let delegate = MetadataDelegate(owner: self, generation: generation)
     let oldPreset = session.sessionPreset
     session.beginConfiguration()
     if let output { session.removeOutput(output) }
@@ -510,7 +498,6 @@ class HybridQrScanner: HybridQrScannerSpec {
     defer {
       var restoredInput = false
       if !installed {
-        if session.outputs.contains(newOutput) { session.removeOutput(newOutput) }
         if session.inputs.contains(newInput) { session.removeInput(newInput) }
         session.sessionPreset = oldPreset
         if let input, session.canAddInput(input) {
@@ -533,18 +520,9 @@ class HybridQrScanner: HybridQrScannerSpec {
       return ("camera-busy", "The camera input could not be added")
     }
     session.addInput(newInput)
-    guard session.canAddOutput(newOutput) else {
-      return ("decoder-unavailable", "The QR detector could not be added")
+    if let message = installMetadataOutput(generation: generation) {
+      return ("decoder-unavailable", message)
     }
-    session.addOutput(newOutput)
-    guard newOutput.availableMetadataObjectTypes.contains(.qr) else {
-      return ("decoder-unavailable", "QR detection is not available")
-    }
-    newOutput.setMetadataObjectsDelegate(delegate, queue: metadataQueue)
-    newOutput.metadataObjectTypes = [.qr]
-    output?.setMetadataObjectsDelegate(nil, queue: nil)
-    output = newOutput
-    metadataDelegate = delegate
     input = newInput
     let changedCamera = target.uniqueID != device?.uniqueID
     device = target
@@ -556,6 +534,41 @@ class HybridQrScanner: HybridQrScannerSpec {
       target.unlockForConfiguration()
     }
     observeSubjectArea(of: target)
+    return nil
+  }
+
+  // Replace the QR output while keeping the same input and preview layer. An
+  // old output can still deliver queued metadata after the preview resumes.
+  private func replaceMetadataOutput(generation: Int) {
+    let previous = output
+    session.beginConfiguration()
+    if let previous, session.outputs.contains(previous) { session.removeOutput(previous) }
+    let error = installMetadataOutput(generation: generation)
+    if error != nil {
+      previous?.setMetadataObjectsDelegate(nil, queue: nil)
+      metadataDelegate = nil
+      output = nil
+    }
+    session.commitConfiguration()
+    if let error { emitError("decoder-unavailable", error, generation) }
+  }
+
+  /// Called within a session configuration transaction after removing the old output.
+  private func installMetadataOutput(generation: Int) -> String? {
+    let newOutput = AVCaptureMetadataOutput()
+    guard session.canAddOutput(newOutput) else { return "The QR detector could not be added" }
+    session.addOutput(newOutput)
+    guard newOutput.availableMetadataObjectTypes.contains(.qr) else {
+      session.removeOutput(newOutput)
+      return "QR detection is not available"
+    }
+    let delegate = MetadataDelegate(
+      owner: self, generation: generation, revision: currentFrameRevision())
+    newOutput.setMetadataObjectsDelegate(delegate, queue: metadataQueue)
+    newOutput.metadataObjectTypes = [.qr]
+    output?.setMetadataObjectsDelegate(nil, queue: nil)
+    output = newOutput
+    metadataDelegate = delegate
     return nil
   }
 
@@ -571,7 +584,6 @@ class HybridQrScanner: HybridQrScannerSpec {
       return
     }
     _ = nextGeneration()
-    metadataResumeTime = .invalid
     setCapturing(true)
     setReadyCapture(true)
     captureProps.ready?(Double(generation), target.uniqueID)
@@ -767,19 +779,14 @@ class HybridQrScanner: HybridQrScannerSpec {
   }
 
   /// Called on `metadataQueue`.
-  fileprivate func handle(codes: [AVMetadataMachineReadableCodeObject], generation: Int) {
-    guard !codes.isEmpty else { return }
-    let revision = currentFrameRevision()
+  fileprivate func handle(
+    codes: [AVMetadataMachineReadableCodeObject], generation: Int, revision: Int
+  ) {
+    guard !codes.isEmpty, currentFrameRevision() == revision else { return }
     sessionQueue.async { [weak self] in
       guard let self, self.running, !self.captureProps.frozen,
         self.currentGeneration() == generation, self.currentFrameRevision() == revision
       else { return }
-
-      let cutoff = self.metadataResumeTime
-      let currentCodes = cutoff.isNumeric
-        ? codes.filter { $0.time.isNumeric && CMTimeCompare($0.time, cutoff) >= 0 }
-        : codes
-      guard !currentCodes.isEmpty else { return }
 
       if self.captureProps.multiSymbol, let symbolsCallback = self.captureProps.symbols {
         DispatchQueue.main.async { [weak self] in
@@ -787,7 +794,7 @@ class HybridQrScanner: HybridQrScannerSpec {
           let layer = self.previewView.previewLayer
           let layerBounds = layer.bounds
           guard layerBounds.width > 0, layerBounds.height > 0 else { return }
-          let symbols: [QrDetectedSymbol] = currentCodes.compactMap { code in
+          let symbols: [QrDetectedSymbol] = codes.compactMap { code in
             guard let text = code.stringValue, !text.isEmpty else { return nil }
             let transformed =
               layer.transformedMetadataObject(for: code) as? AVMetadataMachineReadableCodeObject
@@ -814,7 +821,7 @@ class HybridQrScanner: HybridQrScannerSpec {
         return
       }
 
-      let texts = currentCodes.compactMap { $0.stringValue }
+      let texts = codes.compactMap { $0.stringValue }
       guard !texts.isEmpty else { return }
       let reports = self.gate.filter(
         texts, now: ProcessInfo.processInfo.systemUptime, generation: generation)
@@ -846,10 +853,12 @@ private final class MetadataDelegate: NSObject, AVCaptureMetadataOutputObjectsDe
   private weak var owner: HybridQrScanner?
 
   private let generation: Int
+  private let revision: Int
 
-  init(owner: HybridQrScanner, generation: Int) {
+  init(owner: HybridQrScanner, generation: Int, revision: Int) {
     self.owner = owner
     self.generation = generation
+    self.revision = revision
   }
 
   func metadataOutput(
@@ -858,7 +867,7 @@ private final class MetadataDelegate: NSObject, AVCaptureMetadataOutputObjectsDe
   ) {
     let codes = metadataObjects.compactMap { $0 as? AVMetadataMachineReadableCodeObject }
     if !codes.isEmpty {
-      owner?.handle(codes: codes, generation: generation)
+      owner?.handle(codes: codes, generation: generation, revision: revision)
     }
   }
 }

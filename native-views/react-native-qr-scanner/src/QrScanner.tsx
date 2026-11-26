@@ -60,7 +60,7 @@ export function QrScanner({
   active,
   cameraId,
   multiSymbol,
-  frozen,
+  frozen = false,
   mode,
   allowPlainText,
   limits,

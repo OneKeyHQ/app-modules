@@ -405,7 +405,7 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
           permissionDenied = false
           stop()
         }
-        running -> switchCameraIfNeeded()
+        running -> updateCamera(resumingAnalysis = previous.frozen && !nextFrozen)
         changed -> start()
       }
       if (nextFocus != null && nextFocus.id.isFinite() && nextFocus.id > lastFocusRequestId) {
@@ -449,12 +449,14 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     }
   }
 
-  /** Rebinds to a changed `cameraId` in a new capture generation. */
-  private fun switchCameraIfNeeded() {
+  private fun updateCamera(resumingAnalysis: Boolean) {
     val provider = cameraProvider ?: return
-    val target = selectorFor(provider) ?: return
-    if (target.second == boundCameraId) return
-    bind(provider, gate.nextGeneration())
+    val (selector, targetId) = selectorFor(provider) ?: return
+    if (targetId != boundCameraId) {
+      bind(provider, gate.nextGeneration())
+    } else if (resumingAnalysis) {
+      replaceAnalysis(provider, selector)
+    }
   }
 
   /** The requested camera when connected, else back, else front. */
@@ -632,25 +634,10 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       .setTargetRotation(initialRotation)
       .build()
       .also { it.surfaceProvider = targetPreview.surfaceProvider }
-    val analysis = ImageAnalysis.Builder()
-      .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-      .setTargetRotation(initialRotation)
-      .setResolutionSelector(
-        ResolutionSelector.Builder()
-          .setResolutionStrategy(
-            ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
-          )
-          .build(),
-      )
-      .build()
-    analysis.setAnalyzer(analysisExecutor) { proxy -> analyze(proxy, generation) }
+    val analysis = createAnalysis(generation, initialRotation)
     lastDecodeFailureAt = null
     val bound = try {
-      val groupBuilder = UseCaseGroup.Builder()
-        .addUseCase(preview)
-        .addUseCase(analysis)
-      targetPreview.viewPort?.let { groupBuilder.setViewPort(it) }
-      provider.bindToLifecycle(this, selector, groupBuilder.build())
+      provider.bindToLifecycle(this, selector, analysisGroup(preview, analysis, targetPreview))
     } catch (error: Exception) {
       analysis.clearAnalyzer()
       provider.unbind(preview, analysis)
@@ -700,6 +687,56 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       displayListenerRegistered = true
     }
     syncLifecycle()
+  }
+
+  private fun createAnalysis(generation: Int, initialRotation: Int): ImageAnalysis {
+    val freezeRevision = callbacks.freezeRevision
+    return ImageAnalysis.Builder()
+      .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+      .setTargetRotation(initialRotation)
+      .setResolutionSelector(
+        ResolutionSelector.Builder()
+          .setResolutionStrategy(
+            ResolutionStrategy(Size(1280, 720), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
+          )
+          .build(),
+      )
+      .build()
+      .also { analysis ->
+        analysis.setAnalyzer(analysisExecutor) { proxy -> analyze(proxy, generation, freezeRevision) }
+      }
+  }
+
+  private fun analysisGroup(
+    preview: Preview,
+    analysis: ImageAnalysis,
+    targetPreview: PreviewView,
+  ): UseCaseGroup {
+    val group = UseCaseGroup.Builder().addUseCase(preview).addUseCase(analysis)
+    targetPreview.viewPort?.let { group.setViewPort(it) }
+    return group.build()
+  }
+
+  private fun replaceAnalysis(provider: ProcessCameraProvider, selector: CameraSelector) {
+    val preview = previewUseCase ?: return
+    val generation = gate.currentGeneration
+    // Keep the preview bound. A fresh analysis surface has no pre-resume buffers,
+    // including on cameras whose timestamps cannot be compared to the system clock.
+    analysisUseCase?.let { previous ->
+      previous.clearAnalyzer()
+      provider.unbind(previous)
+    }
+    analysisUseCase = null
+    val rotation = lastTargetRotation ?: Surface.ROTATION_0
+    val analysis = createAnalysis(generation, rotation)
+    try {
+      provider.bindToLifecycle(this, selector, analysisGroup(preview, analysis, previewView))
+      analysisUseCase = analysis
+    } catch (error: Exception) {
+      analysis.clearAnalyzer()
+      provider.unbind(analysis)
+      emitError("decoder-unavailable", error.message ?: "The QR detector could not resume", generation)
+    }
   }
 
   private fun stop() {
@@ -759,12 +796,15 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
 
   /** Runs on the analysis executor; KEEP_ONLY_LATEST keeps one frame in flight. */
   @OptIn(ExperimentalGetImage::class, TransformExperimental::class)
-  private fun analyze(proxy: ImageProxy, generation: Int) {
+  private fun analyze(proxy: ImageProxy, generation: Int, freezeRevision: Long) {
     // Capture callbacks before async ML Kit decode so session-identity guards
     // on the original callback still discard stale frames if sessionKey/mode
     // changed mid-decode (SPEC section 4).
     val frameCallbacks = callbacks
-    if (frameCallbacks.frozen) {
+    if (
+      frameCallbacks.frozen || frameCallbacks.freezeRevision != freezeRevision ||
+      gate.currentGeneration != generation
+    ) {
       proxy.close()
       return
     }
