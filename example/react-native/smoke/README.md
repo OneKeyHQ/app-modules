@@ -33,8 +33,34 @@ python3 ../smoke/check-device-utils-install-info.py
 The explicit installer exercises the `other` enum. A fresh install with no
 installer recorded exercises `unknown`. The check compares the JavaScript
 installer enum and epoch-millisecond timestamp with PackageManager, whose
-dump reports the install time to whole seconds. To check a secondary user,
-make the installed APK available to that user with
-`adb shell pm install-existing --user USER_ID com.example`. Switch to that
-user and unlock the emulator before running the check. The script launches
-and queries the app as the foreground user.
+dump reports the install time to whole seconds. The script launches and
+queries the app as the foreground user.
+
+## Secondary-user regression check
+
+Use an API 34 emulator with `com.example` absent for all users. Create a
+secondary user or use an existing secondary user on that clean emulator.
+Run the commands from `example/react-native/android` and set `secondary_user`
+to the ID shown by `adb shell pm list users`.
+
+```sh
+secondary_user=10
+adb install --user 0 -i com.android.shell app/build/outputs/apk/release/app-release.apk
+sleep 2
+adb shell pm install-existing --user "$secondary_user" com.example
+adb shell dumpsys package com.example
+```
+
+Confirm that the `firstInstallTime` under `User 0` differs from the value
+under the secondary user, then switch users.
+
+```sh
+adb shell am switch-user "$secondary_user"
+```
+
+Unlock the emulator, wait for the secondary user's home screen to appear,
+and run the check.
+
+```sh
+python3 ../smoke/check-device-utils-install-info.py
+```
