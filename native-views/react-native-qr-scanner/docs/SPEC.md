@@ -463,7 +463,13 @@ interface QrImageSymbolsResult {
     `active=false` (which stops and releases the camera), `frozen=true` holds
     the last rendered preview frame on screen, pauses detection dispatch,
     disables tap-to-focus and pinch-zoom gestures, and keeps the camera session
-    warm so `frozen=false` resumes with zero black flash.
+    warm so a normal `frozen=false` resumes without restarting capture.
+    If resuming detection fails, iOS retries installing the QR metadata output
+    once after 150 ms. Android waits up to 1 s for the repeating capture request
+    acknowledgement and makes one more attempt if it fails or times out.
+    If the retry also fails, the SDK starts a new capture generation. The preview
+    can briefly interrupt, and the existing `onReady` or `onError` callback
+    reports the result.
   - `focusRequest?: { id: number; x: number; y: number }` requests the same
     focus and exposure operation as a native single tap. Coordinates are
     normalized within the visible preview, with the origin at its top left.
@@ -480,9 +486,11 @@ interface QrImageSymbolsResult {
     Focus work and its indicator are scoped to the active camera, and queued
     decoding work already dispatched before a freeze is retired on unfreeze.
     React wrappers must also retire old frame callbacks at delivery because
-    Nitro may already have queued them. On iOS, the capture clock cutoff on
-    resume excludes metadata captured earlier. Android decoder failures and
-    repeat tracking only accept the current freeze revision.
+    Nitro may already have queued them. On iOS, resume replaces the metadata
+    output and rejects callbacks from the retired delegate. On Android,
+    `ImageAnalysis` drops buffers older than the acknowledged repeating
+    request by comparing timestamps from the same camera. Decoder failures
+    and repeat tracking only accept the current freeze revision.
     Host verification for programmatic focus on physical iOS and Android
     cameras is pending.
 - **Web (`./web`)**:
@@ -504,7 +512,7 @@ interface QrImageSymbolsResult {
 
 #### Platform coordinate normalization and freeze rules
 
-| Platform | Coordinate space | Multi-symbol & coordinate mapping | Zero-black-screen freeze (`frozen=true`) |
+| Platform | Coordinate space | Multi-symbol & coordinate mapping | Freeze behavior (`frozen=true`) |
 | --- | --- | --- | --- |
 | iOS (`QrScanner.swift`) | `view` | Iterate all `metadataObjects`; map each via `previewLayer.transformedMetadataObject(for:)` (handles `.resizeAspectFill` crop and rotation) and divide by `previewLayer.bounds.size`. | Set `previewLayer.connection?.isEnabled = false`, pause `onFrameSymbols` dispatch, suppress tap/pinch gestures; keep `AVCaptureSession` running. |
 | Android (`QrScanner.kt`) | `view` | ML Kit returns `List<Barcode>`; bind `Preview` and `ImageAnalysis` in a shared `UseCaseGroup` viewport when available and map each `boundingBox` through `ImageProxyTransformFactory` + `CoordinateTransform` against `previewView.outputTransform` (falling back to `HybridQrScanner.mapFillCenterRect` if `outputTransform` is unavailable). | Snapshot `previewView.bitmap` into an overlay `ImageView` inside `container`, pause `ImageAnalysis` dispatch, suppress tap/pinch gestures, and preserve freeze state across temporary rebinds/pause-resume while `frozen=true`; hide and clear on unfreeze or `dispose`. |
@@ -515,6 +523,30 @@ For `frame`-space backends, the caller maps `(fx, fy)` through `object-fit: cove
 (accounting for container aspect crop and front-camera mirroring) and drops
 symbols that fall outside `[0, 1]` visible bounds before multi-symbol
 evaluation.
+
+#### Android camera acceptance for freeze and resume
+
+Physical camera acceptance is pending. Run on an Android device with camera
+permission granted. In a scanner test screen, log test QR payloads and capture
+generations from `onReady`, `onFrameText` and `onFrameSymbols`.
+
+1. Present a test QR with text `freeze-a` and wait for it to be reported.
+2. Keep that QR visible as the scanner freezes. Replace it with a different QR
+   containing `resume-b` while the preview is frozen. Resume as soon as the old
+   QR is out of view.
+3. In single-symbol mode, the first text after resume must be `resume-b`. In
+   multi-symbol mode, the first non-empty symbol array after resume must contain
+   `resume-b` and exclude `freeze-a`. Repeat the immediate transition several
+   times in both modes, including while analysis is busy decoding.
+4. Verify that ordinary resume keeps the capture generation. If a camera
+   recovery occurs, record the `onReady` generation or `onError` and check that
+   no callback from the old generation reaches the caller.
+
+Camera2 reports the exposure start time used by buffers for the same capture.
+The CameraX 1.6 Android path compares that clock with `ImageInfo.timestamp` on
+its analysis buffers, without depending on the host or wall clock. See
+[CameraCaptureSession.CaptureCallback](https://developer.android.com/reference/android/hardware/camera2/CameraCaptureSession.CaptureCallback#onCaptureStarted(android.hardware.camera2.CameraCaptureSession,%20android.hardware.camera2.CaptureRequest,%20long,%20long))
+and [ImageAnalysis.Analyzer](https://developer.android.com/reference/androidx/camera/core/ImageAnalysis.Analyzer#analyze(androidx.camera.core.ImageProxy)).
 
 #### Caller state-machine contract & BC-UR balance
 

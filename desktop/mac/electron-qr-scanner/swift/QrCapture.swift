@@ -431,7 +431,6 @@ final class QrCaptureController {
     if paused != value {
       paused = value
       analysisRevision += 1
-      gate.resetRepeatFilter()
     }
     return analysisRevision
   }

@@ -40,7 +40,9 @@ export interface QrScannerProps extends HybridViewProps {
   /**
    * When true, freeze the last rendered preview frame, pause detection
    * dispatch, and disable tap/pinch gestures while keeping the camera session
-   * alive for zero-black-flash resume. Default false.
+   * alive for normal resume. If resuming detection fails repeatedly, native
+   * capture may restart and report a new generation through onReady.
+   * Default false.
    */
   frozen?: boolean;
   /** Apply a new request after the live view resumes. IDs increase per view. */

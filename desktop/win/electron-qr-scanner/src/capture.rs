@@ -1926,7 +1926,6 @@ impl CaptureController {
                 // COM MTA so optional IAMCameraControl focus lock calls are safe.
                 let _com = ComMtaGuard::init().ok();
                 let mut gate = FrameTextGate::default_gate();
-                let mut gate_revision = 0;
                 while let Some(work) = decode_mailbox.take() {
                     let frame = match work {
                         DecodeWork::Frame(frame) => frame,
@@ -1945,10 +1944,6 @@ impl CaptureController {
                         || decode_revision.load(Ordering::Acquire) != frame.analysis_revision
                     {
                         continue;
-                    }
-                    if gate_revision != frame.analysis_revision {
-                        gate = FrameTextGate::default_gate();
-                        gate_revision = frame.analysis_revision;
                     }
                     decode_stats.decode_attempts.fetch_add(1, Ordering::Relaxed);
                     let now = Instant::now();

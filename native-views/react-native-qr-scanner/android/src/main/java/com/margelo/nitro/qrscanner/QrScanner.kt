@@ -114,6 +114,14 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
       Thread(runnable, "QrScannerAnalysis").apply { isDaemon = true }
     }
 
+    fun acceptsAnalysisFrame(
+      frameGeneration: Int,
+      currentGeneration: Int,
+      timestamp: Long,
+      cutoff: Long?,
+      frozen: Boolean,
+    ): Boolean = !frozen && frameGeneration == currentGeneration && cutoff != null && timestamp >= cutoff
+
     /**
      * Maps a bounding rect in upright `InputImage` pixel coordinates into
      * normalized `[0, 1]` visible `PreviewView` coordinates under `FILL_CENTER`
@@ -857,10 +865,13 @@ class HybridQrScanner(val context: ThemedReactContext) : HybridQrScannerSpec(), 
     // on the original callback still discard stale frames if sessionKey/mode
     // changed mid-decode (SPEC section 4).
     val frameCallbacks = callbacks
-    val cutoff = frameCallbacks.frameCutoff
-    if (
-      frameCallbacks.frozen || cutoff == null || proxy.imageInfo.timestamp < cutoff ||
-      gate.currentGeneration != generation
+    if (!acceptsAnalysisFrame(
+        frameGeneration = generation,
+        currentGeneration = gate.currentGeneration,
+        timestamp = proxy.imageInfo.timestamp,
+        cutoff = frameCallbacks.frameCutoff,
+        frozen = frameCallbacks.frozen,
+      )
     ) {
       proxy.close()
       return

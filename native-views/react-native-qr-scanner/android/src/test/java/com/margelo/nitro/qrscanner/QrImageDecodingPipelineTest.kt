@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -128,6 +129,17 @@ class QrImageDecodingPipelineTest {
     assertEquals(0.25, hit.symbols[0].centerY, 0.01)
     assertEquals(0.75, hit.symbols[1].centerX, 0.01)
     assertEquals(0.75, hit.symbols[1].centerY, 0.01)
+  }
+
+  @Test
+  fun rejectsBufferedFramesUntilTheCurrentCameraAcknowledgesResume() {
+    val accepts = HybridQrScanner.Companion::acceptsAnalysisFrame
+    assertFalse(accepts(1, 1, 1_000L, 1_000L, true))
+    assertFalse(accepts(1, 1, 1_001L, null, false))
+    assertFalse(accepts(1, 1, 999L, 1_000L, false))
+    assertTrue(accepts(1, 1, 1_000L, 1_000L, false))
+    assertTrue(accepts(1, 1, 1_001L, 1_000L, false))
+    assertFalse(accepts(1, 2, 1_001L, Long.MIN_VALUE, false))
   }
 
   @Test

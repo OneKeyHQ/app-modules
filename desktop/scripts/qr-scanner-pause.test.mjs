@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 
 for (const [directory, platform] of [["mac", "darwin"], ["win", "win32"]]) {
@@ -60,3 +62,47 @@ for (const [directory, platform] of [["mac", "darwin"], ["win", "win32"]]) {
     capture.stop();
   });
 }
+
+const nativePlatform = { darwin: "mac", win32: "win" }[process.platform];
+
+test("pausing a native desktop capture preserves the repeat interval", {
+  skip: !nativePlatform || !["arm64", "x64"].includes(process.arch),
+  timeout: 8_000,
+}, async ({ signal }) => {
+  const require = createRequire(import.meta.url);
+  const { createCapture } = require(`../${nativePlatform}/electron-qr-scanner/index.cjs`);
+  const path = fileURLToPath(new URL("../mac/electron-qr-scanner/test/fixtures/static-qr.mp4", import.meta.url));
+  let capture;
+  let first;
+  try {
+    await new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      capture = createCapture({
+        source: { kind: "file", path, loop: true },
+        onText(text, generation) {
+          const now = performance.now();
+          if (!first) {
+            first = { text, generation, now };
+            capture.setPaused(true);
+            capture.setPaused(false);
+            return;
+          }
+          try {
+            assert.equal(text, first.text);
+            assert.equal(generation, first.generation);
+            // Native timestamps precede JS delivery, so allow dispatch latency.
+            const elapsed = now - first.now;
+            assert.ok(elapsed >= 750, `QR repeated ${Math.round(elapsed)} ms after resume`);
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        },
+        onError: reject,
+      });
+      capture.start();
+    });
+  } finally {
+    capture?.dispose();
+  }
+});
