@@ -15,16 +15,11 @@ export interface FirstLaunchInitOptions {
   legacyAppVersion?: string;
 }
 
-// Per-JS-runtime executing bundle identity: stays pinned during explicit lookups
-// and automatically refreshes when a JS reload boots a new bundle version.
-let startupBundleVersion: string | undefined;
-
 export function initFirstLaunch(options?: FirstLaunchInitOptions): void {
   ReactNativeDeviceUtils.isFirstLaunch();
   ReactNativeDeviceUtils.isFirstLaunchForCurrentAppVersion();
   if (options?.bundleVersion !== undefined) {
-    startupBundleVersion = options.bundleVersion;
-    ReactNativeDeviceUtils.isFirstLaunchForCurrentBundle(options.bundleVersion);
+    ReactNativeDeviceUtils.initFirstLaunchForBundle(options.bundleVersion);
   }
 }
 
@@ -41,15 +36,9 @@ export function isFirstLaunchForCurrentAppVersion(
 export function isFirstLaunchForCurrentBundle(
   bundleVersion?: string
 ): boolean {
-  return ReactNativeDeviceUtils.isFirstLaunchForCurrentBundle(
-    bundleVersion ?? startupBundleVersion
-  );
+  return ReactNativeDeviceUtils.isFirstLaunchForCurrentBundle(bundleVersion);
 }
 
 export function resetFirstLaunch(): boolean {
-  const removed = ReactNativeDeviceUtils.resetFirstLaunch();
-  if (removed) {
-    startupBundleVersion = undefined;
-  }
-  return removed;
+  return ReactNativeDeviceUtils.resetFirstLaunch();
 }

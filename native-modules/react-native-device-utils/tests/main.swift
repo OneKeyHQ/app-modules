@@ -146,9 +146,9 @@ func testFirstLaunchHistory() throws {
     let fresh = launch("6.5.0")
     precondition(fresh.isFirstLaunch && fresh.isFirstLaunchForCurrentAppVersion)
     precondition(!fresh.isFirstLaunchForBundle(nil))
-    precondition(fresh.isFirstLaunchForBundle("1000") && fresh.isFirstLaunchForBundle("1000"))
-    precondition(fresh.isFirstLaunchForBundle(nil))
-    // Explicit lookup of another bundle must not overwrite zero-arg startup bundle result.
+    fresh.initForBundle("1000")
+    precondition(fresh.isFirstLaunchForBundle("1000") && fresh.isFirstLaunchForBundle(nil))
+    // Explicit lookup of another bundle must not overwrite zero-arg active bundle result.
     precondition(!fresh.isFirstLaunchForBundle("999"))
     precondition(fresh.isFirstLaunchForBundle(nil))
     // Reject non-numeric version core, trailing newlines, and traversal strings.
@@ -158,10 +158,14 @@ func testFirstLaunchHistory() throws {
 
     let restart = launch("6.5.0")
     precondition(!restart.isFirstLaunch && !restart.isFirstLaunchForCurrentAppVersion)
-    precondition(!restart.isFirstLaunchForBundle("1000"))
-    precondition(!restart.isFirstLaunchForBundle(nil))
+    restart.initForBundle("1000")
+    precondition(!restart.isFirstLaunchForBundle("1000") && !restart.isFirstLaunchForBundle(nil))
+    // Explicit lookup of a higher bundle must not overwrite active bundle.
     precondition(restart.isFirstLaunchForBundle("1001") && restart.isFirstLaunchForBundle("1001"))
     precondition(!restart.isFirstLaunchForBundle(nil))
+    // In-process OTA reload calls initForBundle with the new executing bundle and updates zero-arg getter.
+    restart.initForBundle("1001")
+    precondition(restart.isFirstLaunchForBundle(nil))
 
     let rollback = launch("6.5.0")
     precondition(!rollback.isFirstLaunch && !rollback.isFirstLaunchForCurrentAppVersion)

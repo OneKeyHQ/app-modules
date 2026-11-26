@@ -133,6 +133,7 @@ UI page; an MV3 service worker returns `false`.
 | `getStartupTime()` | `Promise<number>` | iOS, Android | Native startup timestamp. |
 | `isFirstLaunch()` | `boolean` | iOS, Android | Synchronous first launch of the local installation, with a stable result for the native process. |
 | `isFirstLaunchForCurrentAppVersion()` | `boolean` | iOS, Android | First launch of a native release version higher than any previously launched version. |
+| `initFirstLaunchForBundle(bundleVersion)` | `void` | iOS, Android | Records the executing bundle at JS startup / OTA reload as the active bundle identity. |
 | `isFirstLaunchForCurrentBundle(bundleVersion?)` | `boolean` | iOS, Android | First launch of a bundle version higher than any previously launched bundle. |
 | `resetFirstLaunch()` | `boolean` | iOS, Android | Clears persisted `1k_first_launch/` files and in-memory launch state; returns `false` if deletion fails. |
 | `getDeviceToken()` / `saveDeviceToken(token)` / `registerDeviceToken()` | `Promise<string>` / `Promise<void>` / `Promise<boolean>` | iOS, Android | Push-token plumbing; host setup still owns registration. |

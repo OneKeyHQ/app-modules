@@ -14,7 +14,7 @@ internal class FirstLaunchHistory(
   val isFirstLaunchForCurrentAppVersion: Boolean
   private val storeDirectory = File(baseDirectory, DIRECTORY_NAME)
   private val bundleResults = mutableMapOf<String, Boolean>()
-  private var initialBundleVersion: String? = null
+  private var currentBundleVersion: String? = null
 
   init {
     val launchedFile = File(storeDirectory, LAUNCHED_FILE_NAME)
@@ -47,14 +47,22 @@ internal class FirstLaunchHistory(
   }
 
   @Synchronized
+  fun initForBundle(bundleVersion: String) {
+    val validBundle = validatedVersion(bundleVersion) ?: return
+    currentBundleVersion = validBundle
+    resolveBundle(validBundle)
+  }
+
+  @Synchronized
   fun isFirstLaunchForBundle(bundleVersion: String?): Boolean {
     if (bundleVersion == null) {
-      return initialBundleVersion?.let { bundleResults[it] } ?: false
+      return currentBundleVersion?.let { bundleResults[it] } ?: false
     }
     val validBundle = validatedVersion(bundleVersion) ?: return false
-    if (initialBundleVersion == null) {
-      initialBundleVersion = validBundle
-    }
+    return resolveBundle(validBundle)
+  }
+
+  private fun resolveBundle(validBundle: String): Boolean {
     bundleResults[validBundle]?.let {
       return it
     }

@@ -78,6 +78,10 @@ public final class DeviceUtilsFirstLaunch: NSObject {
         withHistory(default: false) { $0.isFirstLaunchForCurrentAppVersion }
     }
 
+    static func initForBundle(_ bundleVersion: String) {
+        withHistory(default: ()) { $0.initForBundle(bundleVersion) }
+    }
+
     static func forBundle(_ bundleVersion: String?) -> Bool {
         withHistory(default: false) { $0.isFirstLaunchForBundle(bundleVersion) }
     }
@@ -116,7 +120,7 @@ final class FirstLaunchHistory {
     let isFirstLaunchForCurrentAppVersion: Bool
     private let storeDirectory: URL
     private var bundleResults: [String: Bool] = [:]
-    private var initialBundleVersion: String?
+    private var currentBundleVersion: String?
 
     init(baseDirectory: URL, appVersion: String?, previousAppVersion: String?, hasPreviousLaunch: Bool) {
         let dir = baseDirectory.appendingPathComponent(Self.directoryName, isDirectory: true)
@@ -151,16 +155,25 @@ final class FirstLaunchHistory {
         }
     }
 
+    func initForBundle(_ bundleVersion: String) {
+        guard let validBundle = Self.validatedVersion(bundleVersion) else {
+            return
+        }
+        currentBundleVersion = validBundle
+        _ = resolveBundle(validBundle)
+    }
+
     func isFirstLaunchForBundle(_ bundleVersion: String?) -> Bool {
         guard let bundleVersion else {
-            return initialBundleVersion.flatMap { bundleResults[$0] } ?? false
+            return currentBundleVersion.flatMap { bundleResults[$0] } ?? false
         }
         guard let validBundle = Self.validatedVersion(bundleVersion) else {
             return false
         }
-        if initialBundleVersion == nil {
-            initialBundleVersion = validBundle
-        }
+        return resolveBundle(validBundle)
+    }
+
+    private func resolveBundle(_ validBundle: String) -> Bool {
         if let cached = bundleResults[validBundle] {
             return cached
         }

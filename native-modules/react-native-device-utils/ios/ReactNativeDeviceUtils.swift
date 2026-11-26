@@ -91,6 +91,10 @@ class ReactNativeDeviceUtils: HybridReactNativeDeviceUtilsSpec {
         DeviceUtilsFirstLaunch.forCurrentAppVersion
     }
 
+    func initFirstLaunchForBundle(bundleVersion: String) throws {
+        DeviceUtilsFirstLaunch.initForBundle(bundleVersion)
+    }
+
     func isFirstLaunchForCurrentBundle(bundleVersion: String?) throws -> Bool {
         DeviceUtilsFirstLaunch.forBundle(bundleVersion)
     }

@@ -156,6 +156,8 @@ export interface ReactNativeDeviceUtils
   isFirstLaunch(): boolean;
   /** First launch of a native release version higher than any previously launched version. */
   isFirstLaunchForCurrentAppVersion(): boolean;
+  /** Records the executing bundle version at JS startup / OTA reload as the active bundle identity. */
+  initFirstLaunchForBundle(bundleVersion: string): void;
   /** First launch of a bundle version higher than any previously launched bundle. */
   isFirstLaunchForCurrentBundle(bundleVersion?: string): boolean;
   /** Clears persisted first-launch files and in-memory state (e.g. on Reset App). Returns false if deletion fails. */

@@ -148,9 +148,9 @@ fun main() {
         val fresh = launch("6.5.0")
         check(fresh.isFirstLaunch && fresh.isFirstLaunchForCurrentAppVersion)
         check(!fresh.isFirstLaunchForBundle(null))
-        check(fresh.isFirstLaunchForBundle("1000") && fresh.isFirstLaunchForBundle("1000"))
-        check(fresh.isFirstLaunchForBundle(null))
-        // Explicit lookup of another bundle must not overwrite zero-arg startup bundle result.
+        fresh.initForBundle("1000")
+        check(fresh.isFirstLaunchForBundle("1000") && fresh.isFirstLaunchForBundle(null))
+        // Explicit lookup of another bundle must not overwrite zero-arg active bundle result.
         check(!fresh.isFirstLaunchForBundle("999"))
         check(fresh.isFirstLaunchForBundle(null))
         // Reject non-numeric version core, trailing newlines, and traversal strings.
@@ -160,10 +160,14 @@ fun main() {
 
         val restart = launch("6.5.0")
         check(!restart.isFirstLaunch && !restart.isFirstLaunchForCurrentAppVersion)
-        check(!restart.isFirstLaunchForBundle("1000"))
-        check(!restart.isFirstLaunchForBundle(null))
+        restart.initForBundle("1000")
+        check(!restart.isFirstLaunchForBundle("1000") && !restart.isFirstLaunchForBundle(null))
+        // Explicit lookup of a higher bundle must not overwrite active bundle.
         check(restart.isFirstLaunchForBundle("1001") && restart.isFirstLaunchForBundle("1001"))
         check(!restart.isFirstLaunchForBundle(null))
+        // In-process OTA reload calls initForBundle with the new executing bundle and updates zero-arg getter.
+        restart.initForBundle("1001")
+        check(restart.isFirstLaunchForBundle(null))
 
         val rollback = launch("6.5.0")
         check(!rollback.isFirstLaunch && !rollback.isFirstLaunchForCurrentAppVersion)

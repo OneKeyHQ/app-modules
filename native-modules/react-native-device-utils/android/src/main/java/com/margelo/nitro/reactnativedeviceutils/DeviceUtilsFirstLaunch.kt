@@ -116,6 +116,14 @@ object DeviceUtilsFirstLaunch {
     history?.isFirstLaunchForCurrentAppVersion ?: false
   }
 
+  internal fun initForBundle(
+    bundleVersion: String,
+    fallbackContext: Context? = null,
+  ) = synchronized(lock) {
+    ensureInitializedLocked(fallbackContext)
+    history?.initForBundle(bundleVersion)
+  }
+
   internal fun isFirstLaunchForBundle(
     bundleVersion: String?,
     fallbackContext: Context? = null,

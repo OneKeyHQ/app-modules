@@ -52,6 +52,10 @@ class ReactNativeDeviceUtils : HybridReactNativeDeviceUtilsSpec(), LifecycleEven
   override fun isFirstLaunchForCurrentAppVersion(): Boolean =
     DeviceUtilsFirstLaunch.isFirstLaunchForCurrentAppVersion(NitroModules.applicationContext)
 
+  override fun initFirstLaunchForBundle(bundleVersion: String) {
+    DeviceUtilsFirstLaunch.initForBundle(bundleVersion, NitroModules.applicationContext)
+  }
+
   override fun isFirstLaunchForCurrentBundle(bundleVersion: String?): Boolean =
     DeviceUtilsFirstLaunch.isFirstLaunchForBundle(bundleVersion, NitroModules.applicationContext)
 
