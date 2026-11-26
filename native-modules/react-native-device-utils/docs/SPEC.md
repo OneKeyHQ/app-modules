@@ -532,18 +532,24 @@ getInstallationTime(): Promise<number>;
 
 | Method | iOS (16.4+) | Android |
 | --- | --- | --- |
-| `getInstallerPackageNameAsync()` | Simulator returns `'unknown'`. Builds with `embedded.mobileprovision` return `'other'`. Otherwise reads cached StoreKit 2 `AppTransaction.shared` (no refresh / no sign-in prompt): `.verified` `.production` -> `'appStore'`, `.sandbox` -> `'testFlight'`, `.xcode` -> `'other'`; unverified or error -> `'unknown'`. | Delegates to `PackageManager.getInstallSourceInfo(packageName).installingPackageName` (API 30+) or `getInstallerPackageName` (API < 30): `com.android.vending` -> `'playStore'`, `com.huawei.appmarket` -> `'huaweiAppGallery'`, null/empty/error -> `'unknown'`, other -> `'other'`. |
+| `getInstallerPackageNameAsync()` | Simulator returns `'unknown'`. Builds with `embedded.mobileprovision` return `'other'`. Otherwise reads StoreKit 2 `AppTransaction.shared` without requesting a refresh: `.verified` `.production` -> `'appStore'`, `.sandbox` -> `'testFlight'`, `.xcode` -> `'other'`; unverified or error -> `'unknown'`. | Delegates to `PackageManager.getInstallSourceInfo(packageName).installingPackageName` (API 30+) or `getInstallerPackageName` (API < 30): `com.android.vending` -> `'playStore'`, `com.huawei.appmarket` -> `'huaweiAppGallery'`, null/empty/error -> `'unknown'`, other -> `'other'`. |
 | `getInstallationTime()` | Reads `FileAttributeKey.creationDate` of the app sandbox `Documents` directory and returns `timeIntervalSince1970 * 1000`. Rejects if missing or non-positive. | Reads `PackageInfo.firstInstallTime` (`PackageInfoFlags.of(0)` on API 33+, `0` on API < 33) and returns epoch milliseconds. Rejects if context/package info is unavailable or non-positive. |
 
 ### Known divergences and privacy notes
 
+- **StoreKit availability**: [`AppTransaction.shared`](https://developer.apple.com/documentation/storekit/apptransaction/shared)
+  may require network connectivity and can throw if the transaction is
+  unavailable or the user is signed out. A real App Store or TestFlight
+  installation can therefore temporarily return `'unknown'`. The host owns
+  retry policy.
 - **Installation timestamp semantics**: Android provides an OS-level
   `firstInstallTime`; iOS has no dedicated install-time API and uses the sandbox
   `Documents` directory `creationDate`, which matches `expo-application`
   semantics.
-- **Privacy manifest**: iOS `FileAttributeKey.creationDate` is a Required Reason
-  API (`NSPrivacyAccessedAPICategoryFileTimestamp`, reason `C617.1`), which the
-  host app declares in `PrivacyInfo.xcprivacy`.
+- **Privacy manifest**: The DeviceUtils pod ships its own `PrivacyInfo.xcprivacy`
+  in the `ReactNativeDeviceUtilsPrivacyInfo` resource bundle. It declares
+  `NSPrivacyAccessedAPICategoryFileTimestamp` with reason `C617.1` for reading
+  metadata inside the app container.
 
 ## Conformance and acceptance
 
@@ -561,5 +567,8 @@ getInstallationTime(): Promise<number>;
     conversion and error rejection.
   - Android Gradle build (`:onekeyfe_react-native-device-utils:assembleDebug`)
     verifies Kotlin compilation and generated Nitro JNI bindings.
+  - The [Android bridge smoke test](../../../example/react-native/smoke/README.md)
+    awaits both public methods in a real React Native runtime and compares
+    their values with PackageManager on API levels below 33 and on API 33+.
   - TypeScript / Nitrogen build (`bob build`, `typecheck`, `lint`) verifies JS
     and generated bindings.

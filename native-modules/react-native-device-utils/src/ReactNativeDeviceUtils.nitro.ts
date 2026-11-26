@@ -164,7 +164,8 @@ export interface ReactNativeDeviceUtils
   /**
    * Asynchronously determines the install source.
    * Uses StoreKit 2 `AppTransaction.shared` on iOS 16.4+ and PackageManager on Android.
-   * Resolves to `'unknown'` when the source cannot be verified.
+   * Resolves to `'unknown'` when the source cannot be verified. On iOS, StoreKit
+   * may require a network connection, so `'unknown'` can be temporary.
    */
   getInstallerPackageNameAsync(): Promise<InstallerPackageName>;
   /**

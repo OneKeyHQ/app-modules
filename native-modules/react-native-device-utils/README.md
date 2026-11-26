@@ -100,6 +100,10 @@ values are native copies, not retained JS objects.
 See [`src/ReactNativeDeviceUtils.nitro.ts`](src/ReactNativeDeviceUtils.nitro.ts)
 for full signatures, result types and enum values.
 
+On iOS, `AppTransaction.shared` may require network connectivity. A genuine
+App Store or TestFlight install can temporarily return `unknown` when the
+transaction is unavailable or the user is signed out.
+
 ## Platform support
 
 | Capability | iOS | Android | Web |
