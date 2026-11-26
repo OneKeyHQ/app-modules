@@ -1,10 +1,19 @@
 package com.margelo.nitro.nativelist
 
 import android.app.Activity
+import android.app.Dialog
 import android.content.Intent
 import android.graphics.Rect
+import android.os.SystemClock
 import android.test.InstrumentationTestCase
+import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
+import android.widget.EditText
+import android.widget.LinearLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.facebook.react.bridge.BridgeReactContext
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.react.uimanager.ThemedReactContext
@@ -12,6 +21,8 @@ import com.facebook.soloader.SoLoader
 import com.margelo.nitro.nativelogger.OneKeyLog
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @Suppress("DEPRECATION")
 class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
@@ -263,33 +274,102 @@ class NativeListMarketMetricStructureTest : InstrumentationTestCase() {
     assertEquals(0x72000000, row.findViewWithTag<OneKeyIconView>("copy").tintColor)
   }
 
-  fun testHandledTapFindsTableIconInOffsetWindow() = withMarketActivity { activity, context ->
-    lateinit var dialog: android.app.Dialog
-    lateinit var list: NativeListView
+  fun testExpandedTablePressSurvivesRebind() = withMarketActivity { activity, context ->
+    val column = actionColumn()
+    val received = mutableListOf<String>()
     lateinit var row: NativeListBoundedTableView
+    instrumentation.runOnMainSync {
+      row = NativeListBoundedTableView(context, NativeListFonts())
+      row.onAction = { _, key, _, _ -> received.add(key) }
+      activity.setContentView(row)
+      row.bindColumn(column)
+    }
     try {
-      instrumentation.runOnMainSync {
-        dialog = android.app.Dialog(activity)
-        list = NativeListView(context)
-        row = NativeListBoundedTableView(context, NativeListFonts())
-        row.bindColumn(actionColumn())
-        dialog.setContentView(row)
-        dialog.show()
-        dialog.window!!.setLayout(row.measuredWidth, row.measuredHeight)
-      }
       instrumentation.waitForIdleSync()
       instrumentation.runOnMainSync {
-        val location = IntArray(2)
-        row.rootView.getLocationOnScreen(location)
-        assertTrue("Expected an offset window", location[1] > 0)
         val copy = row.findViewWithTag<View>("copy")
-        copy.getLocationOnScreen(location)
-        val y = location[1] + copy.height / 2
-        assertSame(copy, list.clickableDescendantAt(row, location[0] + copy.width + 1, y))
-        assertNull(list.clickableDescendantAt(row, location[0] + row.width, y))
+        val bounds = Rect(0, 0, copy.width, copy.height)
+        row.offsetDescendantRectToMyCoords(copy, bounds)
+        val down = SystemClock.uptimeMillis()
+        fun dispatch(action: Int) {
+          val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action,
+            bounds.right + 1f, bounds.exactCenterY(), 0)
+          try { row.dispatchTouchEvent(event) } finally { event.recycle() }
+        }
+        dispatch(MotionEvent.ACTION_DOWN)
+        row.bindColumn(column.put("text", "Update"))
+        dispatch(MotionEvent.ACTION_UP)
       }
+      instrumentation.waitForIdleSync()
+      assertEquals(listOf("copy"), received)
     } finally {
-      instrumentation.runOnMainSync { dialog.dismiss(); row.dispose(); list.dispose() }
+      instrumentation.runOnMainSync { row.dispose() }
+    }
+  }
+
+  fun testHandledTapFindsTableIconInOffsetWindow() = withMarketActivity { activity, context ->
+    lateinit var dialog: Dialog
+    lateinit var list: NativeListView
+    lateinit var editor: EditText
+    val shown = CountDownLatch(1)
+    val hiddenAfterShow = CountDownLatch(1)
+    val actions = mutableListOf<String>()
+    fun tap(target: View, x: Int) {
+      val origin = IntArray(2)
+      target.getLocationOnScreen(origin)
+      val down = SystemClock.uptimeMillis()
+      for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+        val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action,
+          (origin[0] + x).toFloat(), origin[1] + target.height / 2f, 0)
+        try { instrumentation.sendPointerSync(event) } finally { event.recycle() }
+      }
+      instrumentation.waitForIdleSync()
+    }
+    try {
+      instrumentation.runOnMainSync {
+        dialog = Dialog(activity)
+        editor = EditText(activity)
+        list = NativeListView(context)
+        list.keyboardShouldPersistTaps = NativeListKeyboardShouldPersistTaps.HANDLED
+        list.onRowAction = { actions.add(JSONObject(it).getString("actionKey")) }
+        val content = LinearLayout(activity).apply {
+          orientation = LinearLayout.VERTICAL
+          isFocusableInTouchMode = true
+          addView(editor)
+          addView(list, -1, NativeListScale.dp(resources, 72))
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(content) { _, insets ->
+          if (insets.isVisible(WindowInsetsCompat.Type.ime())) shown.countDown()
+          else if (shown.count == 0L) hiddenAfterShow.countDown()
+          insets
+        }
+        dialog.setContentView(content)
+        dialog.window!!.setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL)
+        dialog.window!!.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        dialog.show()
+        dialog.window!!.setLayout(NativeListScale.dp(list.resources, 280), -2)
+        val columns = JSONArray().put(actionColumn()).put(JSONObject().put("key", "value").put("text", "42"))
+        val row = item().json.put("pressDisabled", true).put("tableColumns", columns)
+        list.applySnapshot(JSONObject().put("schemaVersion", 1).put("generation", 1)
+          .put("layout", JSONObject().put("kind", "linear")).put("rows", JSONArray().put(row)).toString())
+      }
+      instrumentation.waitForIdleSync()
+      tap(editor, editor.width / 2)
+      assertTrue("IME did not open", shown.await(5, TimeUnit.SECONDS))
+      instrumentation.waitForIdleSync()
+      val copy = list.findViewWithTag<View>("copy")
+      val origin = IntArray(2)
+      list.rootView.getLocationOnScreen(origin)
+      assertTrue("Expected an offset window", origin[0] > 0 || origin[1] > 0)
+      tap(copy, copy.width + 1)
+      assertEquals(listOf("copy"), actions)
+      assertTrue(editor.hasFocus())
+      assertTrue(ViewCompat.getRootWindowInsets(editor)!!.isVisible(WindowInsetsCompat.Type.ime()))
+      tap(list, list.width * 3 / 4)
+      assertTrue("Blank tap did not dismiss IME", hiddenAfterShow.await(5, TimeUnit.SECONDS))
+      assertEquals(listOf("copy"), actions)
+    } finally {
+      instrumentation.runOnMainSync { dialog.dismiss(); list.dispose() }
     }
   }
 

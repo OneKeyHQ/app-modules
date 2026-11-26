@@ -78,7 +78,7 @@ function bind(body: HTMLElement, row: Row, primitives: RowPrimitives) {
     );
   body.style.height = fitContent ? 'auto' : '';
   body.style.minHeight = fitContent
-    ? 56 + rowSizeModifier(row.size) + 'px'
+    ? `max(100%, ${56 + rowSizeModifier(row.size)}px)`
     : '';
   while (state.cells.length > columns.length) {
     const old = state.cells.pop()!;

@@ -2850,7 +2850,8 @@ Native presses are canceled if a patch replaces or removes the pressed action.
 Updates that retain its key preserve the press even when the two buttons swap
 positions. Clearing the buttons may retain either valid placement on a passive
 column. On Web, a row with below-text buttons and no explicit height grows to
-fit its rendered content and padding. Clearing the buttons restores the
+fit its rendered content and padding. In horizontal lists it fills at least the
+viewport height available after list padding. Clearing the buttons restores the
 ordinary cell alignment and row sizing. On iOS, the default row height
 accommodates below-text buttons, wrapped labels and padding, with a minimum
 of 56 points, including for small rows. Explicit heights retain precedence. Android uses the default subdued

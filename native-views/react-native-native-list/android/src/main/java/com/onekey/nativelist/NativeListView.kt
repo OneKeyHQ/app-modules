@@ -2307,7 +2307,7 @@ class NativeListView(
     return accessoryHandlesTap || item.isRowPressEnabled
   }
 
-  internal fun clickableDescendantAt(view: View, rawX: Int, rawY: Int): View? {
+  private fun clickableDescendantAt(view: View, rawX: Int, rawY: Int): View? {
     if (!view.isShown) return null
     val bounds = Rect()
     val origin = IntArray(2)
