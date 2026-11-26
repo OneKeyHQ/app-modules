@@ -46,6 +46,11 @@ const MARKET_METRIC_FIELDS = [
   'secondaryTone',
 ] as const;
 
+const TABLE_ACTION_FIELDS = [
+  'name',
+  'actionKey',
+  'accessibilityLabel',
+] as const;
 const TABLE_COLUMN_FIELDS = [
   'key',
   'text',
@@ -59,6 +64,8 @@ const TABLE_COLUMN_FIELDS = [
   'actionKey',
   'accessibilityLabel',
   'leading',
+  'actions',
+  'actionPlacement',
 ] as const;
 
 function isDevelopment(): boolean {
@@ -1064,6 +1071,39 @@ function assertTableColumns(
       protocolKey(column.actionKey, field + '.actionKey');
       protocolKey(column.accessibilityLabel, field + '.accessibilityLabel');
     }
+    if (column.actions !== undefined) {
+      if (
+        column.actionKey !== undefined ||
+        !Array.isArray(column.actions) ||
+        column.actions.length > 2
+      )
+        fail(field + '.actions', 'supports up to two icons on a passive cell');
+      const actionKeys = new Set<string>();
+      for (const [i, action] of column.actions.entries()) {
+        const path = field + '.actions[' + i + ']';
+        const descriptor = protocolObject(action, path);
+        assertUnknownKeys(
+          descriptor,
+          TABLE_ACTION_FIELDS,
+          path,
+          'table action field'
+        );
+        for (const key of TABLE_ACTION_FIELDS)
+          protocolKey(action[key], path + '.' + key);
+        if (actionKeys.has(action.actionKey))
+          fail(path, 'duplicate action key');
+        actionKeys.add(action.actionKey);
+      }
+    }
+    if (
+      column.actionPlacement !== undefined &&
+      (column.actionKey !== undefined ||
+        !['inline', 'below'].includes(column.actionPlacement))
+    )
+      fail(
+        field + '.actionPlacement',
+        'requires a passive cell and inline or below placement'
+      );
     if (column.leading !== undefined) {
       const leading = protocolObject(column.leading, field + '.leading');
       if (isDevelopment())
@@ -4332,6 +4372,27 @@ function sanitizeTableColumns(columns: unknown[]) {
       delete next.actionKey;
       delete next.accessibilityLabel;
     }
+    if (Array.isArray(next.actions) && !next.actionKey) {
+      const keys = new Set<string>();
+      next.actions = next.actions.slice(0, 2).flatMap((item: unknown) => {
+        if (
+          !isRecord(item) ||
+          !TABLE_ACTION_FIELDS.every(
+            (key) => typeof item[key] === 'string' && item[key].trim()
+          ) ||
+          typeof item.actionKey !== 'string' ||
+          keys.has(item.actionKey)
+        )
+          return [];
+        keys.add(item.actionKey);
+        return [pickFields(item, TABLE_ACTION_FIELDS)];
+      });
+    } else delete next.actions;
+    if (
+      next.actionKey !== undefined ||
+      (next.actionPlacement !== 'inline' && next.actionPlacement !== 'below')
+    )
+      delete next.actionPlacement;
     for (const field of ['text', 'secondaryText'] as const) {
       const text = next[field];
       if (typeof text === 'string')

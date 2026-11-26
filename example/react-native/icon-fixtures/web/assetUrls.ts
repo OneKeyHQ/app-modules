@@ -74,6 +74,7 @@ const urls: Record<string, () => string> = {
     new URL('./assets/OnekeyPrimeLightColored.svg', import.meta.url).href,
   OnekeyTextIllus: () =>
     new URL('./assets/OnekeyTextIllus.svg', import.meta.url).href,
+  OpenOutline: () => new URL('./assets/OpenOutline.svg', import.meta.url).href,
   PassKeySolid: () =>
     new URL('./assets/PassKeySolid.svg', import.meta.url).href,
   PencilOutline: () =>

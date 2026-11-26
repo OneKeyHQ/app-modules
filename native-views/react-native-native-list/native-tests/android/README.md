@@ -74,3 +74,22 @@ behind an emoji prefix, a start at, past and far past the end (beyond Int
 range), and that rebinding without a start, removing the action and recycling
 leave no stale start. It does not run JavaScript validation or present the
 caller's sheet.
+
+## Market table actions and keyboard handling
+
+Use a dedicated emulator with an input method that displays a software keyboard.
+Enable the on-screen keyboard even when the emulator exposes a hardware keyboard.
+
+```sh
+adb -s "$REORDER_TEST_SERIAL" shell settings put secure show_ime_with_hard_keyboard 1
+adb -s "$REORDER_TEST_SERIAL" shell ime list -s
+# On a Google APIs image with Gboard, select it if another input method is active.
+adb -s "$REORDER_TEST_SERIAL" shell ime set com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME
+adb -s "$REORDER_TEST_SERIAL" shell am instrument -w -r \
+  -e class com.margelo.nitro.nativelist.NativeListMarketMetricStructureTest \
+  com.margelo.nitro.nativelist.test/android.test.InstrumentationTestRunner
+```
+
+Require `OK (11 tests)`. The keyboard case checks that the chosen tap hits
+the expanded Copy target and would be rejected by the old root-relative
+bounds check before dispatching the pointer event.
