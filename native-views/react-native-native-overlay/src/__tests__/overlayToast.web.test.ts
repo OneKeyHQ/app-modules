@@ -603,7 +603,7 @@ test('dragging out of a toast and releasing clears hover after resetting data-sw
   expect(onClose).toHaveBeenCalledWith('timeout');
 });
 
-test('horizontal swipe dismisses left or right on wide and narrow positions while vertical drags do not', () => {
+test('horizontal swipe dismisses left or right on wide and narrow positions while mouse vertical drags do not', () => {
   const onWideClose = jest.fn();
   store.configure({ position: 'bottom-right' });
   store.show(message('wide', { duration: 5000 }), { onClose: onWideClose });
@@ -658,25 +658,32 @@ test('horizontal swipe dismisses left or right on wide and narrow positions whil
   });
   expect(narrowFront.getAttribute('data-expanded')).toBe('false');
 
-  // Vertical upward drag on top-center does not move or dismiss.
+  // A short touch push toward the top edge moves the stack, then settles back.
   dispatchPointer(narrowFront, 'pointerdown', {
     pointerType: 'touch',
     clientX: 180,
     clientY: 90,
+    timeStamp: 0,
   });
   dispatchPointer(narrowFront, 'pointermove', {
     pointerType: 'touch',
     clientX: 180,
-    clientY: 20,
+    clientY: 78,
+    timeStamp: 100,
   });
   expect(narrowFront.style.getPropertyValue('--swipe-amount')).toBe('0px');
+  expect(narrowFront.getAttribute('data-stack-drag')).toBe('true');
+  expect(narrowFront.style.getPropertyValue('--drag-y')).toBe('-12px');
   dispatchPointer(narrowFront, 'pointerup', {
     pointerType: 'touch',
     clientX: 180,
-    clientY: 20,
+    clientY: 78,
+    timeStamp: 200,
   });
   expect(narrowFront.getAttribute('data-removed')).toBe('false');
   expect(narrowFront.getAttribute('data-expanded')).toBe('false');
+  expect(narrowFront.hasAttribute('data-stack-drag')).toBe(false);
+  expect(narrowFront.style.getPropertyValue('--drag-y')).toBe('');
 
   // Horizontal swipe left dismisses to the left.
   dispatchPointer(narrowFront, 'pointerdown', {
@@ -700,6 +707,147 @@ test('horizontal swipe dismisses left or right on wide and narrow positions whil
   ).toBeLessThan(0);
   jest.advanceTimersByTime(200);
   expect(onNarrowClose).toHaveBeenCalledWith('swipe');
+});
+
+function dispatchTouch(
+  target: EventTarget,
+  type: string,
+  clientY: number,
+  timeStamp: number
+) {
+  dispatchPointer(target, type, {
+    pointerType: 'touch',
+    clientX: 180,
+    clientY,
+    timeStamp,
+  });
+}
+
+test('touch stack gestures follow the expanded state, not the toast count', () => {
+  const closes: Record<string, string> = {};
+  store.configure({ position: 'top-center' });
+  ['s-1', 's-2', 's-3'].forEach((id) =>
+    store.show(message(id, { duration: 1000 }), {
+      onClose: (reason) => {
+        closes[id] = reason;
+      },
+    })
+  );
+  const front = cards()[0]!;
+  const back = cards()[1]!;
+
+  // Mouse keeps the horizontal swipe only.
+  dispatchPointer(front, 'pointerdown', { clientX: 180, clientY: 90 });
+  dispatchPointer(front, 'pointermove', { clientX: 180, clientY: 10 });
+  expect(front.hasAttribute('data-stack-drag')).toBe(false);
+  dispatchPointer(front, 'pointerup', { clientX: 180, clientY: 10 });
+  expect(front.getAttribute('data-removed')).toBe('false');
+  // The mouse leaves, so hover no longer expands the stack.
+  dispatchPointer(
+    document.querySelector('[data-onekey-toast-toaster]')!,
+    'pointerleave'
+  );
+  expect(front.getAttribute('data-expanded')).toBe('false');
+
+  // Pulling a collapsed stack away from the top edge fans it out and expands it.
+  dispatchTouch(front, 'pointerdown', 60, 1000);
+  dispatchTouch(front, 'pointermove', 140, 1100);
+  const frontPull = parseFloat(front.style.getPropertyValue('--drag-y'));
+  const backPull = parseFloat(back.style.getPropertyValue('--drag-y'));
+  expect(frontPull).toBeGreaterThan(0);
+  expect(frontPull).toBeLessThan(80);
+  expect(backPull).toBeGreaterThan(frontPull);
+  dispatchTouch(front, 'pointerup', 140, 1300);
+  expect(front.getAttribute('data-expanded')).toBe('true');
+  expect(front.hasAttribute('data-stack-drag')).toBe(false);
+
+  // Pushing an expanded stack toward the top edge collapses it.
+  dispatchTouch(front, 'pointerdown', 60, 2000);
+  dispatchTouch(front, 'pointermove', -20, 2100);
+  expect(front.style.getPropertyValue('--drag-y')).toBe('-40px');
+  dispatchTouch(front, 'pointerup', -20, 2300);
+  expect(front.getAttribute('data-expanded')).toBe('false');
+  expect(
+    cards().every((card) => card.getAttribute('data-removed') === 'false')
+  ).toBe(true);
+
+  // A toast shown mid-drag waits; the drag dismisses only the cards it began with.
+  dispatchTouch(front, 'pointerdown', 60, 3000);
+  dispatchTouch(front, 'pointermove', 40, 3100);
+  store.show(message('s-4', { duration: 1000 }));
+  expect(cards()).toHaveLength(3);
+  dispatchTouch(front, 'pointermove', -30, 3150);
+  expect(back.style.getPropertyValue('--drag-y')).toBe('-90px');
+  dispatchTouch(front, 'pointerup', -30, 3400);
+  ['s-1', 's-2', 's-3'].forEach((id) => {
+    const card = cards().find((entry) =>
+      entry.textContent?.includes(`Title ${id}`)
+    );
+    expect(card?.getAttribute('data-removed')).toBe('true');
+    expect(card?.getAttribute('data-swipe-axis')).toBe('y');
+    expect(
+      parseFloat(card?.style.getPropertyValue('--stack-exit-y') ?? '0')
+    ).toBeLessThan(-90);
+  });
+  // Back cards keep their depth and hidden body while they leave.
+  expect(back.getAttribute('data-front')).toBe('false');
+  expect(back.getAttribute('data-expanded')).toBe('false');
+  const added = cards().find((entry) =>
+    entry.textContent?.includes('Title s-4')
+  );
+  expect(added?.getAttribute('data-removed')).toBe('false');
+  expect(
+    events
+      .filter((event) => event.type === 'dismiss')
+      .map((event) => [event.id, event.type === 'dismiss' && event.reason])
+  ).toEqual([
+    ['s-3', 'swipe'],
+    ['s-2', 'swipe'],
+    ['s-1', 'swipe'],
+  ]);
+  jest.advanceTimersByTime(200);
+  expect(closes).toEqual({ 's-1': 'swipe', 's-2': 'swipe', 's-3': 'swipe' });
+});
+
+test('a single touch toast dismisses upward and a pull away from the edge settles back', () => {
+  const onClose = jest.fn();
+  store.configure({ position: 'top-center' });
+  store.show(message('only', { duration: 1000 }), { onClose });
+  const card = cards()[0]!;
+
+  dispatchTouch(card, 'pointerdown', 60, 0);
+  dispatchTouch(card, 'pointermove', 120, 100);
+  expect(parseFloat(card.style.getPropertyValue('--drag-y'))).toBeLessThan(30);
+  dispatchTouch(card, 'pointerup', 120, 400);
+  expect(card.getAttribute('data-removed')).toBe('false');
+  expect(card.getAttribute('data-expanded')).toBe('false');
+
+  // A short flick toward the edge is enough.
+  dispatchTouch(card, 'pointerdown', 60, 1000);
+  dispatchTouch(card, 'pointermove', 48, 1010);
+  dispatchTouch(card, 'pointermove', 36, 1020);
+  dispatchTouch(card, 'pointerup', 36, 1030);
+  expect(card.getAttribute('data-removed')).toBe('true');
+  jest.advanceTimersByTime(200);
+  expect(onClose).toHaveBeenCalledWith('swipe');
+});
+
+test('a bottom lane dismisses its touch stack downward', () => {
+  store.configure({ position: 'bottom-center' });
+  store.show(message('b-1', { duration: 1000 }));
+  store.show(message('b-2', { duration: 1000 }));
+  const front = cards()[0]!;
+
+  dispatchTouch(front, 'pointerdown', 500, 0);
+  dispatchTouch(front, 'pointermove', 580, 100);
+  expect(front.style.getPropertyValue('--drag-y')).toBe('80px');
+  dispatchTouch(front, 'pointerup', 580, 300);
+  expect(
+    cards().every((card) => card.getAttribute('data-removed') === 'true')
+  ).toBe(true);
+  expect(
+    parseFloat(front.style.getPropertyValue('--stack-exit-y'))
+  ).toBeGreaterThan(80);
 });
 
 test('only the last tracked press can resume timers', () => {

@@ -28,6 +28,14 @@ private enum ToasterMetrics {
   static let swipeFlickVelocity: CGFloat = 500
   static let swipeOpacityRange: CGFloat = 260
   static let swipeMinOpacity: CGFloat = 0.35
+  /// Pull away from the top edge that expands a collapsed stack.
+  static let expandPullDistance: CGFloat = 40
+  /// Push toward the top edge that collapses an expanded stack.
+  static let collapsePushDistance: CGFloat = 50
+  static let rubberDimension: CGFloat = 30
+  static let expandRubberDimension: CGFloat = 70
+  /// Extra pull per depth while expanding, so back cards fan out under the finger.
+  static let expandSpreadStep: CGFloat = 0.35
   static let fallbackMargin: CGFloat = 64
   static let fallbackMaxPageWidth: CGFloat = 640
   static let minSideInset: CGFloat = 16
@@ -59,6 +67,12 @@ private func toastAutoExitAnimator() -> UIViewPropertyAnimator {
       controlPoint1: CGPoint(x: 0.2, y: 0), controlPoint2: CGPoint(x: 0, y: 1)
     )
   )
+}
+
+/// Damped displacement past a limit, as UIScrollView's edge bounce.
+private func rubberBand(_ offset: CGFloat, dimension: CGFloat) -> CGFloat {
+  let magnitude = dimension * (1 - 1 / (abs(offset) * 0.55 / dimension + 1))
+  return offset < 0 ? -magnitude : magnitude
 }
 
 /// Lets touches that miss every card fall through to the windows below.
@@ -114,7 +128,12 @@ private final class ToastEntry {
   var pan: UIPanGestureRecognizer?
   var dragStart: CGFloat = 0
   var swipeExitSign: CGFloat = 1
+  /// Left with its stack past the top edge rather than off to a side.
+  var swipeExitUp = false
+  /// The body was faded behind the front card when the dismissal began.
+  var exitBodyHidden = false
   var lastTargetY: CGFloat?
+  var lastTargetScale: CGFloat = 1
   var dragged = false
   var isPressed = false
   var entered = false
@@ -126,6 +145,25 @@ private final class ToastEntry {
     card = NativeOverlayToastCardView(spec: item.spec, cardColor: cardColor, cardBorderColor: cardBorderColor)
     slot.addSubview(card)
   }
+}
+
+private enum ToastDragMode {
+  /// One card, sideways.
+  case horizontal
+  /// The collapsed stack toward the top edge, dismissing it.
+  case stack
+  /// The collapsed stack away from the top edge, expanding it.
+  case expand
+  /// The expanded stack toward the top edge, collapsing it.
+  case collapse
+  /// Nothing to do in that direction: damped, then settles.
+  case rubber
+}
+
+private struct ToastDrag {
+  let mode: ToastDragMode
+  let owner: ToastEntry
+  let participants: [ToastEntry]
 }
 
 /// Draws the message toasts in the `toast` overlay level: stacking, timers,
@@ -142,6 +180,9 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   private var config = NativeOverlayToasterConfig()
   private var expanded = false
   private var obstructionShift: CGFloat = 0
+  private var drag: ToastDrag?
+  /// Toasts first shown during a drag, oldest first; they enter when it ends.
+  private var deferredAdds: [NativeOverlayToastItem] = []
 
   private var activeEntries: [ToastEntry] {
     entries.filter { !$0.leaving }
@@ -192,6 +233,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       || next.cardColor != config.cardColor || next.cardBorderColor != config.cardBorderColor
     config = next
     let present = Set(items.map(\.spec.id))
+    deferredAdds.removeAll { !present.contains($0.spec.id) }
     // Cards the list no longer knows leave without ceremony.
     for entry in entries where !present.contains(entry.id) {
       remove(entry, report: false)
@@ -205,9 +247,12 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
         entry = nil
       }
       guard let entry else {
-        if item.visible {
+        if item.visible && drag != nil {
+          deferAdd(item)
+        } else if item.visible {
           add(item)
         } else {
+          deferredAdds.removeAll { $0.spec.id == item.spec.id }
           onEvent?(item.spec.id, item.generation, "close", "programmatic")
         }
         continue
@@ -252,8 +297,30 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
       entry.slot.removeFromSuperview()
     }
     entries = []
+    deferredAdds = []
+    drag = nil
     expanded = false
     releaseWindow()
+  }
+
+  private func deferAdd(_ item: NativeOverlayToastItem) {
+    if let index = deferredAdds.firstIndex(where: { $0.spec.id == item.spec.id }) {
+      deferredAdds[index] = item
+    } else {
+      deferredAdds.append(item)
+    }
+  }
+
+  /// Draws the toasts that arrived while a card was being dragged.
+  private func flushDeferredAdds() {
+    guard drag == nil, !deferredAdds.isEmpty else { return }
+    let pending = deferredAdds
+    deferredAdds = []
+    for item in pending where !entries.contains(where: { $0.id == item.spec.id }) {
+      add(item)
+    }
+    layout(animated: true)
+    syncTimers()
   }
 
   private func lifetime(of spec: NativeOverlayToastSpec) -> TimeInterval? {
@@ -350,29 +417,42 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   }
 
   private func dismiss(_ entry: ToastEntry, reason: String, report: Bool) {
-    guard !entry.leaving else { return }
-    entry.collapsedBackExit = !expanded && entry.lastActiveIndex > 0 && reason != "swipe"
-    entry.leaving = true
-    entry.card.cancelStatusMotion()
-    entry.reason = reason
-    entry.timer?.invalidate()
-    entry.timer = nil
-    if report {
-      onEvent?(entry.id, entry.item.generation, "dismiss", reason)
+    dismiss([entry], reason: reason, report: report)
+  }
+
+  /// Starts every exit before laying out once, so a group leaves together
+  /// and no survivor is promoted between two of its cards.
+  private func dismiss(_ group: [ToastEntry], reason: String, report: Bool) {
+    let leaving = group.filter { !$0.leaving }
+    guard !leaving.isEmpty else { return }
+    for entry in leaving {
+      abandonDrag(entry)
+      entry.collapsedBackExit = !expanded && entry.lastActiveIndex > 0 && reason != "swipe"
+      entry.exitBodyHidden = !expanded && entry.lastActiveIndex > 0
+      entry.leaving = true
+      entry.card.cancelStatusMotion()
+      entry.reason = reason
+      entry.timer?.invalidate()
+      entry.timer = nil
+      if report {
+        onEvent?(entry.id, entry.item.generation, "dismiss", reason)
+      }
     }
     if reduceMotion {
-      remove(entry, report: true)
+      leaving.forEach { remove($0, report: true) }
       layout(animated: false)
       syncTimers()
       return
     }
-    entry.removal = Timer.scheduledTimer(
-      withTimeInterval: ToasterMetrics.removeDelay, repeats: false
-    ) { [weak self, weak entry] _ in
-      guard let self, let entry else { return }
-      self.remove(entry, report: true)
-      self.layout(animated: true)
-      self.syncTimers()
+    for entry in leaving {
+      entry.removal = Timer.scheduledTimer(
+        withTimeInterval: ToasterMetrics.removeDelay, repeats: false
+      ) { [weak self, weak entry] _ in
+        guard let self, let entry else { return }
+        self.remove(entry, report: true)
+        self.layout(animated: true)
+        self.syncTimers()
+      }
     }
     if activeEntries.count <= 1 {
       expanded = false
@@ -382,6 +462,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   }
 
   private func remove(_ entry: ToastEntry, report: Bool) {
+    abandonDrag(entry)
     entry.timer?.invalidate()
     entry.removal?.invalidate()
     entry.card.cancelStatusMotion()
@@ -485,7 +566,16 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
         displayHeight = entry.card.bounds.height > 0 ? entry.card.bounds.height : naturalSize.height
         let collapsedBackExit = entry.collapsedBackExit
         let baseY = entry.lastTargetY ?? top
-        if swipeExit {
+        if swipeExit && entry.swipeExitUp {
+          // Leaves with its stack: depth scale kept, travel measured in the
+          // slot's scaled space so every card clears the top edge.
+          targetY = baseY
+          targetScale = entry.lastTargetScale
+          let travel = baseY + obstructionShift + displayHeight + ToasterMetrics.swipeExitMargin
+          targetCardTransform = CGAffineTransform(
+            translationX: 0, y: -travel / max(targetScale, 0.01)
+          )
+        } else if swipeExit {
           targetY = baseY
           targetScale = ToasterMetrics.swipeExitScale
           let exitDistance = max(
@@ -503,7 +593,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
           targetScale = ToasterMetrics.autoExitScale
         }
         targetAlpha = 0
-        hideBody = collapsedBackExit
+        hideBody = collapsedBackExit || (swipeExit && entry.swipeExitUp && entry.exitBodyHidden)
         interactive = false
       } else {
         let index = activeIndex
@@ -522,6 +612,7 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
           hideBody = false
         }
         entry.lastTargetY = targetY
+        entry.lastTargetScale = targetScale
         if isVisible {
           expandedOffset += naturalSize.height + ToasterMetrics.gutter
         }
@@ -636,11 +727,8 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   // MARK: Gestures
 
   func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-    if let pan = gestureRecognizer as? UIPanGestureRecognizer {
-      let velocity = pan.velocity(in: stage)
-      return abs(velocity.x) > abs(velocity.y)
-    }
-    return true
+    // Both axes start a drag; `handlePan` picks the mode when it begins.
+    true
   }
 
   func gestureRecognizer(
@@ -691,43 +779,158 @@ final class NativeOverlayToastPresenter: NSObject, NativeOverlayWindowOwner, UIG
   }
 
   @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-    guard let entry = entry(for: gesture), !entry.leaving else { return }
-    let active = activeEntries
-    if !expanded && active.count > 1 && entry !== active.first { return }
-    let card = entry.card
+    guard let entry = entry(for: gesture) else { return }
     let translation = gesture.translation(in: stage)
+    let velocity = gesture.velocity(in: stage)
     switch gesture.state {
     case .began:
-      card.layer.removeAllAnimations()
-      entry.dragStart = card.transform.tx
-      entry.dragged = true
+      beginDrag(entry, translation: translation, velocity: velocity)
     case .changed:
-      let dragX = entry.dragStart + translation.x
+      guard let drag, drag.owner === entry else { return }
+      applyDrag(drag, translation: translation)
+    case .ended:
+      guard let drag, drag.owner === entry else { return }
+      self.drag = nil
+      finishDrag(drag, translation: translation, velocity: velocity)
+      DispatchQueue.main.async { entry.dragged = false }
+      flushDeferredAdds()
+    case .cancelled, .failed:
+      guard let drag, drag.owner === entry else { return }
+      self.drag = nil
+      drag.participants.filter { !$0.leaving }.forEach { settle($0.card) }
+      entry.dragged = false
+      flushDeferredAdds()
+    default:
+      break
+    }
+  }
+
+  private func beginDrag(_ entry: ToastEntry, translation: CGPoint, velocity: CGPoint) {
+    guard !entry.leaving, drag == nil else { return }
+    let active = activeEntries
+    if !expanded && active.count > 1 && entry !== active.first { return }
+    let horizontal = translation == .zero
+      ? abs(velocity.x) > abs(velocity.y)
+      : abs(translation.x) > abs(translation.y)
+    let towardTop = (translation.y != 0 ? translation.y : velocity.y) < 0
+    let mode: ToastDragMode
+    let participants: [ToastEntry]
+    if horizontal {
+      mode = .horizontal
+      participants = [entry]
+    } else if towardTop {
+      mode = expanded ? .collapse : .stack
+      participants = active
+    } else if !expanded && active.count > 1 {
+      mode = .expand
+      participants = active
+    } else {
+      mode = .rubber
+      participants = [entry]
+    }
+    participants.forEach { $0.card.layer.removeAllAnimations() }
+    entry.dragStart = mode == .horizontal ? entry.card.transform.tx : 0
+    entry.dragged = true
+    let next = ToastDrag(mode: mode, owner: entry, participants: participants)
+    drag = next
+    applyDrag(next, translation: translation)
+  }
+
+  private func applyDrag(_ drag: ToastDrag, translation: CGPoint) {
+    let dy = translation.y
+    switch drag.mode {
+    case .horizontal:
+      let card = drag.owner.card
+      let dragX = drag.owner.dragStart + translation.x
       card.transform = CGAffineTransform(translationX: dragX, y: 0)
       card.alpha = max(
         ToasterMetrics.swipeMinOpacity,
         1 - abs(dragX) / ToasterMetrics.swipeOpacityRange
       )
-    case .ended:
+    case .stack:
+      let offset = dy < 0 ? dy : rubberBand(dy, dimension: ToasterMetrics.rubberDimension)
+      drag.participants.forEach { setDragOffset($0, offset) }
+    case .expand:
+      let offset = dy > 0
+        ? rubberBand(dy, dimension: ToasterMetrics.expandRubberDimension)
+        : rubberBand(dy, dimension: ToasterMetrics.rubberDimension)
+      for (index, participant) in drag.participants.enumerated() {
+        let spread = 1 + CGFloat(min(index, 2)) * ToasterMetrics.expandSpreadStep
+        setDragOffset(participant, offset * spread)
+      }
+    case .collapse:
+      let offset = dy < 0 ? dy * 0.5 : rubberBand(dy, dimension: ToasterMetrics.rubberDimension)
+      drag.participants.forEach { setDragOffset($0, offset) }
+    case .rubber:
+      setDragOffset(drag.owner, rubberBand(dy, dimension: ToasterMetrics.rubberDimension))
+    }
+  }
+
+  /// Offsets a card inside its slot; the slot carries the depth scale.
+  private func setDragOffset(_ entry: ToastEntry, _ offset: CGFloat) {
+    guard !entry.leaving else { return }
+    entry.card.transform = CGAffineTransform(
+      translationX: 0, y: offset / max(entry.lastTargetScale, 0.01)
+    )
+  }
+
+  /// Ends a drag whose owner left or went away before its gesture finished,
+  /// settling the other cards it moved and letting deferred toasts in.
+  private func abandonDrag(_ owner: ToastEntry) {
+    guard let current = drag, current.owner === owner else { return }
+    drag = nil
+    current.participants.filter { $0 !== owner && !$0.leaving }.forEach { settle($0.card) }
+    DispatchQueue.main.async { [weak self] in self?.flushDeferredAdds() }
+  }
+
+  private func passesSwipe(distance: CGFloat, speed: CGFloat) -> Bool {
+    distance >= ToasterMetrics.swipeDistance
+      || (distance >= ToasterMetrics.swipeFlickDistance
+        && speed >= ToasterMetrics.swipeFlickVelocity)
+  }
+
+  private func finishDrag(_ drag: ToastDrag, translation: CGPoint, velocity: CGPoint) {
+    let remaining = drag.participants.filter { !$0.leaving }
+    switch drag.mode {
+    case .horizontal:
+      let entry = drag.owner
+      guard !entry.leaving else { return }
       let totalX = entry.dragStart + translation.x
-      let distance = abs(totalX)
-      let velocity = gesture.velocity(in: stage).x * (totalX >= 0 ? 1 : -1)
-      let dismissed =
-        distance >= ToasterMetrics.swipeDistance
-        || (distance >= ToasterMetrics.swipeFlickDistance
-          && velocity >= ToasterMetrics.swipeFlickVelocity)
-      if dismissed {
+      let speed = velocity.x * (totalX >= 0 ? 1 : -1)
+      if passesSwipe(distance: abs(totalX), speed: speed) {
         entry.swipeExitSign = totalX >= 0 ? 1 : -1
+        entry.swipeExitUp = false
         dismiss(entry, reason: "swipe", report: true)
       } else {
-        settle(card)
+        settle(entry.card)
       }
-      DispatchQueue.main.async { entry.dragged = false }
-    case .cancelled, .failed:
-      settle(card)
-      entry.dragged = false
-    default:
-      break
+    case .stack:
+      if passesSwipe(distance: -translation.y, speed: -velocity.y) {
+        remaining.forEach { $0.swipeExitUp = true }
+        dismiss(remaining, reason: "swipe", report: true)
+      } else {
+        remaining.forEach { settle($0.card) }
+      }
+    case .expand:
+      remaining.forEach { settle($0.card) }
+      let pulled = translation.y >= ToasterMetrics.expandPullDistance
+        || velocity.y >= ToasterMetrics.swipeFlickVelocity
+      if pulled && !expanded && activeEntries.count > 1 {
+        expanded = true
+        layout(animated: true)
+        syncTimers()
+      }
+    case .collapse:
+      remaining.forEach { settle($0.card) }
+      let pushed = -translation.y >= ToasterMetrics.collapsePushDistance
+        || -velocity.y >= ToasterMetrics.swipeFlickVelocity
+      if pushed && expanded {
+        expanded = false
+        layout(animated: true)
+        syncTimers()
+      }
+    case .rubber:
+      remaining.forEach { settle($0.card) }
     }
   }
 

@@ -26,6 +26,15 @@ const SWIPE_FLICK_VELOCITY = 0.5; // px per ms (500 px/s)
 const SWIPE_VELOCITY_WINDOW_MS = 80;
 const SWIPE_OPACITY_RANGE = 260;
 const SWIPE_MIN_OPACITY = 0.35;
+/** Pull away from the anchored edge that expands a collapsed touch stack. */
+const EXPAND_PULL_DISTANCE = 40;
+/** Push toward the anchored edge that collapses an expanded touch stack. */
+const COLLAPSE_PUSH_DISTANCE = 50;
+const RUBBER_DIMENSION = 30;
+const EXPAND_RUBBER_DIMENSION = 70;
+/** Extra pull per depth while expanding, so back cards fan out under the finger. */
+const EXPAND_SPREAD_STEP = 0.35;
+const SWIPE_EXIT_MARGIN = 48;
 const TOUCH_START_THRESHOLD = 10;
 const POINTER_START_THRESHOLD = 2;
 const TIME_BEFORE_UNMOUNT = TOAST_MOTION.cardExitMs;
@@ -70,7 +79,21 @@ interface IToastPress {
   x: number;
   y: number;
   moved: boolean;
-  samples: { x: number; t: number }[];
+  samples: { x: number; y: number; t: number }[];
+}
+
+type IStackDragMode = 'stack' | 'expand' | 'collapse' | 'rubber';
+
+/** A touch drag on the vertical axis, which moves the whole stack. */
+interface IStackDrag {
+  pointerId: number;
+  mode: IStackDragMode;
+  owner: IToastNode;
+  group: IToastGroup;
+  /** Newest first. */
+  participants: IToastNode[];
+  /** -1 when the lane is anchored to the top edge, 1 for the bottom edge. */
+  edgeSign: number;
 }
 
 interface IToastGroup {
@@ -81,6 +104,13 @@ interface IToastGroup {
   /** Newest first, without leaving cards. */
   heights: { id: string; height: number }[];
   paneScale: number;
+}
+
+/** Damped displacement past a limit, as a scroll view's edge bounce. */
+function rubberBand(offset: number, dimension: number): number {
+  const magnitude =
+    dimension * (1 - 1 / ((Math.abs(offset) * 0.55) / dimension + 1));
+  return offset < 0 ? -magnitude : magnitude;
 }
 
 function getDocumentDirection(): 'ltr' | 'rtl' {
@@ -146,6 +176,9 @@ export function createToastDomRenderer(
   let section: HTMLElement | null = null;
   let keyboardExpanded = false;
   let touchExpandedGroup: IToastGroup | undefined;
+  let stackDrag: IStackDrag | undefined;
+  /** Toasts first shown during a drag, oldest first; they mount when it ends. */
+  let deferredItems: IOverlayToastItem[] = [];
   let destroyed = false;
   let documentDirection = getDocumentDirection();
   let itemOrder = new Map<string, number>();
@@ -379,7 +412,8 @@ export function createToastDomRenderer(
   function deleteToast(
     node: IToastNode,
     reason: IOverlayToastDismissReason,
-    notify: boolean
+    notify: boolean,
+    exitLayout?: IToastNode['exitLayout']
   ) {
     if (node.removed) {
       return;
@@ -394,8 +428,11 @@ export function createToastDomRenderer(
     if (statusTile) {
       stopStatusTile(statusTile);
     }
+    if (stackDrag?.owner === node) {
+      abandonStackDrag();
+    }
     if (group) {
-      node.exitLayout = {
+      node.exitLayout = exitLayout ?? {
         index: Math.max(
           0,
           group.heights.findIndex((entry) => entry.id === node.id)
@@ -444,6 +481,9 @@ export function createToastDomRenderer(
 
   function clearPress(pointerId: number, { node }: IToastPress) {
     presses.delete(pointerId);
+    if (stackDrag?.pointerId === pointerId) {
+      abandonStackDrag();
+    }
     clearSwipe(node, pointerId);
   }
 
@@ -479,8 +519,13 @@ export function createToastDomRenderer(
     return isExpanded() || index === 0;
   }
 
-  function recordSwipeSample(press: IToastPress, x: number, now: number) {
-    press.samples.push({ x, t: now });
+  function recordSwipeSample(
+    press: IToastPress,
+    x: number,
+    y: number,
+    now: number
+  ) {
+    press.samples.push({ x, y, t: now });
     while (
       press.samples.length > 1 &&
       now - press.samples[0]!.t > SWIPE_VELOCITY_WINDOW_MS
@@ -489,7 +534,12 @@ export function createToastDomRenderer(
     }
   }
 
-  function swipeVelocity(press: IToastPress, x: number, now: number): number {
+  function swipeVelocity(
+    press: IToastPress,
+    axis: 'x' | 'y',
+    value: number,
+    now: number
+  ): number {
     const oldest = press.samples.find(
       (sample) => now - sample.t <= SWIPE_VELOCITY_WINDOW_MS
     );
@@ -497,7 +547,204 @@ export function createToastDomRenderer(
       return 0;
     }
     const dt = Math.max(1, now - oldest.t);
-    return (x - oldest.x) / dt;
+    return (value - oldest[axis]) / dt;
+  }
+
+  function isDragging(): boolean {
+    return (
+      stackDrag !== undefined ||
+      [...nodes.values()].some((node) => node.swiping)
+    );
+  }
+
+  function deferItem(item: IOverlayToastItem) {
+    const index = deferredItems.findIndex(
+      (entry) => entry.spec.id === item.spec.id
+    );
+    if (index >= 0) {
+      deferredItems[index] = item;
+    } else {
+      deferredItems.push(item);
+    }
+  }
+
+  /** Mounts the toasts that arrived while a card was being dragged. */
+  function flushDeferredItems() {
+    if (destroyed || isDragging() || deferredItems.length === 0) {
+      return;
+    }
+    const pending = deferredItems;
+    deferredItems = [];
+    pending.forEach((item) => {
+      if (!nodes.has(item.spec.id)) {
+        mountNode(createNode(item));
+      }
+    });
+  }
+
+  function setStackDragOffset(node: IToastNode, offset: number) {
+    if (node.removed) {
+      return;
+    }
+    node.li.setAttribute('data-stack-drag', 'true');
+    node.li.style.setProperty('--drag-y', `${offset}px`);
+  }
+
+  function settleStackDrag(node: IToastNode) {
+    if (node.removed) {
+      return;
+    }
+    node.li.removeAttribute('data-stack-drag');
+    node.li.style.removeProperty('--drag-y');
+  }
+
+  function beginStackDrag(
+    node: IToastNode,
+    pointerId: number,
+    dy: number
+  ): IStackDrag | undefined {
+    const group = groups.get(node.position);
+    if (!group || stackDrag) {
+      return undefined;
+    }
+    const edgeSign = group.position.startsWith('top') ? -1 : 1;
+    const active = group.toasts.filter((entry) => !entry.removed);
+    const expanded = isExpanded();
+    let mode: IStackDragMode;
+    let participants: IToastNode[];
+    if (dy * edgeSign > 0) {
+      mode = expanded ? 'collapse' : 'stack';
+      participants = active;
+    } else if (!expanded && active.length > 1) {
+      mode = 'expand';
+      participants = active;
+    } else {
+      mode = 'rubber';
+      participants = [node];
+    }
+    node.li.setPointerCapture?.(pointerId);
+    stackDrag = { pointerId, mode, owner: node, group, participants, edgeSign };
+    return stackDrag;
+  }
+
+  function applyStackDrag(drag: IStackDrag, dy: number) {
+    const toward = dy * drag.edgeSign > 0;
+    switch (drag.mode) {
+      case 'stack': {
+        const offset = toward ? dy : rubberBand(dy, RUBBER_DIMENSION);
+        drag.participants.forEach((node) => setStackDragOffset(node, offset));
+        break;
+      }
+      case 'expand': {
+        const offset = rubberBand(
+          dy,
+          toward ? RUBBER_DIMENSION : EXPAND_RUBBER_DIMENSION
+        );
+        drag.participants.forEach((node, index) =>
+          setStackDragOffset(
+            node,
+            offset * (1 + Math.min(index, 2) * EXPAND_SPREAD_STEP)
+          )
+        );
+        break;
+      }
+      case 'collapse': {
+        const offset = toward ? dy * 0.5 : rubberBand(dy, RUBBER_DIMENSION);
+        drag.participants.forEach((node) => setStackDragOffset(node, offset));
+        break;
+      }
+      default:
+        setStackDragOffset(drag.owner, rubberBand(dy, RUBBER_DIMENSION));
+    }
+  }
+
+  /** Ends a stack drag whose owner left before the pointer was released. */
+  function abandonStackDrag() {
+    const drag = stackDrag;
+    if (!drag) {
+      return;
+    }
+    stackDrag = undefined;
+    drag.participants.forEach(settleStackDrag);
+    queueMicrotask(flushDeferredItems);
+  }
+
+  function dismissStack(drag: IStackDrag) {
+    const { group, edgeSign } = drag;
+    const leaving = drag.participants.filter((node) => !node.removed);
+    const expanded = isExpanded();
+    // Capture every card's place first so back cards keep their depth while
+    // the cards in front of them are removed.
+    const layouts = leaving.map((node) => ({
+      node,
+      layout: {
+        index: Math.max(
+          0,
+          group.heights.findIndex((entry) => entry.id === node.id)
+        ),
+        offset: offsetOf(group, node) * group.paneScale,
+        expanded,
+        paneScale: group.paneScale,
+      },
+    }));
+    leaving.forEach((node) => {
+      const rect = node.li.getBoundingClientRect();
+      const current =
+        Number.parseFloat(node.li.style.getPropertyValue('--drag-y')) || 0;
+      const travel =
+        edgeSign < 0
+          ? rect.bottom + SWIPE_EXIT_MARGIN
+          : globalThis.innerHeight - rect.top + SWIPE_EXIT_MARGIN;
+      node.li.style.setProperty(
+        '--stack-exit-y',
+        `${current + edgeSign * travel}px`
+      );
+      node.li.setAttribute('data-swipe-axis', 'y');
+      node.swipeOut = true;
+    });
+    layouts.forEach(({ node, layout }) =>
+      deleteToast(node, 'swipe', true, layout)
+    );
+  }
+
+  function finishStackDrag(
+    drag: IStackDrag,
+    dy: number,
+    velocityY: number,
+    cancelled: boolean
+  ) {
+    const toward = dy * drag.edgeSign;
+    const towardSpeed = velocityY * drag.edgeSign;
+    const remaining = drag.participants.filter((node) => !node.removed);
+    if (
+      !cancelled &&
+      drag.mode === 'stack' &&
+      (toward >= SWIPE_DISTANCE ||
+        (toward >= SWIPE_FLICK_DISTANCE && towardSpeed >= SWIPE_FLICK_VELOCITY))
+    ) {
+      dismissStack(drag);
+      return;
+    }
+    remaining.forEach(settleStackDrag);
+    if (cancelled) {
+      update();
+      return;
+    }
+    if (
+      drag.mode === 'expand' &&
+      (-toward >= EXPAND_PULL_DISTANCE ||
+        -towardSpeed >= SWIPE_FLICK_VELOCITY) &&
+      remaining.length > 1
+    ) {
+      touchExpandedGroup = drag.group;
+    } else if (
+      drag.mode === 'collapse' &&
+      (toward >= COLLAPSE_PUSH_DISTANCE || towardSpeed >= SWIPE_FLICK_VELOCITY)
+    ) {
+      touchExpandedGroup = undefined;
+      keyboardExpanded = false;
+    }
+    update();
   }
 
   function onGlobalPointerMove(event: PointerEvent) {
@@ -517,12 +764,33 @@ export function createToastDomRenderer(
     if (node.swipePointerId !== event.pointerId) {
       return;
     }
+    const dy = event.clientY - press.y;
     if (!canSwipeNode(node)) {
+      if (stackDrag?.pointerId === event.pointerId) {
+        abandonStackDrag();
+      }
       clearSwipe(node, event.pointerId);
       return;
     }
-    recordSwipeSample(press, event.clientX, event.timeStamp);
+    recordSwipeSample(press, event.clientX, event.clientY, event.timeStamp);
+    if (stackDrag?.pointerId === event.pointerId) {
+      applyStackDrag(stackDrag, dy);
+      return;
+    }
     if (!node.swiping) {
+      // Touch follows the stack gestures once the vertical axis wins; mouse
+      // and pen keep the horizontal swipe only.
+      if (
+        event.pointerType === 'touch' &&
+        absDy > threshold &&
+        absDy >= absDx
+      ) {
+        const drag = beginStackDrag(node, event.pointerId, dy);
+        if (drag) {
+          applyStackDrag(drag, dy);
+        }
+        return;
+      }
       if (absDx <= threshold || absDx <= absDy) {
         return;
       }
@@ -550,13 +818,36 @@ export function createToastDomRenderer(
         Math.abs(event.clientX - press.x),
         Math.abs(event.clientY - press.y)
       ) > threshold;
+    const stack = stackDrag?.pointerId === pointerId ? stackDrag : undefined;
+    if (stack) {
+      stackDrag = undefined;
+      const dy = event.clientY - press.y;
+      const velocityY = released
+        ? swipeVelocity(press, 'y', event.clientY, event.timeStamp)
+        : 0;
+      clearPress(pointerId, press);
+      if (released) {
+        node.suppressNotificationClick = true;
+        if (node.suppressClickTimer !== undefined) {
+          clearTimeout(node.suppressClickTimer);
+        }
+        node.suppressClickTimer = setTimeout(() => {
+          node.suppressClickTimer = undefined;
+          node.suppressNotificationClick = false;
+        }, 0);
+      }
+      finishStackDrag(stack, released ? dy : 0, velocityY, !released);
+      flushDeferredItems();
+      return;
+    }
     const rawDx = event.clientX - press.x;
     const swiped =
       released && node.swipePointerId === pointerId && node.swiping;
     const amount = swiped ? rawDx : 0;
     const absAmount = Math.abs(amount);
     const velocity = swiped
-      ? swipeVelocity(press, event.clientX, event.timeStamp) * Math.sign(amount)
+      ? swipeVelocity(press, 'x', event.clientX, event.timeStamp) *
+        Math.sign(amount)
       : 0;
     const dismissed =
       swiped &&
@@ -612,6 +903,7 @@ export function createToastDomRenderer(
     } else {
       update();
     }
+    flushDeferredItems();
   }
 
   function attachPointerHandlers(node: IToastNode) {
@@ -667,7 +959,7 @@ export function createToastDomRenderer(
         x: event.clientX,
         y: event.clientY,
         moved: false,
-        samples: [{ x: event.clientX, t: event.timeStamp }],
+        samples: [{ x: event.clientX, y: event.clientY, t: event.timeStamp }],
       });
       update();
     });
@@ -1178,6 +1470,7 @@ export function createToastDomRenderer(
       }
       itemOrder = new Map(items.map((item, index) => [item.spec.id, index]));
       const present = new Set(items.map((item) => item.spec.id));
+      deferredItems = deferredItems.filter((item) => present.has(item.spec.id));
       [...nodes.values()].forEach((node) => {
         if (!present.has(node.id)) {
           unmount(node, 'programmatic');
@@ -1191,9 +1484,14 @@ export function createToastDomRenderer(
           node = undefined;
         }
         if (!node) {
-          if (item.visible) {
+          if (item.visible && isDragging()) {
+            deferItem(item);
+          } else if (item.visible) {
             mountNode(createNode(item));
           } else {
+            deferredItems = deferredItems.filter(
+              (entry) => entry.spec.id !== item.spec.id
+            );
             onEvent({
               id: item.spec.id,
               generation: item.generation,
@@ -1260,6 +1558,8 @@ export function createToastDomRenderer(
       globalThis.removeEventListener('resize', onResize);
       globalThis.removeEventListener('blur', onWindowBlur);
       presses.forEach((press, pointerId) => clearPress(pointerId, press));
+      stackDrag = undefined;
+      deferredItems = [];
       hoveredGroups.clear();
       nodes.forEach((node) => {
         clearCloseTimer(node);

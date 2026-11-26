@@ -1473,13 +1473,52 @@ non-interactive exit `190 ms` `cubic-bezier(0.2, 0, 0, 1)`).
 | Position | Per toast or toaster; default bottom-right. At viewport widths up to `600 px`, every position uses a horizontally centered lane with equal insets of at least `16 px`, enlarged equally to respect horizontal safe areas. The top or bottom anchor still applies. | Always top-centre |
 | Stack | Newest in front, 3 visible, `10 px` gap, depth scale `1 - 0.05 * i` with back bodies faded. Hover or tap to expand multiple cards. An outside press clears tap expansion. | Newest in front, 3 visible, `10 pt/dp` peek, depth scale `1 - 0.05 * i` with collapsed back heights matched to front card and back bodies faded (`240 ms`). Tap stack to expand; an outside tap passes through and collapses the stack. |
 | Card | Fills the available lane up to `356 px` at every viewport width, `10 px` padding, `21 px` concentric radius + `1 px` outer ring (`box-shadow`) + layered shadow, corner close button revealed by mouse/pen hover or keyboard focus | Content box from `contentWidth` plus `10 pt/dp` padding. Caps outer width at `596 pt/dp` and fits the available area with at least `16 pt/dp` side insets in standard window sizes. Uses a `21 pt/dp` continuous radius + `1 px` hairline ring (`0.06` light / `0.09` dark), subtle shadow |
-| Enter / exit | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; swipe exit slides horizontally off-side (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, scale `0.98`, opacity `0`); non-interactive exit (`timeout`, `programmatic`, `close`) dissolves gently (`190 ms` `cubic-bezier(0.2, 0, 0, 1)`: front/expanded drifts `16 px` toward the anchored edge and scales to `0.95`; collapsed back drifts `12 px` and scales to `0.90`) | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; swipe exit slides horizontally off-side (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, scale `0.98`, opacity `0`); non-interactive exit (`timeout`, `programmatic`) dissolves gently (`190 ms` `cubic-bezier(0.2, 0, 0, 1)`: front/expanded drifts `-16 pt/dp` and scales to `0.95`; collapsed back drifts `-12 pt/dp` and scales to `0.90`) |
+| Enter / exit | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; horizontal swipe exit slides off-side (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, scale `0.98`, opacity `0`); a touch stack dismissal leaves past the anchored edge with the same curve (see stack gestures); non-interactive exit (`timeout`, `programmatic`, `close`) dissolves gently (`190 ms` `cubic-bezier(0.2, 0, 0, 1)`: front/expanded drifts `16 px` toward the anchored edge and scales to `0.95`; collapsed back drifts `12 px` and scales to `0.90`) | Unit-mass spring (`460/36`) with `0.96 -> 1` scale + `220 ms` ease-out opacity; horizontal swipe exit slides off-side (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, scale `0.98`, opacity `0`); a stack dismissal leaves past the top edge with the same curve (see stack gestures); non-interactive exit (`timeout`, `programmatic`) dissolves gently (`190 ms` `cubic-bezier(0.2, 0, 0, 1)`: front/expanded drifts `-16 pt/dp` and scales to `0.95`; collapsed back drifts `-12 pt/dp` and scales to `0.90`) |
 | Message status entrance & settle | Tile at `110 ms` (`620/50` spring), glyph pop at `155 ms` (`920/40` spring), `180 ms` stroke draw at `210 ms` (~`390 ms` total); settle crossfades text/actions over `160 ms` `cubic-bezier(0.2, 0, 0, 1)` (`translateY 3 -> 0`) | Same spring parameters, stroke draw, tile bump/tint, and `160 ms` content crossfade (`CASpringAnimation` on iOS, analytical spring step response on Android) |
 | `close` reported | `200 ms` after the exit starts, or immediately with reduced motion | `220 ms` after the exit starts, or immediately with reduced motion |
 | Timer pause | While the stack is hovered, expanded, or has an active press. When the pause ends, timers restart with the full lifetime. | While a card is pressed or the stack is expanded; resuming continues the remaining time |
-| Swipe | Horizontal (left or right) across all viewports (desktop and small screen). Once a horizontal swipe starts (`|dx| > |dy|`), only horizontal displacement counts and opacity attenuates down to `0.35`. Release dismisses at `64 px`, or `20 px` at `0.5 px/ms`, exiting to the dragged side while remaining cards promote vertically on the card spring. | Horizontal (left or right) on front card (collapsed) or any visible card (expanded); `64 pt/dp`, or `20 pt/dp` at `500 pt/dp/s`; card follows 1:1 on X with opacity attenuating down to `0.35`; exits to the dragged side (`200 ms`) while remaining cards promote vertically on the card spring; settle-back uses the card spring |
+| Swipe | Mouse and pen: horizontal (left or right) across all viewports. Once a horizontal swipe starts (`|dx| > |dy|`), only horizontal displacement counts and opacity attenuates down to `0.35`. Release dismisses at `64 px`, or `20 px` at `0.5 px/ms`, exiting to the dragged side while remaining cards promote vertically on the card spring. Touch: the stack gestures below, with the anchored edge of the card's lane (top or bottom) as the dismiss direction. | The stack gestures below, with the top edge as the dismiss direction. Horizontal: front card (collapsed) or any visible card (expanded); `64 pt/dp`, or `20 pt/dp` at `500 pt/dp/s`; card follows 1:1 on X with opacity attenuating down to `0.35`; exits to the dragged side (`200 ms`) while remaining cards promote vertically on the card spring; settle-back uses the card spring |
 | Top obstruction | Top groups animate the inset in 220 ms | Cards translate within the full-window touch stage, 220 ms |
 | Reduced motion | Transitions off (media query) | Every animation is instant |
+
+#### Stack gestures (Implemented; iOS runtime verified; Android and Web touch device runs pending)
+
+A banner moves off toward the edge it is anchored to, and a list item moves
+off sideways. A collapsed stack, including a single toast, is handled as one
+banner. An expanded stack is a list. The direction therefore follows the
+expanded state, which the user changes, and never the number of toasts,
+which changes on its own. These gestures apply to iOS, Android and touch input
+on Web. Web mouse and pen input keeps the horizontal swipe only, since hovering
+expands a stack before it can be dragged.
+
+The axis locks once the drag passes the start threshold, by the larger of
+`|dx|` and `|dy|`. The direction toward the anchored edge is the "dismiss
+direction" (up for a top anchor, down for a bottom anchor).
+
+| Stack state | Toward the anchored edge | Away from the anchored edge | Horizontal |
+| --- | --- | --- | --- |
+| Collapsed, one or more toasts | Every active card in the stack follows 1:1. Release dismisses all of them at `64`, or `20` at `500 /s` moving toward the edge. | Rubber band (`1 - 1/(d·0.55/dim + 1)`, `dim 70`), back cards spreading `35%` more per depth (up to two). Release at `40`, or at `500 /s` away from the edge, expands a stack of two or more cards. A single toast settles back. | Front card only, as before |
+| Expanded | Every visible card follows at half the drag distance. Release at `50`, or at `500 /s`, collapses the stack. | Rubber band (`dim 30`), settles back | The dragged card, as before |
+
+- A stack dismissal reports `dismiss('swipe')`, then `close('swipe')`, for
+  every card that was active when the drag began, newest first. Cards shown
+  during the drag are not part of it.
+- Each dismissed card keeps its depth scale and, for collapsed back cards,
+  its faded body, and moves past the anchored edge using the swipe exit curve
+  (`200 ms` `cubic-bezier(0.32, 0.72, 0, 1)`, opacity to `0`). The group
+  leaves together, so no card moves into the front slot during the exit.
+- Movement against the locked direction is damped with the same rubber band
+  (`dim 30`) and never dismisses.
+- While a card is being dragged, toasts shown for the first time wait. They
+  enter once the drag ends, after any dismissal it caused, so a new card
+  never takes the dragged card's slot mid-gesture. Updates, redraws and
+  dismissals of cards already on screen still apply at once. A deferred
+  toast hidden before the drag ends reports `close('programmatic')` without
+  being drawn.
+- Lifetimes stay paused during the drag because the card is pressed.
+- Only cards that accept swipes start a drag: the front card of a collapsed
+  stack and every visible card of an expanded stack. A touch on a collapsed
+  back card still only expands the stack.
 
 In a browser viewport that reports two segments along an axis, a left or right
 anchor chooses the matching side and a centered anchor chooses the leading
@@ -1565,6 +1604,18 @@ Divergences from the renderers replaced:
 
 ### Verification
 
+- Stack gestures (2026-11-26): built into app-monorepo and run on an iPhone
+  17 Pro simulator (iOS 26.0) with injected swipes and toasts shown through
+  `$Toast` over Metro's inspector. Verified: a single toast dismissed by an
+  upward swipe; pulling a collapsed stack of three down expanded it; a
+  horizontal swipe on the expanded middle card closed only that card; pushing
+  the expanded stack up collapsed it without closing any card; a slow 30 pt
+  push settled back; an upward swipe on a collapsed stack closed every card
+  together; a toast shown 0.8 s into that swipe entered after release and
+  stayed. Web touch cases are covered by `overlayToast.web.test.ts`; Android
+  axis locking by `NativeOverlayToastCardLayoutTest`. Not exercised yet: an
+  Android device or emulator, a touch browser, VoiceOver/TalkBack, reduced
+  motion, iPad and the top obstruction shift.
 - The shared toast geometry was checked with the same specs in Chromium,
   in a UIKit harness on iPhone 16 (iOS 26.0), and through the Fabric toaster
   host on Pixel 7 (Android API 35). The cases cover light and dark card

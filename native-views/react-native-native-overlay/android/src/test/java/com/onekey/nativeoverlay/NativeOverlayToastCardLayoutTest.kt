@@ -51,7 +51,7 @@ class NativeOverlayToastCardLayoutTest {
     val density = slot.resources.displayMetrics.density
     var releaseX = 0f
     var releaseVelocity = 0f
-    slot.onRelease = { x, _, velocity, cancelled ->
+    slot.onRelease = { x, _, velocity, _, cancelled ->
       assertTrue(!cancelled)
       releaseX = x / density
       releaseVelocity = velocity / density
@@ -86,14 +86,43 @@ class NativeOverlayToastCardLayoutTest {
     slot.clearTouch()
   }
 
+  @Test
+  fun verticalDragLocksItsAxisAndLeavesTheCardToThePresenter() {
+    val slot = toastSlot()
+    val density = slot.resources.displayMetrics.density
+    var startedVertical: Boolean? = null
+    var lastDy = 0f
+    var releaseY = 0f
+    var releaseVelocityY = 0f
+    slot.onDragStart = { vertical, _, _ -> startedVertical = vertical }
+    slot.onVerticalDrag = { dy -> lastDy = dy / density }
+    slot.onRelease = { _, y, _, velocityY, cancelled ->
+      assertTrue(!cancelled)
+      releaseY = y / density
+      releaseVelocityY = velocityY / density
+    }
+    sendTouch(slot, MotionEvent.ACTION_DOWN, 0L, 250f, 70f)
+    sendTouch(slot, MotionEvent.ACTION_MOVE, 40L, 252f, 56f)
+    sendTouch(slot, MotionEvent.ACTION_MOVE, 80L, 254f, 30f)
+
+    assertEquals(true, startedVertical)
+    assertEquals(-40f, lastDy, 0.01f)
+    // The presenter moves cards on a vertical drag; the slot leaves X alone.
+    assertEquals(0f, slot.card.translationX, 0f)
+
+    sendTouch(slot, MotionEvent.ACTION_UP, 100L, 254f, 20f)
+    assertEquals(-50f, releaseY, 0.01f)
+    assertTrue(releaseVelocityY < -300f)
+  }
+
   private fun toastSlot(): ToastSlot {
     val context = RuntimeEnvironment.getApplication()
     return ToastSlot(context, NativeOverlayToastCardView(context))
   }
 
-  private fun sendTouch(slot: ToastSlot, action: Int, time: Long, xDp: Float) {
+  private fun sendTouch(slot: ToastSlot, action: Int, time: Long, xDp: Float, yDp: Float = 70f) {
     val density = slot.resources.displayMetrics.density
-    val event = MotionEvent.obtain(1000L, 1000L + time, action, xDp * density, 70f * density, 0)
+    val event = MotionEvent.obtain(1000L, 1000L + time, action, xDp * density, yDp * density, 0)
     val windowToSlot = Matrix().apply {
       setTranslate(-100f * density, -40f * density)
       postScale(1f / slot.scaleX, 1f / slot.scaleY)

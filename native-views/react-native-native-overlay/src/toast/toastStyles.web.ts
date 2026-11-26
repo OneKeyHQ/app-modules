@@ -66,7 +66,7 @@ function buildOverlayToastCss(): string {
   width:100%;
   inset-inline:0;
   opacity:0;
-  transform:var(--y) scale(var(--toast-pane-scale,1));
+  transform:translateY(var(--drag-y,0px)) var(--y) scale(var(--toast-pane-scale,1));
   touch-action:none;
   transition:transform var(--okt-card-spring-duration) var(--okt-card-spring-ease),opacity 220ms ease-out,height var(--okt-card-spring-duration) var(--okt-card-spring-ease);
   box-sizing:border-box;
@@ -99,6 +99,13 @@ function buildOverlayToastCss(): string {
 :where([data-onekey-toast][data-removed="true"][data-front="false"]):before{height:calc(var(--initial-height) + 20%)}
 [data-onekey-toast][data-swiping="true"]{transform:translateX(var(--swipe-amount,0px)) var(--y) scale(var(--toast-pane-scale,1));opacity:var(--swipe-opacity,1);transition:none}
 [data-onekey-toast][data-swipe-out="true"][data-y-position="bottom"],[data-onekey-toast][data-swipe-out="true"][data-y-position="top"]{animation:onekey-toast-swipe-out ${TOAST_MOTION.cardExitMs}ms ${cardExitEase} forwards}
+/* A touch stack drag moves every card of the stack with the finger; a stack dismissal leaves past the anchored edge. */
+[data-onekey-toast][data-stack-drag="true"]{transition:none}
+[data-onekey-toast][data-removed="true"][data-swipe-out="true"][data-swipe-axis="y"]{animation:onekey-toast-stack-swipe-out ${TOAST_MOTION.cardExitMs}ms ${cardExitEase} forwards}
+@keyframes onekey-toast-stack-swipe-out{
+  0%{transform:translateY(var(--drag-y,0px)) var(--y) scale(var(--toast-pane-scale,1));opacity:1}
+  to{transform:translateY(var(--stack-exit-y,0px)) var(--y) scale(var(--toast-pane-scale,1));opacity:0}
+}
 @keyframes onekey-toast-swipe-out{
   0%{transform:translateY(calc(var(--lift) * var(--offset))) translateX(var(--swipe-amount,0px)) scale(var(--toast-pane-scale,1));opacity:var(--swipe-opacity,1)}
   to{transform:translateY(calc(var(--lift) * var(--offset))) translateX(var(--swipe-exit-x)) scale(calc(var(--toast-pane-scale,1) * ${TOAST_MOTION.swipeExitScale}));opacity:0}
