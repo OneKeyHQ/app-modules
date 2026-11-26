@@ -549,7 +549,9 @@ getInstallationTime(): Promise<number>;
 - **Privacy manifest**: The DeviceUtils pod ships its own `PrivacyInfo.xcprivacy`
   in the `ReactNativeDeviceUtilsPrivacyInfo` resource bundle. It declares
   `NSPrivacyAccessedAPICategoryFileTimestamp` with reason `C617.1` for reading
-  metadata inside the app container.
+  metadata inside the app container, and
+  `NSPrivacyAccessedAPICategoryUserDefaults` with reason `CA92.1` for
+  app-local state stored in `UserDefaults.standard`.
 
 ## Conformance and acceptance
 
@@ -570,5 +572,7 @@ getInstallationTime(): Promise<number>;
   - The [Android bridge smoke test](../../../example/react-native/smoke/README.md)
     awaits both public methods in a real React Native runtime and compares
     their values with PackageManager on API levels below 33 and on API 33+.
+    The smoke test launches as the foreground Android user and uses that
+    user's install time when PackageManager reports it per user.
   - TypeScript / Nitrogen build (`bob build`, `typecheck`, `lint`) verifies JS
     and generated bindings.

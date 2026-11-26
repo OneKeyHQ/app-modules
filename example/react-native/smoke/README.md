@@ -33,4 +33,8 @@ python3 ../smoke/check-device-utils-install-info.py
 The explicit installer exercises the `other` enum. A fresh install with no
 installer recorded exercises `unknown`. The check compares the JavaScript
 installer enum and epoch-millisecond timestamp with PackageManager, whose
-dump reports the install time to whole seconds.
+dump reports the install time to whole seconds. To check a secondary user,
+make the installed APK available to that user with
+`adb shell pm install-existing --user USER_ID com.example`. Switch to that
+user and unlock the emulator before running the check. The script launches
+and queries the app as the foreground user.
