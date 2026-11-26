@@ -286,7 +286,8 @@ class HybridQrScanner: HybridQrScannerSpec {
     defer { frameRevisionLock.unlock() }
     return frameRevision
   }
-  /// Mirrors `captureProps.frozen` for main-thread gesture checks.
+  // Main queue owns the requested activity and the state applied to the preview.
+  private var isActiveMain = false
   private var isFrozenMain = false
   private var disposed = false
   private var permissionPending = false
@@ -343,8 +344,11 @@ class HybridQrScanner: HybridQrScannerSpec {
     let focusCapture = currentReadyCapture()
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
-      self.isFrozenMain = props.active && props.frozen
-      self.previewView.setFrozen(self.isFrozenMain)
+      self.isActiveMain = props.active
+      if props.active {
+        self.isFrozenMain = props.frozen
+        self.previewView.setFrozen(props.frozen)
+      }
     }
     sessionQueue.async { [weak self] in
       guard let self, !self.disposed else { return }
@@ -364,6 +368,7 @@ class HybridQrScanner: HybridQrScannerSpec {
       self.requestedCameraId = cameraId
       if !props.active {
         self.stop()
+        self.resetInactivePreview()
       } else if self.running {
         let generation = self.currentGeneration()
         self.switchCameraIfNeeded()
@@ -379,7 +384,7 @@ class HybridQrScanner: HybridQrScannerSpec {
         let generation = self.currentGeneration()
         let revision = self.currentFrameRevision()
         DispatchQueue.main.async { [weak self] in
-          guard let self, !self.isFrozenMain else { return }
+          guard let self, self.isActiveMain, !self.isFrozenMain else { return }
           let bounds = self.previewView.bounds
           guard bounds.width > 0, bounds.height > 0 else { return }
           self.focusAt(
@@ -394,8 +399,7 @@ class HybridQrScanner: HybridQrScannerSpec {
 
   func dispose() {
     DispatchQueue.main.async { [weak self] in
-      self?.isFrozenMain = false
-      self?.previewView.setFrozen(false)
+      self?.isActiveMain = false
     }
     // Retain the scanner until its queue has released the session and observers.
     sessionQueue.async {
@@ -403,6 +407,7 @@ class HybridQrScanner: HybridQrScannerSpec {
       self.disposed = true
       self.captureProps = CaptureProps()
       self.stop()
+      self.resetInactivePreview()
       self.removeObservers()
     }
   }
@@ -603,6 +608,14 @@ class HybridQrScanner: HybridQrScannerSpec {
     captureProps.ready?(Double(generation), target.uniqueID)
   }
 
+  private func resetInactivePreview() {
+    DispatchQueue.main.async { [weak self] in
+      guard let self, !self.isActiveMain else { return }
+      self.isFrozenMain = false
+      self.previewView.setFrozen(false)
+    }
+  }
+
   private func updatePreviewConnection() {
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
@@ -641,7 +654,7 @@ class HybridQrScanner: HybridQrScannerSpec {
   // MARK: - Gestures (main thread in, sessionQueue for the device)
 
   fileprivate func handleTap(_ recognizer: UITapGestureRecognizer) {
-    guard !isFrozenMain, let readyCapture = currentReadyCapture() else { return }
+    guard isActiveMain, !isFrozenMain, let readyCapture = currentReadyCapture() else { return }
     focusAt(
       recognizer.location(in: previewView), generation: currentGeneration(),
       revision: currentFrameRevision(), readyCapture: readyCapture, fromGesture: true)
@@ -686,7 +699,7 @@ class HybridQrScanner: HybridQrScannerSpec {
       // Moving the camera afterwards hands focus back to continuous mode.
       device.isSubjectAreaChangeMonitoringEnabled = true
       DispatchQueue.main.async { [weak self] in
-        guard let self, !self.isFrozenMain, self.currentGeneration() == generation,
+        guard let self, self.isActiveMain, !self.isFrozenMain, self.currentGeneration() == generation,
           self.currentFrameRevision() == revision, self.currentReadyCapture() == readyCapture
         else { return }
         self.previewView.showFocusIndicator(at: layerPoint)
@@ -695,7 +708,7 @@ class HybridQrScanner: HybridQrScannerSpec {
   }
 
   fileprivate func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
-    guard !isFrozenMain else { return }
+    guard isActiveMain, !isFrozenMain else { return }
     let state = recognizer.state
     let scale = recognizer.scale
     sessionQueue.async { [weak self] in
@@ -807,7 +820,7 @@ class HybridQrScanner: HybridQrScannerSpec {
 
       if self.captureProps.multiSymbol, let symbolsCallback = self.captureProps.symbols {
         DispatchQueue.main.async { [weak self] in
-          guard let self, !self.isFrozenMain, self.currentFrameRevision() == revision else { return }
+          guard let self, self.isActiveMain, !self.isFrozenMain, self.currentFrameRevision() == revision else { return }
           let layer = self.previewView.previewLayer
           let layerBounds = layer.bounds
           guard layerBounds.width > 0, layerBounds.height > 0 else { return }
