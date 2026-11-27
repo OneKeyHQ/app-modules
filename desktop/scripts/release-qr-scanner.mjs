@@ -11,8 +11,28 @@ import policy from "./verify-desktop-modules.cjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageName = "@onekeyfe/electron-qr-scanner";
 const version = "44.0.2";
-const electron = "44.11.5";
 const repository = "OneKeyHQ/app-modules";
+
+function readLockedElectronVersion(platform) {
+  const lockfile = JSON.parse(
+    readFileSync(join(root, platform, "electron-qr-scanner", "package-lock.json"), "utf8"),
+  );
+  const pinned = lockfile.packages?.["node_modules/electron"]?.version;
+  if (typeof pinned !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(pinned)) {
+    throw new Error(`Invalid locked Electron version for ${platform}/electron-qr-scanner`);
+  }
+  return pinned;
+}
+
+const macElectron = readLockedElectronVersion("mac");
+const winElectron = readLockedElectronVersion("win");
+if (macElectron !== winElectron) {
+  throw new Error(`macOS (${macElectron}) and Windows (${winElectron}) Electron lockfile pins disagree`);
+}
+if (macElectron.split(".")[0] !== version.split(".")[0]) {
+  throw new Error(`Locked Electron (${macElectron}) major does not match package version (${version})`);
+}
+const electron = macElectron;
 const workflow = `${repository}/.github/workflows/desktop-qr-scanner-preview.yml`;
 const inventoryFile = "desktop-qr-scanner.json";
 const bundle = "desktop-qr-scanner.sigstore.json";

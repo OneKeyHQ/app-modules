@@ -150,7 +150,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node desktop/scripts/release-qr-scanner.mjs verify
-      - name: Publish the immutable preview
+      - name: Publish the immutable release (latest on main for stable, next for alpha)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
