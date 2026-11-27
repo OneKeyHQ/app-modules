@@ -60,7 +60,7 @@ function openCamera() {
 app
   .whenReady()
   .then(async () => {
-    assert.equal(process.versions.electron, "44.5.1");
+    assert.equal(process.versions.electron, "44.11.5");
     const payload = readFileSync(join(fixtures, "lightning-payload.txt"), "utf8");
     assert.equal(await api.decodeImage(join(fixtures, "lightning-btcpay-dark.png")), payload);
     await assert.rejects(api.decodeImage(join(fixtures, "corrupt.png")), { code: "invalid-image" });
