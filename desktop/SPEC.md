@@ -97,10 +97,11 @@ shared-texture preview pixels. Windows video, camera and GPU preview
 acceptance runs on physical machines.
 
 The workflow verifies and attests the native binaries, the runtime inventory
-and the archive before publishing the immutable alpha version to `next`.
-The QR scanner release script supplies the version to the registry lookup,
-inventory, archive path and publication steps. The runtime inventory includes
-the bundled ZXing-C++ Apache-2.0 license.
+and the archive before publishing the immutable package (stable versions to
+`latest` from `main`, alpha versions to `next`).
+The QR scanner release script supplies the version and dist-tag to the registry
+lookup, inventory, archive path and publication steps. The runtime inventory
+includes the bundled ZXing-C++ Apache-2.0 license.
 Consumers verify the packaged proof against the source commit, branch and
 workflow when adding the npm pin. Desktop packaging then checks the pinned
 inventory digest and all installed runtime files.

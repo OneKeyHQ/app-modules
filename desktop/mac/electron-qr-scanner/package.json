@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test test/*.test.cjs",
+    "test": "node -e \"const {readdirSync}=require('node:fs'),{execFileSync}=require('node:child_process');for(const f of readdirSync('test').filter(n=>n.endsWith('.test.cjs')).sort())execFileSync(process.execPath,['--test','test/'+f],{stdio:'inherit'})\"",
     "test:electron": "electron test/electron.cjs",
     "test:preview": "electron test/preview.cjs",
     "test:camera": "electron test/camera-live.cjs"
@@ -43,6 +43,6 @@
   },
   "devDependencies": {
     "@ngraveio/bc-ur": "1.1.13",
-    "electron": "44.5.1"
+    "electron": "44.11.5"
   }
 }

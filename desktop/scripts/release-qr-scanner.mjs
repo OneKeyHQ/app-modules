@@ -10,9 +10,29 @@ import policy from "./verify-desktop-modules.cjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const packageName = "@onekeyfe/electron-qr-scanner";
-const version = "44.0.2-alpha.3";
-const electron = "44.5.1";
+const version = "44.0.2";
 const repository = "OneKeyHQ/app-modules";
+
+function readLockedElectronVersion(platform) {
+  const lockfile = JSON.parse(
+    readFileSync(join(root, platform, "electron-qr-scanner", "package-lock.json"), "utf8"),
+  );
+  const pinned = lockfile.packages?.["node_modules/electron"]?.version;
+  if (typeof pinned !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(pinned)) {
+    throw new Error(`Invalid locked Electron version for ${platform}/electron-qr-scanner`);
+  }
+  return pinned;
+}
+
+const macElectron = readLockedElectronVersion("mac");
+const winElectron = readLockedElectronVersion("win");
+if (macElectron !== winElectron) {
+  throw new Error(`macOS (${macElectron}) and Windows (${winElectron}) Electron lockfile pins disagree`);
+}
+if (macElectron.split(".")[0] !== version.split(".")[0]) {
+  throw new Error(`Locked Electron (${macElectron}) major does not match package version (${version})`);
+}
+const electron = macElectron;
 const workflow = `${repository}/.github/workflows/desktop-qr-scanner-preview.yml`;
 const inventoryFile = "desktop-qr-scanner.json";
 const bundle = "desktop-qr-scanner.sigstore.json";
@@ -54,11 +74,11 @@ function checkSource() {
   if (
     process.env.GITHUB_REPOSITORY !== repository ||
     process.env.GITHUB_EVENT_NAME !== "workflow_dispatch" ||
-    !/^[a-f0-9]{40}$/.test(sourceCommit ?? "") ||
-    policy.releaseChannel(version, sourceRef) !== "next"
+    !/^[a-f0-9]{40}$/.test(sourceCommit ?? "")
   ) {
-    throw new Error("The QR scanner preview requires a manual app-modules preview run");
+    throw new Error("The QR scanner release requires a manual app-modules workflow run");
   }
+  return policy.releaseChannel(version, sourceRef);
 }
 
 function attest(file, proof) {
@@ -129,6 +149,8 @@ const staging = join(dist, "staging");
 const directory = join(staging, "package");
 if (process.argv[2] === "archive-path") {
   console.log(archive);
+} else if (process.argv[2] === "dist-tag") {
+  console.log(checkSource());
 } else if (process.argv[2] === "prepare") {
   checkSource();
   mkdirSync(directory, { recursive: true });
@@ -182,14 +204,14 @@ if (process.argv[2] === "archive-path") {
     throw new Error(`QR scanner version is already published or registry lookup failed (HTTP ${response.status})`);
   }
 } else if (process.argv[2] === "verify-npm") {
-  checkSource();
-  const missing = await verifyPublished([{ name: packageName, version }], "next");
-  if (missing.length) throw new Error("The QR scanner preview is not available on npm");
+  const channel = checkSource();
+  const missing = await verifyPublished([{ name: packageName, version }], channel);
+  if (missing.length) throw new Error("The QR scanner release is not available on npm");
   const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(packageName)}/${version}?write=true`, {
     signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok) throw new Error(`Cannot verify the published registry metadata (HTTP ${response.status})`);
   verifyRegistryPackage(await response.json(), readFileSync(archive), packageName, version);
 } else {
-  throw new Error("Expected archive-path, prepare, pack, verify, check-version or verify-npm");
+  throw new Error("Expected archive-path, dist-tag, prepare, pack, verify, check-version or verify-npm");
 }

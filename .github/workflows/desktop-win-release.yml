@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       qr_scanner_preview:
-        description: Publish the macOS and Windows QR scanner preview
+        description: Publish macOS and Windows @onekeyfe/electron-qr-scanner (stable to latest from main, alpha to next)
         type: boolean
         default: false
 
