@@ -1129,13 +1129,22 @@ function webImageNow(image: HTMLImageElement): number {
   return image.ownerDocument.defaultView?.performance.now() ?? Date.now();
 }
 
-function revealWebImage(element: HTMLElement, startedAt: number) {
+// OneKey patch: the source an image showed synchronously from the memory cache.
+// Its queued load event must not fade that source in again; a later source
+// (retry or fallback) still fades.
+const webImageSourcesRevealedOnSetup = new WeakMap<HTMLImageElement, string>();
+
+function revealWebImage(
+  element: HTMLElement,
+  startedAt: number,
+  image: HTMLImageElement
+) {
   element.getAnimations?.().forEach((animation) => animation.cancel());
   element.style.opacity = '1';
   const view = element.ownerDocument.defaultView;
   if (
-    webImageNow(element as HTMLImageElement) - startedAt <
-      WEB_IMAGE_FADE_DELAY_MS ||
+    webImageSourcesRevealedOnSetup.get(image) === image.src ||
+    webImageNow(image) - startedAt < WEB_IMAGE_FADE_DELAY_MS ||
     view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches ||
     typeof element.animate !== 'function'
   )
@@ -1171,9 +1180,16 @@ function createImage(
   image.decoding = 'async';
   image.style.objectFit =
     source.contentFit === 'fill' ? 'fill' : source.contentFit ?? 'cover';
+  // OneKey patch: a memory-cache hit is complete as soon as src is set. Its
+  // load event is still queued behind the current task, and a busy main thread
+  // (a modal mounting a list) kept cached logos invisible for hundreds of ms.
+  if (image.complete && image.naturalWidth > 0) {
+    image.style.opacity = '1';
+    webImageSourcesRevealedOnSetup.set(image, image.src);
+  }
   image.addEventListener('load', () => {
     if (image.dataset.nativeListSelectorPaint !== 'true')
-      revealWebImage(image, startedAt);
+      revealWebImage(image, startedAt, image);
   });
   image.addEventListener('error', () => {
     image.style.opacity = '0';
@@ -1211,7 +1227,8 @@ function paintSelectorImageBackground(
       'url(' + JSON.stringify(image.currentSrc || image.src) + ')';
     revealWebImage(
       paint,
-      Number(image.dataset.nativeListImageStartedAt) || webImageNow(image)
+      Number(image.dataset.nativeListImageStartedAt) || webImageNow(image),
+      image
     );
   };
   image.addEventListener('load', update);

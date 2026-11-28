@@ -696,7 +696,9 @@ style set/change/clear and content A → B. A binding epoch invalidates stale
 image callbacks and action anchors. Recycling/disposal releases pending work
 through the existing image/host lifecycle. Image loading visibility belongs to
 the image lifecycle: restoring template defaults on rebind must never hide an
-image that already loaded. Common container styling clears what it wrote on the
+image that already loaded. On Web, an image that is already complete when its
+source is assigned (a memory-cache hit) is visible immediately, without waiting
+for its queued load event or playing the fade-in. Common container styling clears what it wrote on the
 next bind, including properties it set on template children. UI mutation remains on the platform
 UI thread; [DESIGN.md](DESIGN.md) describes update and event ownership.
 
