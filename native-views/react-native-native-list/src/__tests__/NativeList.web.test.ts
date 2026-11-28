@@ -4680,33 +4680,79 @@ describe('legacy default regressions', () => {
     return { window, host, engine };
   };
 
-  it('shows cache-hit images without waiting for the load event', () => {
+  it('shows cache-hit images at once and never fades them in on a late load', () => {
     const row: Extract<RowModel, { type: 'identity' }> = {
       type: 'identity',
       key: 'network',
       title: 'Arbitrum',
       leading: { kind: 'network', image },
     };
-    const { window } = new JSDOM('<!doctype html><body></body>');
-    const proto = (
-      window as unknown as { HTMLImageElement: typeof HTMLImageElement }
-    ).HTMLImageElement.prototype;
-    const complete = jest.spyOn(proto, 'complete', 'get').mockReturnValue(true);
-    const naturalWidth = jest
-      .spyOn(proto, 'naturalWidth', 'get')
-      .mockReturnValue(32);
-    const host = window.document.createElement('div');
-    window.document.body.appendChild(host);
-    const engine = new NativeListWebEngine(host, snap([row]), {}, false);
-    try {
-      const img = host.querySelector('img.ok-native-list-visual-main');
-      expect(img).not.toBeNull();
-      expect((img as HTMLImageElement).style.opacity).toBe('1');
-    } finally {
+    const mountWith = (cached: boolean, selector = false) => {
+      const { window } = new JSDOM('<!doctype html><body></body>');
+      const view = window as unknown as {
+        HTMLImageElement: typeof HTMLImageElement;
+        HTMLElement: typeof HTMLElement;
+        Event: typeof Event;
+        performance: Performance;
+      };
+      const proto = view.HTMLImageElement.prototype;
+      const spies = [
+        jest.spyOn(proto, 'complete', 'get').mockReturnValue(cached),
+        jest
+          .spyOn(proto, 'naturalWidth', 'get')
+          .mockReturnValue(cached ? 32 : 0),
+      ];
+      let now = 1000;
+      spies.push(
+        jest.spyOn(view.performance, 'now').mockImplementation(() => now)
+      );
+      const animate = jest.fn();
+      (view.HTMLElement.prototype as unknown as { animate: unknown }).animate =
+        animate;
+      const host = window.document.createElement('div');
+      window.document.body.appendChild(host);
+      const engine = new NativeListWebEngine(
+        host,
+        snap([
+          selector
+            ? { ...row, presentation: 'accountSelector', height: 76 }
+            : row,
+        ]),
+        {},
+        false
+      );
+      const img = host.querySelector(
+        'img.ok-native-list-visual-main'
+      ) as HTMLImageElement;
+      const openingOpacity = img.style.opacity;
+      // The queued load event runs well after the 100 ms fade threshold.
+      now += 500;
+      img.dispatchEvent(new view.Event('load'));
+      const paint = host.querySelector<HTMLElement>(
+        '.ok-native-list-selector-image-background'
+      );
+      const result = { openingOpacity, img, paint, animate };
       engine.destroy();
-      complete.mockRestore();
-      naturalWidth.mockRestore();
-    }
+      spies.forEach((spy) => spy.mockRestore());
+      return result;
+    };
+
+    const cached = mountWith(true);
+    expect(cached.openingOpacity).toBe('1');
+    expect(cached.img.style.opacity).toBe('1');
+    expect(cached.animate).not.toHaveBeenCalled();
+
+    // An image that really had to load keeps the fade-in.
+    const loaded = mountWith(false);
+    expect(loaded.openingOpacity).toBe('0');
+    expect(loaded.img.style.opacity).toBe('1');
+    expect(loaded.animate).toHaveBeenCalledTimes(1);
+
+    // Selector rows paint the image as a background; it must not fade either.
+    const selector = mountWith(true, true);
+    expect(selector.paint).not.toBeNull();
+    expect(selector.paint!.style.opacity).toBe('1');
+    expect(selector.animate).not.toHaveBeenCalled();
   });
 
   it('keeps loaded MetricCard images visible across content and style rebinding', () => {
