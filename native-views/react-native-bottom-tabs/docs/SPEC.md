@@ -145,6 +145,8 @@ and after React/Fabric ancestors suppress `requestLayout`. Internal containers
 and both slots MUST be measured and laid out on host layout and slot changes,
 without relying on a later ancestor layout pass. Visible dim input MUST prevent
 native foreground controls from receiving the same touch.
+When Android mounts or removes a slot, the other slot MUST remain attached if
+it is already in its assigned container, including during a view transition.
 While closed, that retained dim surface MUST also be excluded from React Native
 touch-target lookup, so JS Pressable taps reach the foreground. Visibility alone
 is insufficient for React Native's native target traversal.

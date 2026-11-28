@@ -438,6 +438,35 @@ class BottomTabsDrawerTest : InstrumentationTestCase() {
     onMain { assertEquals(listOf(false), events) }
   }
 
+  fun testRemovingForegroundKeepsMenuAttachedDuringAnAndroidViewTransition() {
+    onMain {
+      drawer.setDrawerEnabled(false)
+      val manager = BottomTabsDrawerManager()
+      val menuSlot = drawer.getReactChild(0)
+      val menuParent = menuSlot.parent as ViewGroup
+      val menuIndex = menuParent.indexOfChild(menuSlot)
+      val previousRootLayouts = root.layouts
+      menuParent.startViewTransition(menuSlot)
+      try {
+        manager.removeViewAt(drawer, 1)
+        assertEquals(1, manager.getChildCount(drawer))
+        assertSame(menuSlot, manager.getChildAt(drawer, 0))
+        assertSame(menuParent, menuSlot.parent)
+        assertEquals(menuIndex, menuParent.indexOfChild(menuSlot))
+      } finally {
+        menuParent.endViewTransition(menuSlot)
+      }
+
+      val replacement = ReactViewGroup(activity)
+      manager.addView(drawer, replacement, 1)
+      assertEquals(2, manager.getChildCount(drawer))
+      assertSame(replacement, manager.getChildAt(drawer, 1))
+      assertEquals(drawer.width, replacement.width)
+      assertEquals(drawer.height, replacement.height)
+      assertEquals(previousRootLayouts, root.layouts)
+    }
+  }
+
   fun testReactTouchTargetPassesClosedDimAndBlocksTheOpenForeground() {
     val targetTag = 903
     val drawerTag = 902
