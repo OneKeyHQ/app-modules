@@ -242,8 +242,12 @@ class BottomTabsDrawerView(context: Context) : FrameLayout(context) {
 
   private fun updateSlots() {
     slots.forEachIndexed { index, child ->
+      val container = if (index == 0) menu else content
+      // An Android view transition can retain a child's parent after removeView.
+      if (container.getChildAt(0) === child) return@forEachIndexed
+
       (child.parent as? ViewGroup)?.removeView(child)
-      (if (index == 0) menu else content).addView(
+      container.addView(
         child, 0, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
       )
     }
