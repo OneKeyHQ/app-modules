@@ -131,6 +131,7 @@ app-modules/
 ├── native-modules/        # 32 Nitro modules (headless native APIs)
 ├── native-views/          # 13 Fabric views (native UI)
 ├── chain-runtimes/        # Rust Zcash and Monero runtimes, built separately
+├── cli/                   # standalone Node.js release & security CLIs
 ├── example/react-native/  # example app consuming every package via workspace:*
 ├── docs/                  # development requirements, release process, README guide
 ├── scripts/               # generators, versioning and publishing tooling
