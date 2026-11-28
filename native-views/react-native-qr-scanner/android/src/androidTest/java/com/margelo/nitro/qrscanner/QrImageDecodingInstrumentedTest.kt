@@ -28,10 +28,12 @@ class QrImageDecodingInstrumentedTest {
     return outFile
   }
 
-  private fun availableEngines(): List<QrImageEngine> {
+  private fun imageEngines(): List<QrImageEngine> {
     val mlkit = MlKitQrEngine()
-    val zxing = ZXingQrEngine.createOrNull()
-    return listOfNotNull(mlkit, zxing)
+    val zxing = checkNotNull(ZXingQrEngine.createOrNull()) {
+      "ZXing-C++ must load in the instrumentation APK"
+    }
+    return listOf(mlkit, zxing)
   }
 
   private fun extractVideoFrames(videoFile: File): List<Bitmap> {
@@ -68,7 +70,7 @@ class QrImageDecodingInstrumentedTest {
   fun caseA_singleStaticImageSymbols() {
     val expected = "ethereum:0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
     val file = copyAssetToCache("a-single-static.png")
-    for (engine in availableEngines()) {
+    for (engine in imageEngines()) {
       val hit = QrImageDecodingPipeline(listOf(engine)).decodeSymbols(file, 12_000_000L)
       assertEquals("${engine.name} symbol count", 1, hit.symbols.size)
       assertEquals("${engine.name} text", expected, hit.symbols[0].text)
@@ -97,7 +99,7 @@ class QrImageDecodingInstrumentedTest {
       ),
     )
     val file = copyAssetToCache("b-multi-static.png")
-    for (engine in availableEngines()) {
+    for (engine in imageEngines()) {
       val hit = QrImageDecodingPipeline(listOf(engine)).decodeSymbols(file, 12_000_000L)
       assertEquals("${engine.name} symbol count", 3, hit.symbols.size)
       for ((text, ex, ey) in expected) {

@@ -48,8 +48,8 @@ class MlKitQrEngine : QrImageEngine {
 }
 
 /**
- * ZXing-C++ fallback. The AAR ships arm64-v8a and armeabi-v7a only; on other
- * ABIs the library does not load and this engine is left out.
+ * ZXing-C++ fallback. The image pipeline uses ML Kit alone if the native
+ * library cannot load.
  */
 class ZXingQrEngine private constructor(
   private val reader: BarcodeReader,
