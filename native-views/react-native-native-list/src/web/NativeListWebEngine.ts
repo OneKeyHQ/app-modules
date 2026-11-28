@@ -1171,6 +1171,10 @@ function createImage(
   image.decoding = 'async';
   image.style.objectFit =
     source.contentFit === 'fill' ? 'fill' : source.contentFit ?? 'cover';
+  // OneKey patch: a memory-cache hit is complete as soon as src is set. Its
+  // load event is still queued behind the current task, and a busy main thread
+  // (a modal mounting a list) kept cached logos invisible for hundreds of ms.
+  if (image.complete && image.naturalWidth > 0) image.style.opacity = '1';
   image.addEventListener('load', () => {
     if (image.dataset.nativeListSelectorPaint !== 'true')
       revealWebImage(image, startedAt);

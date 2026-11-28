@@ -4680,6 +4680,35 @@ describe('legacy default regressions', () => {
     return { window, host, engine };
   };
 
+  it('shows cache-hit images without waiting for the load event', () => {
+    const row: Extract<RowModel, { type: 'identity' }> = {
+      type: 'identity',
+      key: 'network',
+      title: 'Arbitrum',
+      leading: { kind: 'network', image },
+    };
+    const { window } = new JSDOM('<!doctype html><body></body>');
+    const proto = (
+      window as unknown as { HTMLImageElement: typeof HTMLImageElement }
+    ).HTMLImageElement.prototype;
+    const complete = jest.spyOn(proto, 'complete', 'get').mockReturnValue(true);
+    const naturalWidth = jest
+      .spyOn(proto, 'naturalWidth', 'get')
+      .mockReturnValue(32);
+    const host = window.document.createElement('div');
+    window.document.body.appendChild(host);
+    const engine = new NativeListWebEngine(host, snap([row]), {}, false);
+    try {
+      const img = host.querySelector('img.ok-native-list-visual-main');
+      expect(img).not.toBeNull();
+      expect((img as HTMLImageElement).style.opacity).toBe('1');
+    } finally {
+      engine.destroy();
+      complete.mockRestore();
+      naturalWidth.mockRestore();
+    }
+  });
+
   it('keeps loaded MetricCard images visible across content and style rebinding', () => {
     const row: Extract<RowModel, { type: 'metricCard' }> = {
       type: 'metricCard',
