@@ -204,9 +204,10 @@ DEFAULT_MAX_IMAGE_PIXELS = 12_000_000;
   power-of-two `inSampleSize`, scaled to the budget and oriented by
   ExifInterface; passes use Canvas and `ColorMatrix`. Engines: bundled ML Kit
   (`barcode-scanning` 17.3.0, no Play Services), then ZXing-C++
-  (`io.github.zxing-cpp:android` 2.2.0). The ZXing AAR ships arm64-v8a and
-  armeabi-v7a only; on other ABIs its library does not load and ML Kit is
-  used alone. `content://` URIs are not accepted (`invalid-image`).
+  (`io.github.zxing-cpp:android` 2.3.0). The ZXing AAR declares minSdk 21
+  and ships armeabi-v7a, arm64-v8a, x86 and x86_64, with 16 KB ELF segment
+  alignment on both 64-bit ABIs. ML Kit runs alone if the ZXing library
+  cannot load. `content://` URIs are not accepted (`invalid-image`).
 - Web (`./web`): `decodeQrImage(blob: Blob, options?)` with the same budget,
   limits, errors and pass order. The Web entry preflights raster headers
   for JPEG, PNG, WebP, GIF and BMP before creating any bitmap. Invalid or
@@ -592,7 +593,7 @@ freed on terminal status plus `reset()`, or when the session is dropped.
 | Platform | Live engine | Image engine | Fallback | Status |
 | --- | --- | --- | --- | --- |
 | iOS | AVFoundation metadata output, 1080p, back virtual device at 1x, continuous autofocus, tap to focus, pinch zoom | Vision | ZXing-C++ (image only) | Implemented in source |
-| Android | CameraX + bundled ML Kit (no Play Services) | Same ML Kit detector | ZXing-C++ (image only; arm ABIs) | Implemented, emulator verified (image) |
+| Android | CameraX + bundled ML Kit (no Play Services) | Same ML Kit detector | ZXing-C++ (image only) | Implemented, emulator verified (image) |
 | Web / extension / Linux Electron | `BarcodeDetector` when it supports `qr_code` | Same | `zxing-wasm` reader (page thread or Worker) | Implemented; Chrome, WebKit and extension-CSP verified |
 | macOS Electron | `desktop/mac/electron-qr-scanner` (AVFoundation + Vision) | Same | ZXing-C++ (image) | Implemented, not integrated |
 | Windows Electron | `desktop/win/electron-qr-scanner` | Same | ZXing-C++ | Not started |
